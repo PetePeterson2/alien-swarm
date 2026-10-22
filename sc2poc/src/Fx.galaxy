@@ -1,0 +1,233 @@
+// =====================================================================
+// Effects: pooled additive mesh units (tracers, flashes, bursts, flame,
+// arcs), one-shot stock models (deaths, impacts), lamps, sounds.
+// =====================================================================
+
+const int AS_FXN = 192;
+unit[192] as_fx;
+int[192] as_fxLife;
+int[192] as_fxBorn;
+fixed[192] as_fxFacing;
+int as_fxNext;
+
+// Lay an authored effect mesh's +X along `facing`. A unit's actor takes SetRotation
+// absolutely and the mesh's +X comes out as up x forward (PUBG's BG_AimActor), so
+// forward is the level vector to the right of the direction. libNtve's
+// MakeModelFaceAngle sends forward = the direction itself, which drew every tracer
+// and the laser sight a quarter turn off their line.
+void AS_AimFx (unit u, fixed facing) {
+    ActorSend(libNtve_gf_MainActorofUnit(u),libNtve_gf_SetRotation(Sin(facing),0.0-Cos(facing),0.0,0.0,0.0,1.0));
+}// A short-lived effect unit. z is the height above the deck; s* are scale multipliers.
+unit AS_FxUnit (string kind, fixed x, fixed y, fixed z, fixed facing, fixed sx, fixed syz, string tint, int life) {
+    int i=as_fxNext;
+    as_fxNext=(as_fxNext+1)%AS_FXN;
+    if(as_fx[i]!=null) {UnitRemove(as_fx[i]);as_fx[i]=null;}
+    if(x<0.5 || y<0.5 || x>IntToFixed(AS_W)-0.5 || y>IntToFixed(AS_H)-0.5) {return null;}
+    UnitCreate(1,kind,c_unitCreateIgnorePlacement,0,Point(x,y),facing-90.0);
+    as_fx[i]=UnitLastCreated();as_fxLife[i]=life;as_fxBorn[i]=as_tick;as_fxFacing[i]=facing;
+    // Facing on the actor as well: the unit's own facing alone did not turn the meshes.
+    AS_AimFx(as_fx[i],facing);
+    UnitSetHeight(as_fx[i],z,0.0);
+    UnitSetScale(as_fx[i],sx*100.0,syz*100.0,syz*100.0);
+    if(tint!="") {ActorSend(libNtve_gf_MainActorofUnit(as_fx[i]),"SetTintColor "+tint);}
+    return as_fx[i];
+}
+void AS_FxPulse () {
+    int i;
+    for(i=0;i<AS_FXN;i+=1) {
+        // A unit made this step has not been drawn yet: it starts counting next step.
+        if(as_fx[i]==null || as_fxBorn[i]==as_tick) {continue;}
+        // Streaks (rail beams, arcs) hold their line only if the rotation is sent again.
+        AS_AimFx(as_fx[i],as_fxFacing[i]);
+        as_fxLife[i]-=1;
+        if(as_fxLife[i]==1) {ActorSend(libNtve_gf_MainActorofUnit(as_fx[i]),"SetOpacity 0 0.0625");}
+        if(as_fxLife[i]<=0) {UnitRemove(as_fx[i]);as_fx[i]=null;}
+    }
+}
+// A tracer from (x0,y0) to (x1,y1): the mesh is one unit long along the unit's facing.
+void AS_Tracer (fixed x0, fixed y0, fixed x1, fixed y1, fixed z, string tint, fixed width, int life) {
+    fixed d=SquareRoot((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0));
+    if(d<0.05) {return;}
+    AS_FxUnit("ASFxTracer",x0,y0,z,ATan2(y1-y0,x1-x0),d,width,tint,life);
+}
+void AS_Arc (fixed x0, fixed y0, fixed x1, fixed y1, fixed z) {
+    fixed d=SquareRoot((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0));
+    if(d<0.05) {return;}
+    AS_FxUnit("ASFxArc",x0,y0,z,ATan2(y1-y0,x1-x0),d,RandomFixed(0.7,1.3),"",2);
+}
+void AS_Flash (fixed x, fixed y, fixed z, fixed scale, string tint) {
+    AS_FxUnit("ASFxFlash",x,y,z,RandomFixed(0.0,360.0),scale,scale,tint,1);
+}
+void AS_Burst (fixed x, fixed y, fixed z, fixed scale, string tint, int life) {
+    AS_FxUnit("ASFxBurst",x,y,z,RandomFixed(0.0,360.0),scale,scale,tint,life);
+}
+void AS_Ring (fixed x, fixed y, fixed radius, string tint, int life) {
+    AS_FxUnit("ASFxRing",x,y,0.03,0.0,radius,radius,tint,life);
+}
+// A stock model played once where something happened (deaths, impacts).
+void AS_Fx (string kind, fixed x, fixed y, fixed z, fixed facing) {
+    actor a=libNtve_gf_CreateActorAtPoint(kind,Point(x,y));
+    ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ+z));
+    // Stock models take SetRotation with the nose along minus the forward vector (PUBG's BG_ShipAim).
+    ActorSend(a,libNtve_gf_SetRotation(0.0-Cos(facing),0.0-Sin(facing),0.0,0.0,0.0,1.0));
+}
+
+// ---- sounds -----------------------------------------------------------
+fixed[16] as_sndLast;
+string[16] as_sndId;
+int as_sndCount;
+void AS_Sound (string id, fixed x, fixed y, fixed volume, fixed minGap) {
+    int i;int slot= -1;
+    // Rapid weapons would stack hundreds of the same sound: one every minGap seconds.
+    for(i=0;i<as_sndCount;i+=1) {if(as_sndId[i]==id) {slot=i;break;}}
+    if(slot<0 && as_sndCount<16) {slot=as_sndCount;as_sndId[slot]=id;as_sndLast[slot]= -10.0;as_sndCount+=1;}
+    if(slot>=0) {
+        if(as_now-as_sndLast[slot]<minGap) {return;}
+        as_sndLast[slot]=as_now;
+    }
+    SoundPlayAtPoint(SoundLink(id,-1),PlayerGroupAll(),Point(x,y),0.5,volume,0.0);
+}
+void AS_SoundUI (int p, string id) {
+    SoundPlay(SoundLink(id,-1),AS_Me(p),100.0,0.0);
+}
+
+// ---- lamps ------------------------------------------------------------
+const int AS_LAMPS = 64;
+unit[64] as_lamp;
+int[64] as_lampFlicker;
+bool[64] as_lampOn;
+fixed[64] as_lampNext;
+int as_lampCount;
+string AS_LightUnit (string kind) {
+    if(kind=="white") {return "ASLightWhite";}
+    if(kind=="cold") {return "ASLightCold";}
+    if(kind=="red") {return "ASLightRed";}
+    if(kind=="green") {return "ASLightGreen";}
+    if(kind=="orange") {return "ASLightOrange";}
+    if(kind=="purple") {return "ASLightPurple";}
+    if(kind=="whitebig") {return "ASLightWhitebig";}
+    if(kind=="redbig") {return "ASLightRedbig";}
+    if(kind=="orangebig") {return "ASLightOrangebig";}
+    return "ASLightYellow";
+}
+void AS_Lamp (fixed x, fixed y, string kind, int flicker) {
+    if(as_lampCount>=AS_LAMPS) {return;}
+    UnitCreate(1,AS_LightUnit(kind),c_unitCreateIgnorePlacement,0,Point(x,y),270.0);
+    as_lamp[as_lampCount]=UnitLastCreated();
+    UnitSetHeight(as_lamp[as_lampCount],2.1,0.0);
+    as_lampFlicker[as_lampCount]=flicker;as_lampOn[as_lampCount]=true;
+    as_lampNext[as_lampCount]=RandomFixed(0.5,4.0);
+    as_lampCount+=1;
+}
+void AS_LampSet (int i, bool on) {
+    if(as_lampOn[i]==on) {return;}
+    as_lampOn[i]=on;libNtve_gf_ShowHideUnit(as_lamp[i],on);
+}
+// Failing lamps: long dark spells; sputtering lamps: rapid stutter; alarms pulse.
+void AS_LampPulse () {
+    int i;
+    for(i=0;i<as_lampCount;i+=1) {
+        if(as_lampFlicker[i]==0 || as_now<as_lampNext[i]) {continue;}
+        if(as_lampFlicker[i]==1) {
+            if(as_lampOn[i]) {AS_LampSet(i,false);as_lampNext[i]=as_now+RandomFixed(0.4,2.5);}
+            else {AS_LampSet(i,true);as_lampNext[i]=as_now+RandomFixed(1.5,7.0);}
+        }
+        else if(as_lampFlicker[i]==2) {
+            AS_LampSet(i,!as_lampOn[i]);
+            if(RandomInt(0,9)==0) {as_lampNext[i]=as_now+RandomFixed(1.0,4.0);}
+            else {as_lampNext[i]=as_now+RandomFixed(0.06,0.2);}
+        }
+        else {
+            AS_LampSet(i,!as_lampOn[i]);
+            as_lampNext[i]=as_now+0.5;
+            if(as_hordeUntil>as_now) {as_lampNext[i]=as_now+0.25;}
+        }
+    }
+}
+
+// ---- flame puffs ------------------------------------------------------
+const int AS_PUFFS = 64;
+unit[64] as_puff;
+fixed[64] as_puffX;
+fixed[64] as_puffY;
+fixed[64] as_puffVX;
+fixed[64] as_puffVY;
+fixed[64] as_puffAge;
+fixed[64] as_puffLife;
+int[64] as_puffBy;
+int as_puffNext;
+void AS_Puff (int p, fixed x, fixed y, fixed angle, fixed speed, fixed life) {
+    int i=as_puffNext;
+    as_puffNext=(as_puffNext+1)%AS_PUFFS;
+    if(as_puff[i]!=null) {UnitRemove(as_puff[i]);}
+    UnitCreate(1,"ASFxFlame",c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
+    as_puff[i]=UnitLastCreated();
+    UnitSetHeight(as_puff[i],0.55,0.0);UnitSetScale(as_puff[i],30.0,30.0,30.0);
+    as_puffX[i]=x;as_puffY[i]=y;as_puffVX[i]=Cos(angle)*speed;as_puffVY[i]=Sin(angle)*speed;
+    as_puffAge[i]=0.0;as_puffLife[i]=life;as_puffBy[i]=p;
+}
+void AS_PuffPulse () {
+    int i;int j;fixed nx;fixed ny;fixed t;fixed r;fixed s;
+    for(i=0;i<AS_PUFFS;i+=1) {
+        if(as_puff[i]==null) {continue;}
+        as_puffAge[i]+=AS_DT;
+        if(as_puffAge[i]>=as_puffLife[i]) {UnitRemove(as_puff[i]);as_puff[i]=null;continue;}
+        nx=as_puffX[i]+as_puffVX[i]*AS_DT;ny=as_puffY[i]+as_puffVY[i]*AS_DT;
+        if(AS_Solid(nx,ny)) {
+            // Flame splashes along a wall instead of passing through it.
+            as_puffVX[i]*=0.2;as_puffVY[i]*=0.2;nx=as_puffX[i];ny=as_puffY[i];
+        }
+        as_puffX[i]=nx;as_puffY[i]=ny;
+        t=as_puffAge[i]/as_puffLife[i];
+        s=30.0+150.0*t;r=0.25+0.75*t;
+        UnitSetPosition(as_puff[i],Point(nx,ny),true);
+        UnitSetScale(as_puff[i],s,s,s);
+        if(t>0.6) {ActorSend(libNtve_gf_MainActorofUnit(as_puff[i]),"SetOpacity "+FixedToString(1.0-(t-0.6)*2.5,2)+" 0.0625");}
+        // Everything the flame touches burns.
+        for(j=0;j<AS_MAXALIEN;j+=1) {
+            if(as_a[j]==null) {continue;}
+            if(AbsF(PointGetX(UnitGetPosition(as_a[j]))-nx)>r+as_aRadius[j] || AbsF(PointGetY(UnitGetPosition(as_a[j]))-ny)>r+as_aRadius[j]) {continue;}
+            if(DistanceBetweenPoints(UnitGetPosition(as_a[j]),Point(nx,ny))<r+as_aRadius[j]) {
+                AS_HurtAlien(j,as_gun[4].damage*AS_DT*4.0,1,as_puffBy[i],as_puffX[i]-as_puffVX[i],as_puffY[i]-as_puffVY[i]);
+                if(as_a[j]!=null) {as_aBurnUntil[j]=as_now+4.0;as_aBurnBy[j]=as_puffBy[i];}
+            }
+        }
+    }
+}
+
+// ---- gore ---------------------------------------------------------------
+// Blood splats stay on the deck for most of a minute, multiplied over the floor.
+const int AS_SPLATS = 64;
+unit[64] as_splat;
+fixed[64] as_splatUntil;
+bool[64] as_splatFading;
+int as_splatNext;
+void AS_Splat (fixed x, fixed y, fixed facing, fixed size) {
+    int i=as_splatNext;string kind="ASFxSplat1";
+    as_splatNext=(as_splatNext+1)%AS_SPLATS;
+    if(as_splat[i]!=null) {UnitRemove(as_splat[i]);as_splat[i]=null;}
+    if(AS_Solid(x,y)) {return;}
+    if(RandomInt(0,1)==0) {kind="ASFxSplat2";}
+    UnitCreate(1,kind,c_unitCreateIgnorePlacement,0,Point(x,y),facing-90.0);
+    as_splat[i]=UnitLastCreated();
+    AS_AimFx(as_splat[i],facing);
+    UnitSetScale(as_splat[i],size*100.0,size*100.0,100.0);
+    as_splatUntil[i]=as_now+RandomFixed(35.0,50.0);as_splatFading[i]=false;
+}
+void AS_SplatPulse () {
+    int i=as_tick%AS_SPLATS;
+    if(as_splat[i]==null || as_now<as_splatUntil[i]) {return;}
+    if(!as_splatFading[i]) {
+        ActorSend(libNtve_gf_MainActorofUnit(as_splat[i]),"SetOpacity 0 3");
+        as_splatFading[i]=true;as_splatUntil[i]=as_now+3.5;return;
+    }
+    UnitRemove(as_splat[i]);as_splat[i]=null;
+}
+// A spray of alien blood along the direction the hit travelled.
+void AS_Spray (fixed x, fixed y, fixed z, fixed ang, fixed size) {
+    int k;fixed d;fixed s;
+    for(k=0;k<3;k+=1) {
+        d=0.1+IntToFixed(k)*0.3*size;s=size*(0.5-0.1*IntToFixed(k));
+        AS_FxUnit("ASFxBurst",x+Cos(ang+RandomFixed(-20.0,20.0))*d,y+Sin(ang+RandomFixed(-20.0,20.0))*d,MaxF(0.1,z+RandomFixed(-0.1,0.15)),RandomFixed(0.0,360.0),s,s,"170,235,40",3+k);
+    }
+}

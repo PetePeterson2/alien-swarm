@@ -1,0 +1,149 @@
+// =====================================================================
+// Entry point: players, lighting, UI, input triggers and the 16 Hz pulse.
+// =====================================================================
+
+// Demo build only: player 1 fires each gun in turn in six directions at sleeping drones.
+int as_demoStep= -1;
+fixed as_demoNext;
+void AS_DemoPulse () {
+    int p=1;int[6] guns;fixed[6] dirs;fixed ang;int k;point here;
+    if(!as_demo || !AS_Person(p) || !as_alive[p]) {return;}
+    as_god[p]=true;as_director=false;
+    if(as_now<as_demoNext) {
+        as_mouseSeen[p]=true;
+        return;
+    }
+    as_demoStep+=1;as_demoNext=as_now+2.5;
+    guns[0]=1;guns[1]=2;guns[2]=5;guns[3]=7;guns[4]=3;guns[5]=1;
+    dirs[0]=0.0;dirs[1]=90.0;dirs[2]=45.0;dirs[3]=135.0;dirs[4]=270.0;dirs[5]=200.0;
+    ang=dirs[as_demoStep%6];
+    as_slot[p]=guns[(as_demoStep/6)%6];as_mag[p][as_slot[p]]=as_gun[as_slot[p]].mag;as_reserve[p][as_slot[p]]=999;as_reloadEnd[p]=0.0;
+    here=UnitGetPosition(as_m[p]);
+    as_mouseDX[p]=Cos(ang)*6.0;as_mouseDY[p]=Sin(ang)*6.0;as_mouseSeen[p]=true;as_trigger[p]=true;as_spin[p]=1.0;
+    for(k=0;k<2;k+=1) {AS_SpawnNear(AS_DRONE,PointGetX(here)+Cos(ang)*IntToFixed(5+k*2),PointGetY(here)+Sin(ang)*IntToFixed(5+k*2),false);}
+    AS_Message(p,"DEMO  "+as_gun[as_slot[p]].name+"  at "+FixedToString(ang,0)+" degrees");
+}
+bool AS_Pulse (bool testConds, bool runActions) {
+    int p;
+    as_now+=AS_DT;as_tick+=1;
+    AS_DemoPulse();
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p)) {continue;}
+        AS_MarinePulse(p);
+        if(as_alive[p]) {AS_AimUpdate(p);AS_Face(p);AS_Move(p);AS_Attachments(p);AS_Camera(p);AS_FirePulse(p);}
+        AS_HurtPulse(p);
+        if(as_tick%2==0) {AS_HudUpdate(p);}
+    }
+    AS_BulletPulse();AS_AlienPulse();AS_LobPulse();AS_PuffPulse();AS_SentryPulse();AS_FlarePulse();AS_FxPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();
+    return true;
+}
+void AS_KillAll () {
+    int i;
+    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && as_aKind[i]!=AS_BIOMASS && as_aKind[i]!=AS_EGG) {AS_KillAlien(i,0,0);}}
+}
+void AS_CycleLight (int p) {
+    as_light=(as_light+1)%4;
+    GameSetLighting(as_lightId[as_light],1.0);
+    AS_Message(p,"Lighting: "+as_lightName[as_light]);
+}
+bool AS_KeyDownT (bool testConds, bool runActions) {
+    int p=EventPlayer();int k=EventKeyPressed();bool ctrl=EventKeyControl();int n= -1;
+    if(!AS_Person(p)) {return true;}
+    if(k==c_keyW) {AS_KeyMove(p,0,true);return true;}
+    if(k==c_keyA) {AS_KeyMove(p,1,true);return true;}
+    if(k==c_keyS) {AS_KeyMove(p,2,true);return true;}
+    if(k==c_keyD) {AS_KeyMove(p,3,true);return true;}
+    if(k>=c_key0 && k<=c_key9) {n=k-c_key0;}
+    if(n>=0) {
+        if(ctrl) {AS_DevSpawn(p,n);}
+        else if(n==0) {AS_Select(p,10);}
+        else {AS_Select(p,n);}
+        return true;
+    }
+    if(ctrl && k==c_keyG) {as_god[p]=!as_god[p];return true;}
+    if(ctrl && k==c_keyJ) {AS_DevSpawn(p,AS_RIPPER);return true;}
+    if(ctrl && k==c_keyK) {AS_KillAll();return true;}
+    if(k==c_keyR) {AS_Reload(p);}
+    if(k==c_keyQ) {AS_DeploySentry(p);}
+    if(k==c_keyE) {AS_UseMedkit(p);}
+    if(k==c_keyX) {AS_ThrowFlare(p);}
+    if(k==c_keyF) {as_lightOn[p]=!as_lightOn[p];AS_TorchShow(p);}
+    if(k==c_keyV) {AS_CameraMode(p,1-as_view[p],0.4);}
+    if(k==c_keyL) {AS_CycleLight(p);}
+    if(k==c_keyT) {as_director=!as_director;AS_Message(p,"Director toggled");}
+    if(k==c_keyH) {AS_HelpToggle(p);}
+    return true;
+}
+bool AS_KeyUpT (bool testConds, bool runActions) {
+    int p=EventPlayer();int k=EventKeyPressed();
+    if(!AS_Person(p)) {return true;}
+    if(k==c_keyW) {AS_KeyMove(p,0,false);}
+    if(k==c_keyA) {AS_KeyMove(p,1,false);}
+    if(k==c_keyS) {AS_KeyMove(p,2,false);}
+    if(k==c_keyD) {AS_KeyMove(p,3,false);}
+    return true;
+}
+bool AS_MouseDownT (bool testConds, bool runActions) {
+    int p=EventPlayer();
+    if(!AS_Person(p)) {return true;}
+    if(EventMouseClickedButton()==c_mouseButtonLeft) {as_trigger[p]=true;}
+    else if(EventMouseClickedButton()==c_mouseButtonRight) {as_trigger2[p]=true;AS_Secondary(p);}
+    return true;
+}
+bool AS_MouseUpT (bool testConds, bool runActions) {
+    int p=EventPlayer();
+    if(!AS_Person(p)) {return true;}
+    if(EventMouseClickedButton()==c_mouseButtonLeft) {as_trigger[p]=false;}
+    else {as_trigger2[p]=false;}
+    return true;
+}
+bool AS_MouseMoveT (bool testConds, bool runActions) {
+    AS_MouseMoved(EventPlayer(),EventMouseMovedPosXWorld(),EventMouseMovedPosYWorld());
+    return true;
+}
+bool AS_WheelT (bool testConds, bool runActions) {
+    int p=EventPlayer();
+    if(!AS_Person(p) || as_view[p]!=0) {return true;}
+    as_zoom[p]=AS_Clamp(as_zoom[p]-EventMouseWheelSpin()*1.5,12.0,40.0);
+    CameraSetValue(p,c_cameraValueDistance,as_zoom[p],0.2,-1,0.0);
+    return true;
+}
+void AS_KeyEvents (trigger t, bool down) {
+    int k;
+    for(k=c_key0;k<=c_key9;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
+    TriggerAddEventKeyPressed(t,c_playerAny,c_keyW,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
+    TriggerAddEventKeyPressed(t,c_playerAny,c_keyA,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
+    TriggerAddEventKeyPressed(t,c_playerAny,c_keyS,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
+    TriggerAddEventKeyPressed(t,c_playerAny,c_keyD,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
+    if(!down) {return;}
+    for(k=c_keyA;k<=c_keyZ;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
+}
+void AS_Init () {
+    int p;int q;trigger t;
+    AS_GunsInit();AS_KindsInit();AS_LevelInit();
+    as_lightId[0]="ASDerelict";as_lightName[0]="DERELICT";as_lightId[1]="ASBlackout";as_lightName[1]="BLACKOUT";
+    as_lightId[2]="ASAlarm";as_lightName[2]="EMERGENCY";as_lightId[3]="ASPowered";as_lightName[3]="POWER RESTORED";
+    GameSetSpeedValue(c_gameSpeedNormal);GameSetSpeedLocked(true);
+    GameSetLighting("ASDerelict",0.0);FogSetEnabled(false);
+    libNtve_gf_HideGameUI(false,PlayerGroupAll());
+    UISetDragSelectEnabled(PlayerGroupAll(),false);
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        as_on[p]=PlayerStatus(p)==c_playerStatusActive && PlayerType(p)==c_playerTypeUser;
+        for(q=1;q<=AS_PLAYERS;q+=1) {if(q!=p) {PlayerSetAlliance(p,c_allianceIdPassive,q,true);PlayerSetAlliance(p,c_allianceIdVision,q,true);PlayerSetAlliance(p,c_allianceIdChat,q,true);}}
+        if(!as_on[p]) {continue;}
+        VisRevealArea(p,RegionEntireMap(),0.0,false);
+        CameraUseHeightDisplacement(p,false);CameraUseHeightSmoothing(p,false);
+        as_zoom[p]=AS_TOP_DIST;as_lightOn[p]=true;as_view[p]=0;
+        AS_GiveLoadout(p);AS_HudCreate(p);AS_MarineSpawn(p);
+        AS_Announce(p,"HALCYON DRIFT","Distress beacon traced to deck 3. Find out what happened. Press H for controls.");
+    }
+    t=TriggerCreate("AS_KeyDownT");AS_KeyEvents(t,true);
+    t=TriggerCreate("AS_KeyUpT");AS_KeyEvents(t,false);
+    t=TriggerCreate("AS_MouseDownT");TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonLeft,true);TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonRight,true);
+    t=TriggerCreate("AS_MouseUpT");TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonLeft,false);TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonRight,false);
+    t=TriggerCreate("AS_MouseMoveT");TriggerAddEventMouseMoved(t,c_playerAny);
+    t=TriggerCreate("AS_WheelT");TriggerAddEventMouseWheel(t,c_playerAny);
+    AS_DirectorInit();
+    SoundPlay(SoundLink("Ambience_HybridLabInner",-1),PlayerGroupAll(),45.0,0.0);
+    t=TriggerCreate("AS_Pulse");TriggerAddEventTimePeriodic(t,AS_DT,c_timeGame);
+}

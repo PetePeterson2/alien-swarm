@@ -1,0 +1,273 @@
+// =====================================================================
+// Marines: the WASD controller, the two cameras, aim, flashlight, laser
+// sight, health, death and respawn.
+//
+// Top-down view (Alien Swarm's own): north-up camera at 60 degrees, the
+// marine faces the cursor through a full 360, W is always up the screen.
+// Third-person view (after PUBG: Battle Royale / Doodad Royale): the mouse
+// turns a camera behind the marine's shoulder, W runs where it looks.
+// =====================================================================
+
+const fixed AS_MARINE_R = 0.33;
+const fixed AS_RUN = 3.0;
+const fixed AS_TOP_PITCH = 60.0;
+const fixed AS_TOP_FOV = 40.0;
+const fixed AS_TOP_DIST = 24.0;
+const fixed AS_TP_DIST = 3.4;
+const fixed AS_TP_HEIGHT = 1.45;
+const fixed AS_TP_FOV = 68.0;
+const fixed AS_GUN_Z = 0.62;
+
+// ---- the deck's collision --------------------------------------------
+bool AS_Solid (fixed x, fixed y) {
+    int cx=FixedToInt(x);int cy=FixedToInt(y);
+    if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return true;}
+    return as_wall[cx][cy];
+}
+// Whether a body of radius r fits at (x, y): blocked cells, then the biomass growths.
+bool AS_Free (fixed x, fixed y, fixed r) {
+    int x0=FixedToInt(x-r);int x1=FixedToInt(x+r);int y0=FixedToInt(y-r);int y1=FixedToInt(y+r);int cx;int cy;int i;
+    fixed nx;fixed ny;
+    for(cx=x0;cx<=x1;cx+=1) {
+        for(cy=y0;cy<=y1;cy+=1) {
+            if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return false;}
+            if(!as_wall[cx][cy]) {continue;}
+            nx=AS_Clamp(x,IntToFixed(cx),IntToFixed(cx+1));ny=AS_Clamp(y,IntToFixed(cy),IntToFixed(cy+1));
+            if((nx-x)*(nx-x)+(ny-y)*(ny-y)<r*r) {return false;}
+        }
+    }
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]==null || as_aKind[i]!=AS_BIOMASS) {continue;}
+        if(DistanceBetweenPoints(UnitGetPosition(as_a[i]),Point(x,y))<as_aRadius[i]+r) {return false;}
+    }
+    return true;
+}
+// Distance along a ray to the first solid cell (0.1 steps, then refined), capped at max.
+fixed AS_RayWall (fixed x, fixed y, fixed angle, fixed limit) {
+    fixed c=Cos(angle);fixed s=Sin(angle);fixed d=0.0;fixed lo;
+    while(d<limit) {
+        d+=0.2;
+        if(AS_Solid(x+c*d,y+s*d)) {
+            lo=d-0.2;
+            while(d-lo>0.02) {
+                if(AS_Solid(x+c*(lo+d)*0.5,y+s*(lo+d)*0.5)) {d=(lo+d)*0.5;}else {lo=(lo+d)*0.5;}
+            }
+            return lo;
+        }
+    }
+    return limit;
+}
+bool AS_LineClear (fixed x0, fixed y0, fixed x1, fixed y1) {
+    fixed d=SquareRoot((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0));
+    return AS_RayWall(x0,y0,ATan2(y1-y0,x1-x0),d)>=d-0.05;
+}
+
+// ---- spawning ---------------------------------------------------------
+void AS_MarineSpawn (int p) {
+    point q=Point(@spawnX@+IntToFixed((p-1)%2)*1.2,@spawnY@+IntToFixed((p-1)/2)*1.2);
+    if(as_m[p]==null) {
+        UnitCreate(1,"ASMarine",c_unitCreateIgnorePlacement,p,q,@spawnFacing@);
+        as_m[p]=UnitLastCreated();
+    }
+    else {
+        UnitSetPosition(as_m[p],q,false);
+        libNtve_gf_ShowHideUnit(as_m[p],true);
+    }
+    as_hp[p]=100.0;as_hpMax[p]=100.0;as_alive[p]=true;as_infestUntil[p]=0.0;
+    as_aim[p]=@spawnFacing@;as_mvX[p]=0.0;as_mvY[p]=0.0;as_knockX[p]=0.0;as_knockY[p]=0.0;
+    UnitSetPropertyFixed(as_m[p],c_unitPropLife,100.0);
+    if(as_torch[p]==null) {
+        UnitCreate(1,"ASFlashlight",c_unitCreateIgnorePlacement,0,q,as_aim[p]);as_torch[p]=UnitLastCreated();
+        UnitCreate(1,"ASLightWhite",c_unitCreateIgnorePlacement,0,q,0.0);as_glow[p]=UnitLastCreated();
+        UnitCreate(1,"ASLightYellow",c_unitCreateIgnorePlacement,0,q,0.0);as_muzzle[p]=UnitLastCreated();
+        UnitCreate(1,"ASFxLaser",c_unitCreateIgnorePlacement,0,q,as_aim[p]);as_laser[p]=UnitLastCreated();
+        UnitSetHeight(as_torch[p],1.25,0.0);UnitSetHeight(as_glow[p],1.9,0.0);UnitSetHeight(as_muzzle[p],0.9,0.0);UnitSetHeight(as_laser[p],AS_GUN_Z,0.0);
+        UnitSetScale(as_glow[p],45.0,45.0,45.0);
+        libNtve_gf_ShowHideUnit(as_muzzle[p],false);
+    }
+    AS_TorchShow(p);
+    AS_CameraMode(p,as_view[p],0.0);
+}
+void AS_TorchShow (int p) {
+    libNtve_gf_ShowHideUnit(as_torch[p],as_alive[p] && as_lightOn[p]);
+    libNtve_gf_ShowHideUnit(as_glow[p],as_alive[p] && as_lightOn[p]);
+    libNtve_gf_ShowHideUnit(as_laser[p],as_alive[p]);
+}
+
+// ---- cameras ----------------------------------------------------------
+void AS_CameraMode (int p, int mode, fixed blend) {
+    as_view[p]=mode;
+    if(as_camUnit[p]!=null) {CameraFollowUnitGroup(p,libNtve_gf_ConvertUnitToUnitGroup(as_camUnit[p]),false,false);}
+    as_camUnit[p]=as_m[p];
+    CameraFollowUnitGroup(p,libNtve_gf_ConvertUnitToUnitGroup(as_m[p]),true,false);
+    CameraSetValue(p,c_cameraValueNearClip,0.08,0.0,-1,0.0);
+    CameraSetValue(p,c_cameraValueFarClip,400.0,0.0,-1,0.0);
+    if(mode==0) {
+        CameraForceMouseRelative(p,false);CameraSetMouseRotates(p,false);CameraLockInput(p,true);
+        CameraSetValue(p,c_cameraValueYaw,90.0,blend,-1,0.0);
+        CameraSetValue(p,c_cameraValuePitch,AS_TOP_PITCH,blend,-1,0.0);
+        CameraSetValue(p,c_cameraValueDistance,as_zoom[p],blend,-1,0.0);
+        CameraSetValue(p,c_cameraValueFieldOfView,AS_TOP_FOV,blend,-1,0.0);
+        CameraSetValue(p,c_cameraValueHeightOffset,0.4,blend,-1,0.0);
+        UISetCursorVisible(AS_Me(p),true);
+    }
+    else {
+        CameraSetValue(p,c_cameraValueYaw,as_aim[p],blend,-1,0.0);
+        CameraSetValue(p,c_cameraValuePitch,10.0,blend,-1,0.0);
+        CameraSetValue(p,c_cameraValueDistance,AS_TP_DIST,blend,-1,0.0);
+        CameraSetValue(p,c_cameraValueFieldOfView,AS_TP_FOV,blend,-1,0.0);
+        CameraSetValue(p,c_cameraValueHeightOffset,AS_TP_HEIGHT,blend,-1,0.0);
+        CameraForceMouseRelative(p,true);CameraSetMouseRotates(p,true);CameraLockInput(p,false);
+        CameraSetMouseRotationSpeed(p,c_cameraRotationYaw,0.5);CameraSetMouseRotationSpeed(p,c_cameraRotationPitch,0.35);
+    }
+    AS_HudView(p);
+}
+fixed[5] as_tpDist;
+void AS_Camera (int p) {
+    fixed d;fixed yaw;point here;
+    if(as_view[p]!=1 || !as_alive[p]) {return;}
+    // The boom comes in short of a bulkhead behind the marine, fast in, slow out.
+    here=UnitGetPosition(as_m[p]);yaw=CameraGetYaw(p);
+    d=AS_RayWall(PointGetX(here),PointGetY(here),yaw+180.0,AS_TP_DIST+0.3)-0.3;
+    d=MinF(AS_TP_DIST,MinF(d,AS_RayWall(PointGetX(here),PointGetY(here),yaw+165.0,AS_TP_DIST+0.3)-0.3));
+    d=MinF(d,AS_RayWall(PointGetX(here),PointGetY(here),yaw+195.0,AS_TP_DIST+0.3)-0.3);
+    d=MaxF(0.6,d);
+    if(AbsF(d-as_tpDist[p])>0.05) {
+        if(d<as_tpDist[p]) {CameraSetValue(p,c_cameraValueDistance,d,0.08,-1,0.0);}
+        else {CameraSetValue(p,c_cameraValueDistance,d,0.4,-1,0.0);}
+        as_tpDist[p]=d;
+    }
+}
+
+// ---- input ------------------------------------------------------------
+void AS_KeyMove (int p, int k, bool down) {
+    as_key[p][k]=down;
+}
+// Where the gun points: the cursor in the top-down view (kept as an offset from
+// the marine, because the camera follows the marine and a still mouse sends no
+// events), the camera's heading in the third-person view.
+void AS_AimUpdate (int p) {
+    point here=UnitGetPosition(as_m[p]);fixed want;
+    if(as_view[p]==1) {as_aim[p]=CameraGetYaw(p);return;}
+    if(!as_mouseSeen[p]) {return;}
+    if(as_mouseDX[p]*as_mouseDX[p]+as_mouseDY[p]*as_mouseDY[p]<0.04) {return;}
+    want=ATan2(as_mouseDY[p],as_mouseDX[p]);
+    as_aim[p]=want;
+}
+void AS_MouseMoved (int p, fixed wx, fixed wy) {
+    point here;
+    if(!AS_Person(p) || as_m[p]==null) {return;}
+    here=UnitGetPosition(as_m[p]);
+    as_mouseDX[p]=wx-PointGetX(here);as_mouseDY[p]=wy-PointGetY(here);as_mouseSeen[p]=true;
+}
+point AS_AimPoint (int p) {
+    point here=UnitGetPosition(as_m[p]);
+    if(as_view[p]==0 && as_mouseSeen[p]) {return Point(PointGetX(here)+as_mouseDX[p],PointGetY(here)+as_mouseDY[p]);}
+    return PointWithOffsetPolar(here,8.0,as_aim[p]);
+}
+
+// ---- movement ---------------------------------------------------------
+void AS_Walk (int p, fixed rate) {
+    actor a=libNtve_gf_MainActorofUnit(as_m[p]);
+    if(rate<0.25) {
+        if(as_walking[p]) {as_walking[p]=false;ActorSend(a,"AnimClear ASWalk");}
+        return;
+    }
+    if(!as_walking[p]) {as_walking[p]=true;ActorSend(a,"AnimPlay ASWalk Walk PlayForever");as_walkRate[p]=0.0;}
+    if(AbsF(rate-as_walkRate[p])>0.15) {as_walkRate[p]=rate;ActorSend(a,"AnimSetTimeScale ASWalk "+FixedToString(AS_Clamp(rate/2.2,0.5,1.8),2));}
+}
+void AS_Move (int p) {
+    fixed f=0.0;fixed s=0.0;fixed wx;fixed wy;fixed k;fixed speed=AS_RUN;fixed yaw;fixed x;fixed y;fixed nx;fixed ny;fixed len;point here;
+    if(!as_alive[p]) {return;}
+    if(as_key[p][0]) {f+=1.0;}if(as_key[p][2]) {f-=1.0;}
+    if(as_key[p][3]) {s+=1.0;}if(as_key[p][1]) {s-=1.0;}
+    if(f!=0.0 && s!=0.0) {f*=0.7071;s*=0.7071;}
+    // Firing weighs the marine down a little; the minigun a lot.
+    if(as_now-as_lastShot[p]<0.2) {speed*=as_gun[as_slot[p]].recoilSlow;}
+    if(as_slot[p]==7 && as_spin[p]>0.2) {speed*=0.7;}
+    if(as_view[p]==0) {wx=s*speed;wy=f*speed;}
+    else {
+        yaw=CameraGetYaw(p);
+        wx=(Cos(yaw)*f+Sin(yaw)*s)*speed;wy=(Sin(yaw)*f-Cos(yaw)*s)*speed;
+    }
+    // A short ramp to full speed and to a stop: about a tenth of a second.
+    k=MinF(1.0,AS_DT*14.0);
+    as_mvX[p]+=(wx-as_mvX[p])*k;as_mvY[p]+=(wy-as_mvY[p])*k;
+    here=UnitGetPosition(as_m[p]);x=PointGetX(here);y=PointGetY(here);
+    nx=x+(as_mvX[p]+as_knockX[p])*AS_DT;ny=y+(as_mvY[p]+as_knockY[p])*AS_DT;
+    as_knockX[p]*=0.7;as_knockY[p]*=0.7;
+    if(AbsF(as_knockX[p])+AbsF(as_knockY[p])<0.05) {as_knockX[p]=0.0;as_knockY[p]=0.0;}
+    if(!AS_Free(nx,ny,AS_MARINE_R)) {
+        // Slide along the wall: keep whichever half of the step is free.
+        if(AS_Free(nx,y,AS_MARINE_R)) {ny=y;as_mvY[p]=0.0;}
+        else if(AS_Free(x,ny,AS_MARINE_R)) {nx=x;as_mvX[p]=0.0;}
+        else {nx=x;ny=y;as_mvX[p]=0.0;as_mvY[p]=0.0;}
+    }
+    len=SquareRoot((nx-x)*(nx-x)+(ny-y)*(ny-y));
+    if(len>0.002) {UnitSetPosition(as_m[p],Point(nx,ny),true);}
+    AS_Walk(p,len/AS_DT);
+}
+void AS_Face (int p) {
+    libNtve_gf_MakeModelFaceAngle(libNtve_gf_MainActorofUnit(as_m[p]),as_aim[p]);
+    UnitSetFacing(as_m[p],as_aim[p],AS_DT);
+}
+// Flashlight, personal light, laser sight and muzzle light ride with the marine.
+void AS_Attachments (int p) {
+    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed d;fixed gx;fixed gy;
+    gx=x+Cos(as_aim[p])*0.45+Cos(as_aim[p]-90.0)*0.12;gy=y+Sin(as_aim[p])*0.45+Sin(as_aim[p]-90.0)*0.12;
+    if(as_lightOn[p]) {
+        UnitSetPosition(as_torch[p],Point(x+Cos(as_aim[p])*0.3,y+Sin(as_aim[p])*0.3),true);UnitSetFacing(as_torch[p],as_aim[p],AS_DT);
+        UnitSetPosition(as_glow[p],here,true);
+    }
+    UnitSetPosition(as_muzzle[p],PointWithOffsetPolar(here,0.8,as_aim[p]),true);
+    libNtve_gf_ShowHideUnit(as_muzzle[p],as_now-as_lastShot[p]<0.07 && as_slot[p]!=6 && as_slot[p]!=10);
+    // The laser sight stops at the first bulkhead.
+    d=AS_RayWall(gx,gy,as_aim[p],16.0);
+    UnitSetPosition(as_laser[p],Point(gx,gy),true);UnitSetFacing(as_laser[p],as_aim[p],0.0);
+    AS_AimFx(as_laser[p],as_aim[p]);
+    if(as_lightOn[p]) {libNtve_gf_MakeModelFaceAngle(libNtve_gf_MainActorofUnit(as_torch[p]),as_aim[p]);}
+    UnitSetScale(as_laser[p],d*100.0,100.0,100.0);
+}
+
+// ---- health -----------------------------------------------------------
+void AS_HurtMarine (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock) {
+    point here;fixed ang;
+    if(!as_alive[p]) {return;}
+    here=UnitGetPosition(as_m[p]);
+    if(knock>0.0) {
+        ang=ATan2(PointGetY(here)-fromY,PointGetX(here)-fromX);
+        as_knockX[p]+=Cos(ang)*knock;as_knockY[p]+=Sin(ang)*knock;
+    }
+    if(as_god[p]) {dmg=0.0;}
+    as_hp[p]-=dmg;as_hurtFlash[p]=as_now;
+    AS_Fx("ASFxBlood",PointGetX(here),PointGetY(here),0.5,RandomFixed(0.0,360.0));
+    if(dmg>=10.0) {CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.05,2.5,40.0,0.18);}
+    if(as_hp[p]<=0.0) {AS_MarineDie(p);return;}
+    UnitSetPropertyFixed(as_m[p],c_unitPropLife,MaxF(1.0,as_hp[p]));
+}
+void AS_MarineDie (int p) {
+    point here=UnitGetPosition(as_m[p]);
+    as_alive[p]=false;as_hp[p]=0.0;as_respawnAt[p]=as_now+4.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;
+    AS_Fx("ASDieMarine",PointGetX(here),PointGetY(here),0.0,as_aim[p]);
+    AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);
+    libNtve_gf_ShowHideUnit(as_m[p],false);libNtve_gf_ShowHideUnit(as_muzzle[p],false);
+    UnitSetPosition(as_m[p],Point(@spawnX@,@spawnY@),false);
+    AS_TorchShow(p);
+    AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying in 4 seconds");
+}
+void AS_MarinePulse (int p) {
+    point here;int i;
+    if(!as_alive[p]) {
+        if(as_now>=as_respawnAt[p]) {AS_MarineSpawn(p);}
+        return;
+    }
+    if(as_infestUntil[p]>as_now) {
+        // Parasite infestation eats away until it runs its course or a medkit burns it out.
+        AS_HurtMarine(p,5.0*AS_DT,0.0,0.0,0.0);
+    }
+    here=UnitGetPosition(as_m[p]);
+    // Ammo crates refill every reserve.
+    for(i=0;i<as_ammoCount;i+=1) {
+        if(DistanceBetweenPoints(here,as_ammoAt[i])<1.3 && as_now-as_ammoMsgAt[p]>3.0) {AS_Resupply(p);}
+    }
+}

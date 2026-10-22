@@ -1,0 +1,3 @@
+[submodule "AlienSwarm"]
+	path = AlienSwarm
+	url = https://github.com/NicolasDe/AlienSwarm

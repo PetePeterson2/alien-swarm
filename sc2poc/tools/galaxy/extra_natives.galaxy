@@ -1,0 +1,11 @@
+// Declarations the vendored 5.0.16 header set is missing.
+//
+// tools/galaxy/headers/ is a snapshot of the Editor's own headers and has
+// known gaps (LESSONS.md: "static Galaxy checking with older cached headers
+// has known gaps"). Anything this project calls that the snapshot does not
+// declare is written out here, with the evidence that it is real, so
+// galaxy_check.py does not have to be told to ignore it.
+
+// Called by every Editor-generated MapScript.galaxy as the first statement of
+// InitMap; see the generated scripts of any map built by 5.0.16.
+void libNtve_InitLib ();

@@ -1,0 +1,286 @@
+﻿"""The derelict: one deck of the colony transport USCSS Halcyon Drift.
+
+Everything about the place lives here: the rooms and corridors (carved out of
+solid hull on a one-unit grid), what each room is dressed with, where the
+lamps hang, where the aliens come from. build.py turns it into terrain, hull
+meshes, placed doodads, the painted pathing layer and the Galaxy tables.
+
+Coordinates are map units, x east, y north. Cells are 1 x 1.
+"""
+import math
+import numpy as np
+
+W, H = 96, 80                 # map size (multiples of 8)
+FLOOR = 8.0                   # terrain height of the deck
+WALL_H = 2.5                  # bulkhead height above the deck
+
+# Rooms and corridors: name, (x0, y0, x1, y1) exclusive, kind.
+# Kinds drive texturing and dressing: bay, hall, mess, reactor, cargo, lab, hive, duct.
+AREAS = [
+    ('Docking Bay',        (8, 8, 28, 22), 'bay'),
+    ('South Passage',      (15, 22, 19, 36), 'hall'),
+    ('Armoury',            (19, 27, 25, 33), 'bay'),
+    ('Crew Mess',          (6, 36, 26, 50), 'mess'),
+    ('Mess Passage',       (26, 41, 34, 45), 'hall'),
+    ('Reactor Core',       (34, 30, 58, 54), 'reactor'),
+    ('Service Way',        (28, 14, 64, 18), 'hall'),
+    ('Reactor Lift',       (42, 18, 46, 30), 'hall'),
+    ('Cargo Hold',         (64, 8, 88, 30), 'cargo'),
+    ('Cargo Spur',         (58, 40, 70, 44), 'hall'),
+    ('Cargo Ramp',         (66, 30, 70, 40), 'hall'),
+    ('Lab Passage',        (58, 48, 66, 52), 'hall'),
+    ('Xenobiology Lab',    (64, 48, 86, 70), 'lab'),
+    ('Hive Passage',       (42, 54, 46, 62), 'hive'),
+    ('The Nest',           (30, 60, 56, 74), 'hive'),
+    ('Lab Breach',         (56, 63, 64, 67), 'hive'),
+    ('Maintenance Duct',   (10, 50, 12, 68), 'duct'),
+    ('Duct Crossing',      (10, 66, 30, 68), 'duct'),
+]
+# Solid blocks inside rooms: pillars, the reactor's shielding, machinery.
+BLOCKS = [
+    (44, 40, 48, 44),                                      # reactor core housing
+    (38, 34, 40, 36), (52, 34, 54, 36), (38, 48, 40, 50), (52, 48, 54, 50),   # reactor pylons
+    (72, 14, 74, 24), (78, 14, 80, 24),                    # cargo racks
+    (14, 42, 18, 44),                                      # mess serving counter
+    (74, 58, 76, 62),                                      # lab partition
+    (40, 66, 42, 68), (46, 70, 48, 72),                    # nest pillars
+]
+
+SPAWN = (20.0, 12.5)          # the marines step off the dropship here
+SPAWN_FACING = 45.0
+
+# Lamps (x, y, kind, flicker): kinds are white, cold, red, green, orange, purple. Flicker
+# 0 steady, 1 failing (long dark spells), 2 sputtering, 3 alarm pulse.
+LIGHTS = [
+    (12.0, 10.0, 'white', 0), (24.0, 10.0, 'white', 2), (12.0, 20.0, 'cold', 0), (24.0, 20.0, 'white', 0),
+    (17.0, 25.0, 'white', 1), (17.0, 31.0, 'red', 3), (22.0, 30.0, 'cold', 0),
+    (9.0, 39.0, 'white', 2), (22.0, 39.0, 'white', 0), (9.0, 47.0, 'white', 1), (22.0, 47.0, 'orange', 2),
+    (30.0, 43.0, 'red', 3),
+    (46.0, 42.0, 'cold', 0), (37.0, 33.0, 'white', 0), (55.0, 33.0, 'white', 2), (37.0, 51.0, 'white', 1), (55.0, 51.0, 'white', 0),
+    (40.0, 42.0, 'cold', 0), (52.0, 42.0, 'cold', 0),
+    (33.0, 16.0, 'white', 1), (44.0, 16.0, 'white', 0), (55.0, 16.0, 'red', 3), (44.0, 24.0, 'white', 2),
+    (68.0, 11.0, 'white', 0), (84.0, 11.0, 'white', 1), (68.0, 27.0, 'orange', 2), (84.0, 27.0, 'white', 0), (76.0, 19.0, 'white', 2),
+    (63.0, 42.0, 'red', 3), (68.0, 35.0, 'white', 1),
+    (61.0, 50.0, 'white', 2), (68.0, 52.0, 'green', 0), (82.0, 52.0, 'green', 0), (68.0, 66.0, 'green', 1), (82.0, 66.0, 'cold', 2), (75.0, 64.0, 'green', 0),
+    (44.0, 58.0, 'purple', 0), (34.0, 63.0, 'purple', 1), (52.0, 63.0, 'purple', 0), (34.0, 71.0, 'purple', 2), (52.0, 71.0, 'purple', 0), (43.0, 69.0, 'orange', 2),
+    (60.0, 65.0, 'red', 3),
+    (11.0, 55.0, 'red', 3), (11.0, 63.0, 'white', 1), (20.0, 67.0, 'white', 2),
+]
+
+# Where the director brings aliens in from (vents, hatches, holes in the hull): x, y, room.
+VENTS = [
+    (27.0, 9.0), (9.0, 21.0), (24.0, 49.0), (7.0, 37.0), (35.0, 31.0), (57.0, 53.0), (57.0, 31.0),
+    (87.0, 9.0), (87.0, 29.0), (65.0, 29.0), (85.0, 69.0), (65.0, 69.0), (31.0, 73.0), (55.0, 73.0),
+    (31.0, 61.0), (11.0, 67.0), (63.0, 15.0), (29.0, 17.0),
+]
+# Egg clusters: hatch parasites when a marine comes close.
+EGGS = [(36.0, 70.0), (37.5, 71.0), (50.0, 71.5), (51.0, 70.0), (49.0, 62.0), (33.0, 64.5), (80.0, 68.0), (84.0, 60.0), (70.0, 68.5)]
+# Biomass growths (burn them with the flamer, or shoot them a long time): x, y, radius.
+BIOMASS = [(44.0, 60.5, 1.4), (60.0, 65.0, 1.3), (70.0, 54.0, 1.0)]
+# Ammo crates: walk over to refill.
+AMMO = [(22.0, 30.5), (46.0, 32.0), (66.5, 12.0), (60.5, 42.0), (25.0, 38.0)]
+
+# Room dressing: (model, x, y, facing degrees, scale, solid radius or 0)
+PROPS = [
+    # Docking bay: the dropship, crates, deck markings.
+    ('Hercules', 13.5, 15.0, 30.0, 0.75, 1.6),
+    ('BattleStation_Line_Decals', 20.0, 15.0, 0.0, 1.0, 0.0),
+    ('DOM_Crate', 25.5, 20.0, 15.0, 0.9, 0.7), ('DOM_Crate', 26.5, 18.5, 80.0, 0.9, 0.7),
+    ('StarshipContainers', 25.5, 10.5, 0.0, 0.6, 1.0),
+    ('SpacePlatformCautionLights', 9.0, 15.0, 90.0, 1.0, 0.0),
+    ('DOM_Groundlights', 20.0, 9.0, 0.0, 1.0, 0.0),
+    # Armoury.
+    ('DOM_GunRacks', 23.5, 32.2, 180.0, 0.8, 0.0), ('DOM_LabCrates', 20.5, 28.0, 0.0, 0.8, 0.0),
+    # Crew mess: tables, a cabinet, signs of a last stand.
+    ('ValhallaTable', 10.0, 40.0, 0.0, 0.8, 0.8), ('ValhallaTable', 10.0, 46.0, 90.0, 0.8, 0.8),
+    ('ValhallaTable', 21.0, 46.0, 30.0, 0.8, 0.8), ('CastanarTable', 21.5, 40.0, 0.0, 0.8, 0.0),
+    ('ValhallaCabinet', 7.0, 48.5, 90.0, 0.8, 0.0), ('BloodSplats', 13.0, 38.5, 0.0, 1.2, 0.0),
+    ('DOM_CeilingDebris_Beams', 19.0, 37.5, 70.0, 0.8, 0.0), ('SpacePlatformWallDebris', 7.5, 43.0, 0.0, 0.8, 0.0),
+    ('ZergCarcasses', 15.0, 47.0, 0.0, 0.7, 0.0),
+    # Reactor core.
+    ('Moebius_Reactor', 46.0, 42.0, 0.0, 0.55, 0.0),
+    ('SpacePlatformGenerator', 36.5, 42.0, 90.0, 0.7, 0.0), ('SpacePlatformGenerator', 55.5, 42.0, 270.0, 0.7, 0.0),
+    ('ElectricalArcs', 44.0, 39.5, 0.0, 0.8, 0.0), ('ElectricalArcs', 48.5, 44.5, 0.0, 0.8, 0.0),
+    ('SpacePlatformSteamVent', 40.0, 32.0, 0.0, 0.8, 0.0), ('SpacePlatformSteamVent', 52.0, 52.0, 0.0, 0.8, 0.0),
+    ('DOM_Ground_Grate', 46.0, 36.0, 0.0, 1.0, 0.0), ('DOM_Ground_Grate', 46.0, 48.0, 0.0, 1.0, 0.0),
+    ('MoebiusLabConsoles', 35.5, 38.0, 90.0, 0.7, 0.0), ('MoebiusLabConsoles', 56.5, 46.0, 270.0, 0.7, 0.0),
+    # Service way and lift.
+    ('SpacePlatformSteamVent', 38.0, 15.0, 0.0, 0.7, 0.0), ('DOM_Fire_Large', 58.5, 16.5, 0.0, 0.5, 0.0),
+    ('SmokeMedium', 58.5, 16.5, 0.0, 0.6, 0.0),
+    # Cargo hold.
+    ('StarshipContainers', 76.0, 12.0, 90.0, 0.6, 0.0), ('StarshipContainers', 76.0, 26.0, 90.0, 0.6, 0.0),
+    ('DOM_Crate', 67.0, 22.0, 10.0, 1.0, 0.7), ('DOM_Crate', 68.2, 23.4, 50.0, 1.0, 0.7), ('DOM_Crate', 84.0, 16.0, 0.0, 1.0, 0.7),
+    ('DOM_Crate', 85.0, 22.5, 30.0, 1.0, 0.7), ('MoebiusLabZergCrates', 83.0, 27.0, 0.0, 0.8, 0.0),
+    ('DOM_RocketPallet', 69.0, 12.0, 0.0, 0.7, 0.0), ('SpacePlatformCablesLargeZerged', 87.0, 19.0, 90.0, 0.6, 0.0),
+    # Xenobiology lab.
+    ('CastanarStasisTube', 67.0, 58.0, 0.0, 0.7, 0.6), ('CastanarStasisTube', 67.0, 62.0, 0.0, 0.7, 0.6),
+    ('CastanarStasisTubeDebris', 67.0, 66.0, 0.0, 0.7, 0.0), ('CastanarStasisTube', 84.0, 56.0, 0.0, 0.7, 0.6),
+    ('MoebiusLab_DissectionTable', 80.0, 62.0, 90.0, 0.7, 0.7), ('CastanarWorkstation', 85.0, 64.0, 270.0, 0.7, 0.0),
+    ('CastanarHoloProjector', 79.0, 53.0, 0.0, 0.7, 0.0), ('DOM_LabConsoles', 70.0, 49.5, 0.0, 0.7, 0.0),
+    ('CastanarMonitorWall', 76.0, 69.3, 180.0, 0.7, 0.0), ('CocoonedColonists', 84.5, 68.0, 220.0, 0.6, 0.0),
+    ('SplatAliveInside', 72.0, 66.0, 0.0, 0.8, 0.0),
+    # The nest.
+    ('CocoonedColonists', 32.0, 72.0, 160.0, 0.7, 0.0), ('CocoonedColonists', 54.0, 61.5, 20.0, 0.7, 0.0),
+    ('CreepPods', 38.0, 63.0, 0.0, 0.8, 0.0), ('CreepPods', 52.0, 67.0, 0.0, 0.8, 0.0), ('CreepPods', 44.0, 72.0, 0.0, 0.8, 0.0),
+    ('SpacePlatformCreepedDoodads', 47.0, 64.0, 0.0, 0.8, 0.0), ('ZergCarcasses', 36.0, 66.0, 40.0, 0.8, 0.0),
+    ('SplatAliveInside', 43.0, 64.0, 0.0, 1.0, 0.0),
+    # Ducts.
+    ('SpacePlatformSteamVent', 11.0, 59.0, 0.0, 0.6, 0.0), ('SpaceSteamJet', 25.0, 67.0, 0.0, 0.5, 0.0),
+]
+
+
+def carve():
+    """(floor bool[H, W], room index int[H, W] with -1 for hull)."""
+    floor = np.zeros((H, W), bool)
+    room = np.full((H, W), -1, int)
+    for i, (_, (x0, y0, x1, y1), _) in enumerate(AREAS):
+        floor[y0:y1, x0:x1] = True
+        room[y0:y1, x0:x1] = i
+    # Rooms claim the cells where the corridors run into them.
+    for i, (_, (x0, y0, x1, y1), kind) in enumerate(AREAS):
+        if kind != 'hall' and kind != 'duct':
+            room[y0:y1, x0:x1] = i
+    for x0, y0, x1, y1 in BLOCKS:
+        floor[y0:y1, x0:x1] = False
+    return floor, room
+
+
+def kind_at(room, x, y):
+    i = room[int(y), int(x)]
+    return AREAS[i][2] if i >= 0 else 'hull'
+
+
+def blocked(floor):
+    """Collision cells: the hull plus every solid prop's footprint."""
+    solid = ~floor
+    for model, x, y, rot, scale, rad in PROPS:
+        if rad <= 0:
+            continue
+        for cy in range(int(y - rad), int(y + rad) + 1):
+            for cx in range(int(x - rad), int(x + rad) + 1):
+                nx, ny = max(cx, min(x, cx + 1)), max(cy, min(y, cy + 1))
+                if math.hypot(nx - x, ny - y) < rad - 0.15:
+                    solid[cy, cx] = True
+    return solid
+
+
+def wall_texture(kind, x, y, side):
+    """Which panel a wall face shows: chosen per two-unit bay so panels continue."""
+    if kind in ('hive',):
+        return 'wall_hive'
+    h = (int(x // 2) * 73856093 ^ int(y // 2) * 19349663 ^ side * 83492791) & 0xffff
+    if kind == 'lab' and h % 5 == 0:
+        return 'wall_hive'
+    table = {'bay': ['wall_plain0', 'wall_plain0', 'wall_pipes2', 'wall_light5', 'wall_vent3', 'wall_alarm6'],
+             'hall': ['wall_plain0', 'wall_pipes2', 'wall_vent3', 'wall_plain1', 'wall_light5', 'wall_pipes2'],
+             'duct': ['wall_pipes2', 'wall_vent3', 'wall_pipes2', 'wall_plain1'],
+             'mess': ['wall_plain1', 'wall_plain1', 'wall_screen4', 'wall_light5', 'wall_plain0'],
+             'reactor': ['wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_pipes2'],
+             'cargo': ['wall_plain1', 'wall_plain0', 'wall_vent3', 'wall_light5', 'wall_plain1'],
+             'lab': ['wall_plain0', 'wall_screen4', 'wall_light5', 'wall_screen4', 'wall_plain0']}
+    names = table.get(kind, table['hall'])
+    return names[h % len(names)]
+
+
+CHUNK = 24
+
+
+def hull_meshes(floor, room):
+    """{chunk name: ShipModel} for walls, caps and ceilings; plus the chunk origins."""
+    from tools.shipkit import ShipModel, NO_SHADOW_CAST
+    models = {}
+    def model_for(x, y):
+        cx, cy = int(x) // CHUNK, int(y) // CHUNK
+        key = 'Hull%d_%d' % (cx, cy)
+        if key not in models:
+            models[key] = ShipModel(key, (cx * CHUNK, cy * CHUNK, 0.0))
+        return models[key]
+    # Distance (in cells) from each hull cell to the nearest floor, to cap only what is seen.
+    near = np.zeros((H, W), bool)
+    for dy in range(-3, 4):
+        for dx in range(-3, 4):
+            near |= np.roll(np.roll(floor, dy, 0), dx, 1)
+    Z = WALL_H
+    for y in range(H):
+        for x in range(W):
+            if floor[y, x]:
+                # Ceiling over the deck, facing down: seen from a camera under it, culled from above.
+                m = model_for(x, y)
+                k = room[y, x]
+                tex = 'ceiling' if (x * 7 + y * 13) % 5 == 0 and kind_at(room, x, y) not in ('hive',) else 'ceiling_dark'
+                m.quad((tex, False, NO_SHADOW_CAST), (x, y, Z), (x, y + 1, Z), (x + 1, y + 1, Z), (x + 1, y, Z),
+                       [((x % 4) / 4, (y % 4) / 4), ((x % 4) / 4, (y % 4 + 1) / 4), ((x % 4 + 1) / 4, (y % 4 + 1) / 4), ((x % 4 + 1) / 4, (y % 4) / 4)])
+                continue
+            if not near[y, x]:
+                continue
+            m = model_for(x, y)
+            m.quad(('cap', False, 0), (x, y, Z), (x + 1, y, Z), (x + 1, y + 1, Z), (x, y + 1, Z),
+                   [(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)])
+            # Faces toward each open neighbour (counter-clockwise seen from the open side).
+            for side, (dx, dy) in enumerate([(0, -1), (1, 0), (0, 1), (-1, 0)]):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < W and 0 <= ny < H) or not floor[ny, nx]:
+                    continue
+                kind = kind_at(room, nx, ny)
+                if side == 0:   # face south at y
+                    a, b = (x, y, 0), (x + 1, y, 0); along = x
+                elif side == 1:  # face east at x+1
+                    a, b = (x + 1, y, 0), (x + 1, y + 1, 0); along = y
+                elif side == 2:  # face north at y+1
+                    a, b = (x + 1, y + 1, 0), (x, y + 1, 0); along = -x - 1
+                else:           # face west at x
+                    a, b = (x, y + 1, 0), (x, y, 0); along = -y - 1
+                tex = wall_texture(kind, nx, ny, side)
+                u0 = (along % 2) / 2.0
+                c = (b[0], b[1], Z); d = (a[0], a[1], Z)
+                m.quad((tex, False, 0), a, b, c, d, [(u0, 1.0), (u0 + 0.5, 1.0), (u0 + 0.5, 0.0), (u0, 0.0)])
+    return models
+
+
+# Terrain layers: index -> texture (all stock).
+TEXTURES = ['BraxisAlphaDarkPlates', 'BraxisAlphaPlates', 'CastanarGrating', 'BraxisAlphaRust',
+            'BraxisAlphaWreckedPlates', 'AvernusPanels', 'BraxisAlphaMesh', 'CharSponge']
+DARK, PLATES, GRATE, RUST, WRECK, PANEL, MESH, ORGANIC = range(8)
+ROOM_FLOOR = {'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK}
+
+
+def terrain_masks(floor, room):
+    from tools.shipkit import _noise
+    M = 8
+    masks = np.zeros((8, H * M, W * M), np.float32)
+    base = np.zeros((H, W), int)
+    for y in range(H):
+        for x in range(W):
+            base[y, x] = ROOM_FLOOR[kind_at(room, x, y)] if floor[y, x] else DARK
+    big = np.repeat(np.repeat(base, M, 0), M, 1)
+    for k in range(8):
+        masks[k] = (big == k).astype(np.float32)
+    # Soften room edges a little.
+    from PIL import Image, ImageFilter
+    for k in range(8):
+        im = Image.fromarray((masks[k] * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(3))
+        masks[k] = np.asarray(im).astype(np.float32) / 255
+    # Rust and wreckage in patches everywhere; organic growth around the nest and lab.
+    rust = np.clip((_noise(0, 120, 31, 4, (H * M, W * M)) - 0.58) * 4, 0, 1)
+    wreck = np.clip((_noise(0, 90, 32, 4, (H * M, W * M)) - 0.62) * 4, 0, 1)
+    masks *= (1 - 0.8 * rust)[None]; masks[RUST] += 0.8 * rust
+    masks *= (1 - 0.7 * wreck)[None]; masks[WRECK] += 0.7 * wreck
+    yy, xx = np.mgrid[0:H * M, 0:W * M] / M
+    org = np.zeros((H * M, W * M), np.float32)
+    for cx, cy, r in [(43, 67, 14), (75, 62, 7), (60, 65, 4), (44, 58, 4)]:
+        org = np.maximum(org, np.clip(1 - np.hypot(xx - cx, yy - cy) / r, 0, 1))
+    org = np.clip(org * 1.6 * (0.5 + _noise(0, 40, 33, 3, (H * M, W * M))), 0, 1)
+    masks *= (1 - org)[None]; masks[ORGANIC] += org
+    total = masks.sum(0) + 1e-6
+    masks = masks / total[None]
+    q = np.rint(masks * 15).astype(np.uint8)
+    dominant = np.zeros((H, W), np.uint8)
+    for y in range(H):
+        for x in range(W):
+            dominant[y, x] = int(np.argmax(masks[:, y * M + 4, x * M + 4]))
+    return q, dominant
+
+
+def galaxy_tables(solid):
+    """Collision rows for the script: one string per row, '1' blocked."""
+    return [''.join('1' if solid[y, x] else '0' for x in range(W)) for y in range(H)]

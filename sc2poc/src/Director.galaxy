@@ -1,0 +1,107 @@
+// =====================================================================
+// The director: sleeping wanderers placed through the deck at the start,
+// then hordes pouring out of the vents every 45-70 seconds, after Alien
+// Swarm's asw_director (intensity-paced hordes, wanderers in between).
+// Developer keys spawn any alien at the cursor (Ctrl + 1..9, Ctrl + J a ripper, Ctrl + 0 a horde).
+// =====================================================================
+
+
+
+point AS_RoomPoint (int r) {
+    int k;fixed x;fixed y;
+    for(k=0;k<20;k+=1) {
+        x=RandomFixed(as_roomX0[r]+0.8,as_roomX1[r]-0.8);y=RandomFixed(as_roomY0[r]+0.8,as_roomY1[r]-0.8);
+        if(AS_Free(x,y,0.5)) {return Point(x,y);}
+    }
+    return Point((as_roomX0[r]+as_roomX1[r])*0.5,(as_roomY0[r]+as_roomY1[r])*0.5);
+}
+void AS_Populate (int r, int kind, int count) {
+    int k;point q;
+    for(k=0;k<count;k+=1) {q=AS_RoomPoint(r);AS_SpawnNear(kind,PointGetX(q),PointGetY(q),false);}
+}
+// The deck as the marines find it.
+void AS_DirectorInit () {
+    int r;
+    for(r=0;r<as_roomCount;r+=1) {
+        if(as_roomKind[r]=="mess") {AS_Populate(r,AS_DRONE,4);AS_Populate(r,AS_BUZZER,2);}
+        if(as_roomKind[r]=="reactor") {AS_Populate(r,AS_DRONE,5);AS_Populate(r,AS_RANGER,2);AS_Populate(r,AS_BOOMER,1);}
+        if(as_roomKind[r]=="cargo") {AS_Populate(r,AS_DRONE,4);AS_Populate(r,AS_SHIELDBUG,1);AS_Populate(r,AS_UBER,1);}
+        if(as_roomKind[r]=="lab") {AS_Populate(r,AS_PARASITE,3);AS_Populate(r,AS_HARVESTER,1);AS_Populate(r,AS_RANGER,1);AS_Populate(r,AS_RIPPER,1);}
+        if(as_roomKind[r]=="hive") {AS_Populate(r,AS_DRONE,5);AS_Populate(r,AS_MORTAR,1);AS_Populate(r,AS_HARVESTER,1);AS_Populate(r,AS_RIPPER,2);}
+        if(as_roomKind[r]=="hall" && RandomInt(0,1)==0) {AS_Populate(r,AS_DRONE,2);}
+        if(as_roomKind[r]=="duct") {AS_Populate(r,AS_PARASITE,2);}
+    }
+    as_nextHorde=as_now+50.0;
+}
+// A vent out of sight of the marines and not too far from them.
+int AS_PickVent () {
+    int v;int p;int best= -1;fixed score;fixed bestScore= -1000.0;fixed d;fixed nearest;point mq;bool seen;
+    for(v=0;v<as_ventCount;v+=1) {
+        nearest=1000.0;seen=false;
+        for(p=1;p<=AS_PLAYERS;p+=1) {
+            if(!AS_Person(p) || !as_alive[p]) {continue;}
+            mq=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(mq,as_vent[v]);
+            nearest=MinF(nearest,d);
+            if(d<14.0 && AS_LineClear(PointGetX(mq),PointGetY(mq),PointGetX(as_vent[v]),PointGetY(as_vent[v]))) {seen=true;}
+        }
+        score=RandomFixed(0.0,6.0)-AbsF(nearest-20.0);
+        if(seen || nearest<9.0) {score-=100.0;}
+        if(score>bestScore) {bestScore=score;best=v;}
+    }
+    return best;
+}
+int[5] as_hordeVent;
+void AS_StartHorde () {
+    int p;int v=AS_PickVent();
+    if(v<0) {return;}
+    as_wave+=1;
+    as_hordeVent[0]=v;as_hordeVent[1]=AS_PickVent();
+    as_hordeLeft=MinI(32,12+as_wave*3);as_hordeUntil=as_now+12.0;as_hordeNextSpawn=as_now+2.5;
+    as_nextHorde=as_now+RandomFixed(45.0,70.0);
+    if(as_light==0) {GameSetLighting("ASAlarm",1.5);}
+    SoundPlay(SoundLink("Alert_BaseUnderAttackKlaxon",-1),PlayerGroupAll(),90.0,0.0);
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Announce(p,"SWARM INCOMING","Wave "+IntToString(as_wave)+"  -  "+IntToString(as_hordeLeft)+" contacts on the motion tracker");}}
+}
+int AS_HordeKind () {
+    int r=RandomInt(1,100);
+    if(r>=95) {return AS_RIPPER;}
+    if(as_wave>=3 && r<=4) {return AS_SHIELDBUG;}
+    if(as_wave>=2 && r<=10) {return AS_UBER;}
+    if(r<=18) {return AS_PARASITE;}
+    if(r<=26) {return AS_BUZZER;}
+    if(as_wave>=2 && r<=30) {return AS_BOOMER;}
+    if(r<=34) {return AS_RANGER;}
+    return AS_DRONE;
+}
+void AS_DirectorPulse () {
+    int v;int k;point q;
+    if(as_hordeLeft>0 && as_now>=as_hordeNextSpawn) {
+        as_hordeNextSpawn=as_now+0.22;
+        v=as_hordeVent[as_hordeLeft%2];
+        if(v<0) {v=as_hordeVent[0];}
+        if(as_alive2<70) {
+            q=as_vent[v];
+            k=AS_SpawnNear(AS_HordeKind(),PointGetX(q)+RandomFixed(-0.4,0.4),PointGetY(q)+RandomFixed(-0.4,0.4),true);
+            AS_Fx("ASFxBlood",PointGetX(q),PointGetY(q),0.2,0.0);
+        }
+        as_hordeLeft-=1;
+    }
+    if(as_hordeUntil>0.0 && as_now>as_hordeUntil && as_hordeLeft<=0) {
+        as_hordeUntil=0.0;
+        if(as_light==0) {GameSetLighting(as_lightId[as_light],3.0);}
+    }
+    if(!as_director) {return;}
+    if(as_now>=as_nextHorde && as_hordeLeft<=0) {AS_StartHorde();}
+    // Between hordes a few wanderers drift in so the deck never empties.
+    if(as_tick%160==0 && as_alive2<10) {
+        v=AS_PickVent();
+        if(v>=0) {for(k=0;k<3;k+=1) {AS_SpawnNear(AS_DRONE,PointGetX(as_vent[v]),PointGetY(as_vent[v]),RandomInt(0,1)==0);}}
+    }
+}
+void AS_DevSpawn (int p, int kind) {
+    point at=AS_AimPoint(p);int i;
+    if(kind==0) {as_nextHorde=as_now;as_director=true;AS_StartHorde();return;}
+    if(AS_Solid(PointGetX(at),PointGetY(at))) {at=PointWithOffsetPolar(UnitGetPosition(as_m[p]),3.0,as_aim[p]);}
+    i=AS_SpawnNear(kind,PointGetX(at),PointGetY(at),true);
+    if(i>=0) {AS_Message(p,"Spawned "+as_kindName[kind]);}
+}

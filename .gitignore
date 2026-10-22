@@ -1,0 +1,8 @@
+# Python
+__pycache__/
+*.pyc
+
+# sc2poc build outputs (regenerate with `py sc2poc/build.py`)
+sc2poc/editor/
+sc2poc/dist/*.SC2Map
+sc2poc/dist/meshes/

@@ -1,0 +1,209 @@
+// =====================================================================
+// HUD: the marine panel (health, offhand items), the weapon panel (ammo,
+// reload), the weapon bar 1..0, the mission line, announcements, the
+// crosshair of the third-person view, the damage vignette and the H help.
+// Dialogs are per player and shown only to that player.
+// =====================================================================
+
+const string AS_WHITE = "Derelict\\UI\\white.dds";
+const string AS_VIGNETTE = "Derelict\\UI\\vignette.dds";
+
+int[5] as_dMarine;
+int[5] as_dWeapon;
+int[5] as_dTop;
+int[5] as_dCenter;
+int[5] as_dHelp;
+int[5] as_dHurt;
+int[5] as_dBar;
+int[5] as_cHpFill;
+int[5] as_cHpText;
+int[5] as_cStatus;
+int[5] as_cItems;
+int[5] as_cGunName;
+int[5] as_cAmmo;
+int[5] as_cReserve;
+int[5] as_cReload;
+int[5] as_cReloadBg;
+int[5] as_cExtra;
+int[5] as_cTop1;
+int[5] as_cTop2;
+int[5] as_cTop3;
+int[5] as_cBig;
+int[5] as_cSmall;
+int[5] as_cMsg;
+int[5] as_cCross;
+int[5][11] as_cSlot;
+fixed[5] as_msgUntil;
+fixed[5] as_bigUntil;
+
+int AS_Label (int d, int p, int anchor, int x, int y, int w, int h, string style, string s) {
+    int c=DialogControlCreate(d,c_triggerControlTypeLabel);
+    DialogControlSetSize(c,PlayerGroupAll(),w,h);
+    DialogControlSetPosition(c,PlayerGroupAll(),anchor,x,y);
+    DialogControlSetPropertyAsString(c,c_triggerControlPropertyStyle,PlayerGroupAll(),style);
+    DialogControlSetPropertyAsText(c,c_triggerControlPropertyText,PlayerGroupAll(),StringToText(s));
+    return c;
+}
+int AS_Image (int d, int anchor, int x, int y, int w, int h, string image, color tint) {
+    int c=DialogControlCreate(d,c_triggerControlTypeImage);
+    DialogControlSetSize(c,PlayerGroupAll(),w,h);
+    DialogControlSetPosition(c,PlayerGroupAll(),anchor,x,y);
+    DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,PlayerGroupAll(),image);
+    DialogControlSetPropertyAsInt(c,c_triggerControlPropertyImageType,PlayerGroupAll(),c_triggerImageTypeNormal);
+    DialogControlSetPropertyAsColor(c,c_triggerControlPropertyColor,PlayerGroupAll(),tint);
+    return c;
+}
+void AS_Text (int c, int p, string s) {
+    DialogControlSetPropertyAsText(c,c_triggerControlPropertyText,AS_Me(p),StringToText(s));
+}
+int AS_Panel (int p, int w, int h, int anchor, int x, int y) {
+    int d=DialogCreate(w,h,anchor,x,y,false);
+    DialogSetImageVisible(d,false);
+    DialogSetVisible(d,AS_Me(p),true);
+    return d;
+}
+string AS_SlotShort (int w) {
+    if(w==1) {return "RIFLE";}if(w==2) {return "AUTOGUN";}if(w==3) {return "SHOTGUN";}if(w==4) {return "FLAMER";}
+    if(w==5) {return "PISTOLS";}if(w==6) {return "RAILGUN";}if(w==7) {return "MINIGUN";}if(w==8) {return "GRENADES";}
+    if(w==9) {return "TESLA";}return "SNIPER";
+}
+void AS_HudCreate (int p) {
+    int d;int w;
+    // Damage vignette, underneath everything.
+    d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);
+    AS_Image(d,c_anchorCenter,0,0,2400,1200,AS_VIGNETTE,Color(100.0,8.0,4.0));
+    DialogSetTransparency(d,100.0);DialogSetVisible(d,AS_Me(p),true);as_dHurt[p]=d;
+    // Marine panel, bottom left.
+    d=AS_Panel(p,420,140,c_anchorBottomLeft,24,24);as_dMarine[p]=d;
+    AS_Image(d,c_anchorTopLeft,0,0,420,140,AS_WHITE,Color(4.0,6.0,8.0));
+    AS_Label(d,p,c_anchorTopLeft,16,8,380,28,"ASHead","MARINE "+IntToString(p)+"  //  SPECIAL WEAPONS");
+    AS_Image(d,c_anchorTopLeft,16,44,300,22,AS_WHITE,Color(18.0,8.0,8.0));
+    as_cHpFill[p]=AS_Image(d,c_anchorTopLeft,16,44,300,22,AS_WHITE,Color(30.0,85.0,45.0));
+    as_cHpText[p]=AS_Label(d,p,c_anchorTopLeft,326,40,90,30,"ASHealth","100");
+    as_cStatus[p]=AS_Label(d,p,c_anchorTopLeft,16,72,390,26,"ASSmall","");
+    as_cItems[p]=AS_Label(d,p,c_anchorTopLeft,16,100,400,28,"ASBody","");
+    // Weapon panel, bottom right.
+    d=AS_Panel(p,440,140,c_anchorBottomRight,24,24);as_dWeapon[p]=d;
+    AS_Image(d,c_anchorTopLeft,0,0,440,140,AS_WHITE,Color(4.0,6.0,8.0));
+    as_cGunName[p]=AS_Label(d,p,c_anchorTopRight,16,8,400,30,"ASWeapon","");
+    as_cAmmo[p]=AS_Label(d,p,c_anchorTopRight,150,40,200,54,"ASAmmo","");
+    as_cReserve[p]=AS_Label(d,p,c_anchorTopRight,16,52,130,30,"ASAmmoS","");
+    as_cReloadBg[p]=AS_Image(d,c_anchorTopLeft,24,104,392,10,AS_WHITE,Color(14.0,14.0,16.0));
+    as_cReload[p]=AS_Image(d,c_anchorTopLeft,24,104,1,10,AS_WHITE,Color(100.0,72.0,24.0));
+    as_cExtra[p]=AS_Label(d,p,c_anchorTopLeft,24,112,400,26,"ASSmall","");
+    // Weapon bar, bottom centre.
+    d=AS_Panel(p,760,44,c_anchorBottom,0,28);as_dBar[p]=d;
+    for(w=1;w<=AS_WEAPONS;w+=1) {
+        as_cSlot[p][w]=AS_Label(d,p,c_anchorTopLeft,(w-1)*76,4,74,36,"ASSlot",IntToString(w%10)+" "+AS_SlotShort(w));
+    }
+    // Mission line, top left.
+    d=AS_Panel(p,700,100,c_anchorTopLeft,20,20);as_dTop[p]=d;
+    as_cTop1[p]=AS_Label(d,p,c_anchorTopLeft,0,0,700,30,"ASHead","USCSS HALCYON DRIFT  //  DECK 3  //  NO LIFE SIGNS");
+    as_cTop2[p]=AS_Label(d,p,c_anchorTopLeft,0,32,700,26,"ASBody","");
+    as_cTop3[p]=AS_Label(d,p,c_anchorTopLeft,0,60,700,26,"ASSmall","");
+    // Centre: announcements, notices, crosshair.
+    d=AS_Panel(p,1000,320,c_anchorCenter,0,-80);as_dCenter[p]=d;
+    as_cBig[p]=AS_Label(d,p,c_anchorTop,0,10,1000,60,"ASBig","");
+    as_cSmall[p]=AS_Label(d,p,c_anchorTop,0,72,1000,30,"ASHeadC","");
+    as_cMsg[p]=AS_Label(d,p,c_anchorBottom,0,20,1000,30,"ASBodyC","");
+    as_cCross[p]=AS_Label(d,p,c_anchorCenter,0,80,60,40,"ASCross","+");
+    // Help, toggled with H.
+    d=AS_Panel(p,640,600,c_anchorCenter,0,0);as_dHelp[p]=d;
+    AS_Image(d,c_anchorTopLeft,0,0,640,600,AS_WHITE,Color(3.0,4.0,6.0));
+    AS_Label(d,p,c_anchorTopLeft,30,20,580,30,"ASHeadC","CONTROLS");
+    AS_Label(d,p,c_anchorTopLeft,40,64,580,520,"ASBody",
+        "<c val=\"FFBA40\">WASD</c>  move  (screen-relative top-down, camera-relative in third person)<n/>"
+        +"<c val=\"FFBA40\">MOUSE</c>  aim 360 degrees  /  turn the camera in third person<n/>"
+        +"<c val=\"FFBA40\">LEFT MOUSE</c>  fire    <c val=\"FFBA40\">RIGHT MOUSE</c>  rifle grenade<n/>"
+        +"<c val=\"FFBA40\">R</c>  reload    <c val=\"FFBA40\">1 - 0</c>  weapons    <c val=\"FFBA40\">WHEEL</c>  zoom (top-down)<n/>"
+        +"<c val=\"FFBA40\">Q</c>  deploy sentry gun    <c val=\"FFBA40\">E</c>  medkit    <c val=\"FFBA40\">X</c>  throw flare<n/>"
+        +"<c val=\"FFBA40\">F</c>  flashlight    <c val=\"FFBA40\">V</c>  switch view: top-down / third person<n/>"
+        +"<c val=\"FFBA40\">L</c>  lighting preset    <c val=\"FFBA40\">T</c>  director on / off<n/><n/>"
+        +"<c val=\"FFBA40\">TESTING</c><n/>"
+        +"<c val=\"FFBA40\">CTRL + 1..9</c>  spawn at the cursor: drone, parasite, shieldbug, boomer,<n/>    buzzer, ranger, mortarbug, harvester, uber drone<n/>"
+        +"<c val=\"FFBA40\">CTRL + J</c>  spawn a ripper at the cursor<n/>"
+        +"<c val=\"FFBA40\">CTRL + 0</c>  send a horde now    <c val=\"FFBA40\">CTRL + G</c>  god mode    <c val=\"FFBA40\">CTRL + K</c>  kill all aliens<n/><n/>"
+        +"Shieldbugs shrug off fire from the front: flank them or use explosives.<n/>"
+        +"Biomass only burns: use the flamer. Eggs hatch when you get close.");
+    DialogSetVisible(d,AS_Me(p),false);
+    AS_HudView(p);
+}
+void AS_HudView (int p) {
+    if(as_dCenter[p]==0) {return;}
+    DialogControlSetVisible(as_cCross[p],AS_Me(p),as_view[p]==1);
+}
+void AS_Message (int p, string s) {
+    if(!AS_Person(p) || as_dCenter[p]==0) {return;}
+    AS_Text(as_cMsg[p],p,s);as_msgUntil[p]=as_now+2.5;
+}
+void AS_Announce (int p, string big, string small) {
+    if(!AS_Person(p) || as_dCenter[p]==0) {return;}
+    AS_Text(as_cBig[p],p,big);AS_Text(as_cSmall[p],p,small);as_bigUntil[p]=as_now+3.5;
+}
+void AS_HelpToggle (int p) {
+    as_help[p]=!as_help[p];
+    DialogSetVisible(as_dHelp[p],AS_Me(p),as_help[p]);
+}
+string AS_ViewName (int p) {
+    if(as_view[p]==0) {return "TOP-DOWN";}
+    return "THIRD PERSON";
+}
+void AS_HudUpdate (int p) {
+    int w=as_slot[p];int k;fixed f;string s;string col;
+    // Health.
+    f=AS_Clamp(as_hp[p]/as_hpMax[p],0.0,1.0);
+    DialogControlSetSize(as_cHpFill[p],AS_Me(p),MaxI(1,FixedToInt(300.0*f)),22);
+    if(f<0.3) {DialogControlSetPropertyAsColor(as_cHpFill[p],c_triggerControlPropertyColor,AS_Me(p),Color(90.0,20.0,15.0));}
+    else {DialogControlSetPropertyAsColor(as_cHpFill[p],c_triggerControlPropertyColor,AS_Me(p),Color(30.0,85.0,45.0));}
+    AS_Text(as_cHpText[p],p,IntToString(FixedToInt(MaxF(0.0,as_hp[p]))));
+    s="";
+    if(!as_alive[p]) {s="<c val=\"FF5040\">KIA  -  redeploying</c>";}
+    else if(as_infestUntil[p]>as_now) {s="<c val=\"90FF60\">INFESTED  -  "+FixedToString(as_infestUntil[p]-as_now,0)+" s  -  E to cure</c>";}
+    else if(as_god[p]) {s="<c val=\"8CC8FF\">GOD MODE</c>";}
+    AS_Text(as_cStatus[p],p,s);
+    AS_Text(as_cItems[p],p,"<c val=\"FFBA40\">Q</c> SENTRY x"+IntToString(as_sentries[p])+"    <c val=\"FFBA40\">E</c> MEDKIT x"+IntToString(as_medkits[p])+"    <c val=\"FFBA40\">X</c> FLARE x"+IntToString(as_flares[p]));
+    // Weapon.
+    AS_Text(as_cGunName[p],p,as_gun[w].name);
+    col="FFFFFF";if(as_mag[p][w]*4<=as_gun[w].mag) {col="FF6050";}
+    AS_Text(as_cAmmo[p],p,"<c val=\""+col+"\">"+IntToString(as_mag[p][w])+"</c>");
+    AS_Text(as_cReserve[p],p,"/ "+IntToString(as_reserve[p][w]));
+    if(as_reloadEnd[p]>0.0) {
+        f=AS_Clamp((as_now-as_reloadStart[p])/MaxF(0.1,as_reloadEnd[p]-as_reloadStart[p]),0.0,1.0);
+        DialogControlSetSize(as_cReload[p],AS_Me(p),MaxI(1,FixedToInt(392.0*f)),10);
+        AS_Text(as_cExtra[p],p,"<c val=\"FFBA40\">RELOADING</c>");
+    }
+    else {
+        DialogControlSetSize(as_cReload[p],AS_Me(p),1,10);
+        s="";
+        if(w==1) {s="RMB  rifle grenade x"+IntToString(as_grenades[p]);}
+        if(w==7) {s="SPIN  "+IntToString(FixedToInt(as_spin[p]*100.0))+"%";}
+        if(w==4) {s="burns aliens and biomass";}
+        if(w==6) {s="pierces every alien in line";}
+        if(w==9) {s="arcs to three targets, stuns";}
+        AS_Text(as_cExtra[p],p,s);
+    }
+    for(k=1;k<=AS_WEAPONS;k+=1) {
+        if(k==w) {DialogControlSetPropertyAsString(as_cSlot[p][k],c_triggerControlPropertyStyle,AS_Me(p),"ASSlotOn");}
+        else {DialogControlSetPropertyAsString(as_cSlot[p][k],c_triggerControlPropertyStyle,AS_Me(p),"ASSlot");}
+    }
+    // Mission line.
+    s="KILLS "+IntToString(as_kills[p])+"    ALIENS "+IntToString(as_alive2)+"    WAVE "+IntToString(as_wave);
+    if(as_shotsFired[p]>0) {s=s+"    HITS "+IntToString(as_shotsHit[p]*100/as_shotsFired[p])+"%";}
+    if(as_hordeLeft>0 || as_hordeUntil>as_now) {s=s+"    <c val=\"FF5040\">SWARM INBOUND</c>";}
+    else if(as_director) {s=s+"    next swarm "+FixedToString(MaxF(0.0,as_nextHorde-as_now),0)+" s";}
+    AS_Text(as_cTop2[p],p,s);
+    s="<c val=\"FFBA40\">V</c> view: "+AS_ViewName(p)+"    <c val=\"FFBA40\">L</c> lights: "+as_lightName[as_light]+"    <c val=\"FFBA40\">T</c> director: ";
+    if(as_director) {s=s+"ON";}else {s=s+"OFF";}
+    s=s+"    <c val=\"FFBA40\">H</c> help";
+    AS_Text(as_cTop3[p],p,s);
+    if(as_msgUntil[p]>0.0 && as_now>as_msgUntil[p]) {as_msgUntil[p]=0.0;AS_Text(as_cMsg[p],p,"");}
+    if(as_bigUntil[p]>0.0 && as_now>as_bigUntil[p]) {as_bigUntil[p]=0.0;AS_Text(as_cBig[p],p,"");AS_Text(as_cSmall[p],p,"");}
+}
+// The red edge of the screen when hurt, fading over half a second.
+void AS_HurtPulse (int p) {
+    fixed t=as_now-as_hurtFlash[p];fixed a=100.0;
+    if(t<0.6) {a=40.0+60.0*t/0.6;}
+    if(as_alive[p] && as_hp[p]<30.0) {a=MinF(a,70.0+20.0*Sin(as_now*360.0));}
+    if(!as_alive[p]) {a=30.0;}
+    DialogSetTransparency(as_dHurt[p],a);
+}

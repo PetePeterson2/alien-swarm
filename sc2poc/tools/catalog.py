@@ -1,0 +1,203 @@
+"""Game data catalogs: units, actors, models, lighting and font styles.
+
+Every unit here is driven by the script (src/*.galaxy): none carries a native
+weapon. Marines are placed each simulation step by the WASD controller; aliens
+walk with native move orders and their claws, spit and bile are resolved by
+the script, as PUBG: Battle Royale did with its zerg (proven pattern: unit
+actors parented to GenericUnitMinimal with Stand/Walk baselines, death models
+as one-shot actors created by the script).
+
+Stock model ids were checked against the catalog dump in
+../../Documents/sc2map/doodad-royale/reference/catalog/.
+"""
+import xml.etree.ElementTree as ET
+
+from tools import alien, level as L
+
+
+def child(e, tag, **attrs):
+    return ET.SubElement(e, tag, **{k: str(v) for k, v in attrs.items()})
+
+
+# Aliens: id, stock model, model scale, life, speed, radius, flying.
+# Life values are Alien Swarm's normal-difficulty numbers (asw_*_health and the
+# SetHealth calls in src/game/server/swarm/), except the boomer (800 there).
+ALIENS = [
+    ('ASDrone',      'Zergling',      1.25, 40,   3.4, 0.40, False),
+    ('ASUberDrone',  'PrimalZergling', 1.35, 500, 2.9, 0.55, False),
+    ('ASParasite',   'Broodling',     0.85, 25,   4.2, 0.22, False),
+    ('ASShieldbug',  'Ultralisk',     0.55, 1000, 1.7, 0.95, False),
+    ('ASBoomer',     'Baneling',      2.3,  400,  1.3, 0.75, False),
+    ('ASBuzzer',     'Mutalisk',      0.42, 30,   3.2, 0.30, True),
+    ('ASRanger',     'Hydralisk',     0.80, 101,  2.5, 0.40, False),
+    ('ASMortarbug',  'Ravager',       0.75, 350,  1.6, 0.55, False),
+    ('ASHarvester',  'SwarmHostMP',   0.62, 200,  1.0, 0.70, False),
+    ('ASRipper',     'ASRipperModel', 0.75, 160,  3.6, 0.50, False),   # original mesh (tools/alien.py)
+]
+# Fixed things: id, model, scale, life.
+STATICS = [
+    ('ASEgg', 'Egg', 0.85, 30),
+    ('ASBiomass', 'DestructibleZergInfestation3x3', 0.45, 600),
+    ('ASSentry', 'SentryGun', 0.85, 300),
+    ('ASAmmo', 'PickupPlasmaRounds', 0.9, 0),
+    ('ASMedkit', 'PickupHealth100', 0.9, 0),
+]
+# Projectiles moved by the script.
+PROJECTILES = [('ASGrenade', 'TossGrenadeWeapon', 0.9), ('ASBile', 'RavagerCorrosiveBileMissile', 0.8),
+               ('ASSpit', 'InfestedAcidSpinesWeapon', 1.2), ('ASFlare', 'PickupGrenades', 0.4)]
+# Lights: units carrying omni light models, hidden and shown by the script for flicker.
+LIGHT_MODELS = {'white': 'LightOmniWhite', 'cold': 'LightOmniCyan', 'red': 'LightOmniRed', 'green': 'LightOmniGreen',
+                'orange': 'LightOmniOrange', 'purple': 'LightOmniPurple', 'whitebig': 'LightOmniWhiteLarge',
+                'redbig': 'LightOmniRedLarge', 'orangebig': 'LightOmniOrangeLarge', 'yellow': 'LightOmniYellow'}
+# One-shot effects: id, model, scale, seconds before the safety removal.
+ONESHOTS = [
+    ('ASDieDrone', 'ZerglingDeath', 1.25, 6), ('ASDieUber', 'PrimalZerglingDeath', 1.35, 6),
+    ('ASDieParasite', 'BroodlingDeath', 0.85, 4), ('ASDieShieldbug', 'UltraliskDeath', 0.55, 8),
+    ('ASDieBoomer', 'BanelingDeath', 2.3, 5), ('ASDieBuzzer', 'MutaliskDeath', 0.42, 6),
+    ('ASDieRanger', 'HydraliskDeath', 0.8, 6), ('ASDieMortar', 'RavagerDeath', 0.75, 6),
+    ('ASDieHarvester', 'SwarmHostMPDeath', 0.62, 7), ('ASDieEgg', 'EggsplosionGeneric', 0.8, 4),
+    ('ASDieBiomass', 'DestructibleZergInfestation3x3Death', 0.45, 5), ('ASDieMarine', 'MarineDeath', 1.0, 8),
+    ('ASDieSentry', 'SentryGunDeath', 0.85, 5),
+    ('ASFxBlood', 'BloodTargetImpact', 0.9, 2.5), ('ASFxSpark', 'MarineAttackImpact', 0.9, 2),
+    ('ASFxAcid', 'HydraliskAttackImpact', 1.0, 2.5), ('ASFxBileHit', 'RavagerCorrosiveBileImpact', 0.7, 4),
+    ('ASFxBoom', 'TossGrenadeImpact', 1.0, 5), ('ASFxBigBoom', 'BanelingCorrosiveExplosion', 1.4, 5),
+    ('ASFxRail', 'RaynorSnipeBigBloodImpact', 0.8, 3), ('ASFxSentryShot', 'SentryGunAttackImpact', 0.8, 2),
+    ('ASFxBurn', 'BroodlingDeathFire', 0.9, 4),
+    # Gore: gib bursts for overkill and blasts, torn-apart and burning deaths.
+    ('ASGibSmall', 'DefaultExplosionZergSmall', 0.8, 5), ('ASGibLarge', 'DefaultExplosionZergLarge', 0.6, 6),
+    ('ASGibChunks', 'SplitterlingMediumCorrosiveExplosion', 0.9, 5),
+    ('ASEviscDrone', 'ZerglingDeathEviscerate', 1.25, 7), ('ASEviscUber', 'ZerglingDeathEviscerate', 1.35, 7),
+    ('ASAcidDrone', 'ZerglingDeathAcid', 1.25, 7),
+    ('ASFireDrone', 'ZerglingDeathFire', 1.25, 7), ('ASFireUber', 'ZerglingDeathFire', 1.35, 7),
+    ('ASFireParasite', 'BroodlingDeathFire', 0.85, 5), ('ASFireShieldbug', 'UltraliskDeathFire', 0.55, 8),
+    ('ASFireRanger', 'HydraliskDeathFire', 0.8, 7), ('ASFireMortar', 'RavagerDeathFire', 0.75, 7),
+    ('ASFireHarvester', 'SwarmHostMPDeathFire', 0.62, 7),
+    ('ASAcidRanger', 'HydraliskDeathAcid', 0.8, 7), ('ASAcidMortar', 'RavagerDeathAcid', 0.75, 7),
+    ('ASAcidShieldbug', 'UltraliskDeathAcid', 0.55, 8), ('ASAcidHarvester', 'SwarmHostMPDeathAcid', 0.62, 7),
+    ('ASBloodGeyser', 'LurkerAttackDeathBloodGeyser', 0.5, 4),
+]
+FX_UNITS = ['Tracer', 'Laser', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2']
+
+
+def build(files, hull_models, props):
+    """Write every catalog into ``files``. ``hull_models`` are the M3 chunk names, ``props`` the stock models placed."""
+    cat = {k: ET.Element('Catalog') for k in ('Unit', 'Actor', 'Model', 'Light')}
+
+    def unit(ident, model, scale, life=100, speed=0.0, radius=0.0, mobile=False, flying=False, collide=False, height=0.0):
+        u = child(cat['Unit'], 'CUnit', id=ident)
+        child(u, 'FlagArray', index='Unselectable', value=1)
+        child(u, 'FlagArray', index='Untargetable', value=1)
+        child(u, 'FlagArray', index='NoPortraitTalk', value=1)
+        if not life:
+            child(u, 'FlagArray', index='Invulnerable', value=1)
+        # Every unit turns: effect meshes (tracers, the laser sight) are aimed by facing.
+        child(u, 'FlagArray', index='Turnable', value=1)
+        for tag, val in [('LifeMax', max(1, life)), ('LifeStart', max(1, life)), ('LifeRegenRate', 0), ('Radius', radius),
+                         ('SeparationRadius', radius * 0.8 if mobile else 0), ('InnerRadius', radius * 0.5), ('MinimapRadius', 0),
+                         ('Height', height), ('Speed', speed), ('Acceleration', 1000 if mobile else 0),
+                         ('Deceleration', 1000 if mobile else 0), ('LateralAcceleration', 46 if mobile else 0), ('TurningRate', 1080 if mobile else 0)]:
+            child(u, tag, value=val)
+        child(u, 'PlaneArray', index='Air' if flying else 'Ground', value=1)
+        if flying:
+            child(u, 'Mover', value='Fly')
+            child(u, 'Collide', index='Flying', value=1)
+        else:
+            child(u, 'Collide', index='Ground', value=1 if collide else 0)
+        if mobile:
+            child(u, 'AbilArray', Link='move'); child(u, 'AbilArray', Link='stop')
+        a = child(cat['Actor'], 'CActorUnit', id=ident, parent='GenericUnitMinimal')
+        child(a, 'On', index=1, Terms='UnitBirth.' + ident, Send='Create')
+        child(a, 'Model', value=model)
+        child(a, 'On', index=2, Terms='ActorCreation', Send='SetScale %g' % scale)
+        child(a, 'On', index=3, Terms='UnitDeath', Send='Destroy')
+        child(a, 'Baselines', index='Stand', AnimProps='Stand')
+        child(a, 'Baselines', index='Walk', AnimProps='Walk')
+        child(a, 'FogVisibility', value='Visible')
+        for who in ['Self', 'Ally', 'Enemy', 'Neutral']:
+            child(a, 'VisibleTo', index=who, value=1)
+        return a
+
+    unit('ASMarine', 'Marine', 1.0, 100, 2.25, 0.36, mobile=True, collide=True)
+    # The ripper's own animated mesh; its corpse is the same model held on the last frame of Death.
+    m = child(cat['Model'], 'CModel', id='ASRipperModel', parent='Unit')
+    child(m, 'Model', value='Derelict\\Ripper.m3')
+    for ident, model, scale, life, speed, radius, flying in ALIENS:
+        a = unit(ident, model, scale, life, speed, radius, mobile=True, flying=flying, collide=True, height=1.3 if flying else 0.0)
+        if ident == 'ASRipper':
+            child(a, 'WalkAnimMoveSpeed', value=alien.WALK_SPEED)
+    a = child(cat['Actor'], 'CActorModel', id='ASDieRipper')
+    child(a, 'Model', value='ASRipperModel'); child(a, 'Scale', value=0.75)
+    child(a, 'On', Terms='ActorCreation', Send='AnimPlay Death Death PlayForever')
+    child(a, 'On', Terms='ActorCreation', Send='TimerSet 8 ASExpire')
+    child(a, 'On', Terms='TimerExpired; TimerName ASExpire', Send='Destroy')
+    child(a, 'FogVisibility', value='Visible')
+    for ident, model, scale, life in STATICS:
+        unit(ident, model, scale, life, radius=0.5 if life else 0.0, collide=ident in ('ASSentry',))
+    for ident, model, scale in PROJECTILES:
+        unit(ident, model, scale, 0)
+    for kind, model in LIGHT_MODELS.items():
+        unit('ASLight' + kind.capitalize(), model, 1.0, 0)
+    unit('ASFlashlight', 'FlashlightModel', 1.0, 0)
+    # The marines' own effect meshes (tools/fx.py).
+    for name in FX_UNITS:
+        m = child(cat['Model'], 'CModel', id='ASFx' + name + 'Model', parent='Doodad')
+        child(m, 'Model', value='Derelict\\Fx\\' + name + '.m3')
+        unit('ASFx' + name, 'ASFx' + name + 'Model', 1.0, 0)
+    for ident, model, scale, life in ONESHOTS:
+        a = child(cat['Actor'], 'CActorModel', id=ident, parent='ModelAnimationStyleOneShot')
+        child(a, 'Model', value=model); child(a, 'Scale', value=scale)
+        child(a, 'On', Terms='ActorCreation', Send='TimerSet %s ASExpire' % life)
+        child(a, 'On', Terms='TimerExpired; TimerName ASExpire', Send='Destroy')
+        child(a, 'FogVisibility', value='Visible')
+    # The hull: one doodad per mesh chunk (tools/level.py, hull_meshes).
+    for name in hull_models:
+        m = child(cat['Model'], 'CModel', id='AS' + name, parent='Doodad')
+        child(m, 'Model', value='Derelict\\' + name + '.m3')
+        a = child(cat['Actor'], 'CActorDoodad', id='AS' + name)
+        child(a, 'Model', value='AS' + name); child(a, 'Footprint', value='')
+        child(a, 'DoodadFlags', index='DefaultToModelAABBBounds', value=1)
+        child(a, 'RandomScaleRange', value='1,1')
+    # Footprint-free copies of the stock dressing: collision comes from tools/level.py, not from the doodads.
+    for model in sorted(props):
+        a = child(cat['Actor'], 'CActorDoodad', id='ASP_' + model)
+        child(a, 'Model', value=model); child(a, 'Footprint', value='')
+        child(a, 'On', index=0, Terms='ActorCreation', Send='AnimPlay Stand Stand PlayForever')
+        child(a, 'RandomScaleRange', value='1,1')
+    # Lighting presets: L cycles them in game (src/Main.galaxy).
+    presets = [
+        # id, parent, ambient, exposure, key colour, key strength, fill strength
+        ('ASDerelict', 'StarshipDark', '0.050,0.058,0.072', '1.05', '0.55,0.66,0.80', '0.30', '0.10'),
+        ('ASAlarm', 'StarshipDark', '0.090,0.020,0.020', '1.05', '0.90,0.25,0.20', '0.30', '0.06'),
+        ('ASPowered', 'Starship', '0.32,0.34,0.38', '1.20', '0.85,0.90,1.00', '0.80', '0.35'),
+        ('ASBlackout', 'StarshipDark', '0.012,0.012,0.018', '1.00', '0.30,0.35,0.45', '0.08', '0.02'),
+    ]
+    for ident, parent, ambient, exposure, key, mult, fill in presets:
+        light = child(cat['Light'], 'CLight', id=ident, parent=parent)
+        tod = child(light, 'ToDInfoArray', index=0, Id=ident, AmbientColor=ambient, Colorize=0)
+        for name, value in [('HDRExposure', exposure), ('HDRAmbientMultiplier', '1.0'), ('HDRDiffuseMultiplier', '1.0'),
+                            ('ColorizationBlend', '0')]:
+            child(tod, 'Param', index=name, value=value)
+        child(tod, 'DirectionalLight', index='Key', Color=key, ColorMultiplier=mult, Direction='-0.35,-0.45,0.82')
+        child(tod, 'DirectionalLight', index='Fill', Color='0.45,0.55,0.70', ColorMultiplier=fill, Direction='0.5,0.5,0.70')
+        child(tod, 'DirectionalLight', index='Back', Color='0.5,0.5,0.6', ColorMultiplier='0.05', Direction='0.0,0.80,0.60')
+    for kind, tree in cat.items():
+        ET.indent(tree, space='    ')
+        files['Base.SC2Data/GameData/%sData.xml' % kind] = ET.tostring(tree, encoding='utf-8', xml_declaration=True)
+    files['Base.SC2Data/UI/FontStyles.SC2Style'] = font_styles()
+
+
+def font_styles():
+    root = ET.Element('StyleFile')
+    reg = 'UI\\Fonts\\Eurostile-Reg.otf'; bold = 'UI\\Fonts\\Eurostile-Bol.otf'; ext = 'UI\\Fonts\\EurostileExt-Med.otf'
+    light = '255,226,232,236'; amber = '255,255,186,64'; red = '255,255,80,64'; green = '255,120,255,150'
+    for name, font, size, align, color in [
+            ('ASBody', reg, 17, 'Left', light), ('ASBodyC', reg, 17, 'Center', light), ('ASSmall', reg, 14, 'Left', light),
+            ('ASSmallR', reg, 14, 'Right', light), ('ASHead', ext, 18, 'Left', amber), ('ASHeadC', ext, 22, 'Center', amber),
+            ('ASAmmo', bold, 40, 'Right', light), ('ASAmmoS', bold, 18, 'Right', light), ('ASWeapon', ext, 20, 'Right', amber),
+            ('ASSlot', bold, 13, 'Center', light), ('ASSlotOn', bold, 13, 'Center', amber), ('ASBig', ext, 40, 'Center', red),
+            ('ASCross', bold, 26, 'Center', green), ('ASHealth', bold, 22, 'Left', light), ('ASKey', bold, 15, 'Left', amber)]:
+        child(root, 'Style', name=name, template='ModCenterSize20', font=font, height=size, vjustify='Middle', hjustify=align,
+              styleflags='Shadow | InlineJustification', textcolor=color, highlightcolor=color, disabledcolor=color,
+              shadowoffset=1, outlinewidth=0)
+    ET.indent(root, space='    ')
+    return ET.tostring(root, encoding='utf-8', xml_declaration=True)

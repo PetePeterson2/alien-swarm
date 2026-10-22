@@ -1,0 +1,217 @@
+// =====================================================================
+// HALCYON DRIFT -- an Alien Swarm combat proof of concept for SC2.
+// Shared state. Every module is concatenated after this one by build.py,
+// with forward declarations for every AS_ function in between.
+// =====================================================================
+
+const int AS_W = 96;
+const int AS_H = 80;
+const fixed AS_DT = 0.0625;
+const int AS_PLAYERS = 4;
+const int AS_HOSTILE = 15;
+const int AS_MAXALIEN = 96;
+const int AS_WEAPONS = 10;
+
+// Build switches (build.py rewrites these lines).
+bool as_qa = false;
+bool as_demo = false;                  // scripted firing range for screenshots (build.py --demo)
+string as_runId = "unset";
+
+fixed as_now;
+int as_tick;
+
+// ---- the deck ---------------------------------------------------------
+bool[96][80] as_wall;            // collision cells, from tools/level.py
+fixed as_floorZ = 8.0;
+
+// ---- marines ----------------------------------------------------------
+bool[5] as_on;              // a person is in this slot
+unit[5] as_m;               // the marine
+fixed[5] as_hp;
+fixed[5] as_hpMax;
+bool[5] as_alive;
+fixed[5] as_respawnAt;
+bool[5][4] as_key;          // W A S D held
+fixed[5] as_mvX;
+fixed[5] as_mvY;
+bool[5] as_walking;
+fixed[5] as_walkRate;
+fixed[5] as_aim;            // facing of the gun, degrees
+fixed[5] as_mouseDX;        // cursor offset from the marine (top-down view)
+fixed[5] as_mouseDY;
+bool[5] as_mouseSeen;
+int[5] as_view;             // 0 top-down, 1 third person
+fixed[5] as_zoom;           // top-down camera distance
+bool[5] as_trigger;         // left mouse held
+bool[5] as_trigger2;        // right mouse held
+bool[5] as_semiReady;       // a semi-automatic weapon wants the trigger let go first
+int[5] as_slot;             // weapon in hand, 1..10
+int[5][11] as_mag;
+int[5][11] as_reserve;
+fixed[5] as_nextShot;
+fixed[5] as_reloadEnd;      // 0 when not reloading
+fixed[5] as_reloadStart;
+fixed[5] as_spin;           // minigun barrel spin 0..1
+fixed[5] as_lastShot;
+int[5] as_pistolSide;
+int[5] as_grenades;         // rifle under-barrel grenades
+int[5] as_sentries;
+int[5] as_medkits;
+int[5] as_flares;
+bool[5] as_lightOn;
+unit[5] as_torch;           // flashlight unit
+unit[5] as_glow;            // soft personal light
+unit[5] as_muzzle;          // muzzle-flash light
+unit[5] as_laser;           // laser sight
+fixed[5] as_infestUntil;    // parasite infestation damage over time
+fixed[5] as_hurtFlash;
+fixed[5] as_knockX;
+fixed[5] as_knockY;
+int[5] as_kills;
+int[5] as_shotsFired;
+int[5] as_shotsHit;
+bool[5] as_god;
+bool[5] as_help;
+fixed[5] as_ammoMsgAt;
+unit[5] as_camUnit;         // what the camera is following
+
+// ---- weapons ----------------------------------------------------------
+// Numbers from Alien Swarm's scripts/asw_weapon_*.txt (clip, base_damage,
+// fire_rate, reload_time, num_pellets) and cfg/skill.cfg (sk_max_* reserves).
+struct AS_Gun {
+    string name;
+    int mag;
+    int reserve;
+    fixed damage;
+    fixed rate;        // seconds between shots
+    fixed reload;
+    int pellets;
+    fixed spread;      // degrees, full cone
+    fixed range;
+    int kind;          // 0 hitscan, 1 flamer, 2 railgun, 3 grenade launcher, 4 tesla, 5 minigun
+    bool semi;
+    int pierce;        // extra aliens a shot passes through
+    string tint;
+    string snd;
+    fixed recoilSlow;  // movement multiplier while firing
+};
+AS_Gun[11] as_gun;
+
+void AS_GunsInit () {
+    int i;
+    i=1; as_gun[i].name="22A3-1 ASSAULT RIFLE"; as_gun[i].mag=98; as_gun[i].reserve=490; as_gun[i].damage=5.0; as_gun[i].rate=0.07; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=3.5; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,214,140"; as_gun[i].snd="Marine_AttackLaunch"; as_gun[i].recoilSlow=0.9;
+    i=2; as_gun[i].name="AUTOGUN"; as_gun[i].mag=250; as_gun[i].reserve=250; as_gun[i].damage=7.0; as_gun[i].rate=0.1; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=4.0; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,190,110"; as_gun[i].snd="RaynorGatlingGunAttackLaunch"; as_gun[i].recoilSlow=0.8;
+    i=3; as_gun[i].name="SHOTGUN"; as_gun[i].mag=4; as_gun[i].reserve=32; as_gun[i].damage=25.0; as_gun[i].rate=1.0; as_gun[i].reload=1.3; as_gun[i].pellets=7; as_gun[i].spread=20.0; as_gun[i].range=11.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,220,160"; as_gun[i].snd="Marauder_AttackLaunch"; as_gun[i].recoilSlow=0.9;
+    i=4; as_gun[i].name="FLAMER"; as_gun[i].mag=40; as_gun[i].reserve=200; as_gun[i].damage=4.0; as_gun[i].rate=0.1; as_gun[i].reload=2.2; as_gun[i].pellets=1; as_gun[i].spread=9.0; as_gun[i].range=6.0; as_gun[i].kind=1; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,150,60"; as_gun[i].snd="Firebat_Attack"; as_gun[i].recoilSlow=0.85;
+    i=5; as_gun[i].name="TWIN PISTOLS"; as_gun[i].mag=24; as_gun[i].reserve=240; as_gun[i].damage=14.0; as_gun[i].rate=0.12; as_gun[i].reload=1.0; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=20.0; as_gun[i].kind=0; as_gun[i].semi=true; as_gun[i].pierce=0; as_gun[i].tint="255,230,170"; as_gun[i].snd="Reaper_AttackLaunch"; as_gun[i].recoilSlow=1.0;
+    i=6; as_gun[i].name="RAILGUN"; as_gun[i].mag=1; as_gun[i].reserve=72; as_gun[i].damage=75.0; as_gun[i].rate=0.4; as_gun[i].reload=1.3; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=2; as_gun[i].semi=false; as_gun[i].pierce=20; as_gun[i].tint="110,200,255"; as_gun[i].snd="Ghost_SnipeLaunch"; as_gun[i].recoilSlow=1.0;
+    i=7; as_gun[i].name="MINIGUN"; as_gun[i].mag=250; as_gun[i].reserve=250; as_gun[i].damage=7.0; as_gun[i].rate=0.04; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=6.0; as_gun[i].range=22.0; as_gun[i].kind=5; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,200,120"; as_gun[i].snd="RaynorGatlingGunAttackLaunch"; as_gun[i].recoilSlow=0.55;
+    i=8; as_gun[i].name="GRENADE LAUNCHER"; as_gun[i].mag=6; as_gun[i].reserve=18; as_gun[i].damage=80.0; as_gun[i].rate=0.9; as_gun[i].reload=3.2; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=16.0; as_gun[i].kind=3; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,170,80"; as_gun[i].snd="Raynor_TossGrenadeLaunch"; as_gun[i].recoilSlow=1.0;
+    i=9; as_gun[i].name="TESLA CANNON"; as_gun[i].mag=20; as_gun[i].reserve=260; as_gun[i].damage=6.0; as_gun[i].rate=0.25; as_gun[i].reload=2.2; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=9.0; as_gun[i].kind=4; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="140,200,255"; as_gun[i].snd="Archon_AttackLaunch"; as_gun[i].recoilSlow=0.9;
+    i=10; as_gun[i].name="SNIPER RIFLE"; as_gun[i].mag=12; as_gun[i].reserve=60; as_gun[i].damage=65.0; as_gun[i].rate=1.2; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=2; as_gun[i].tint="255,255,230"; as_gun[i].snd="RaynorSnipeSound"; as_gun[i].recoilSlow=1.0;
+}
+
+// ---- aliens -----------------------------------------------------------
+const int AS_DRONE = 1;
+const int AS_PARASITE = 2;
+const int AS_SHIELDBUG = 3;
+const int AS_BOOMER = 4;
+const int AS_BUZZER = 5;
+const int AS_RANGER = 6;
+const int AS_MORTAR = 7;
+const int AS_HARVESTER = 8;
+const int AS_UBER = 9;
+const int AS_EGG = 10;
+const int AS_BIOMASS = 11;
+const int AS_RIPPER = 12;
+const int AS_KINDS = 12;
+
+unit[96] as_a;               // the alien, null when the slot is free
+int[96] as_aKind;
+fixed[96] as_aHp;
+fixed[96] as_aRadius;
+bool[96] as_aAwake;          // hunting (a wanderer that has not noticed anyone is asleep)
+int[96] as_aTarget;          // player hunted, 0 none, -1 a sentry
+fixed[96] as_aNextOrder;
+fixed[96] as_aNextAttack;
+fixed[96] as_aHitAt;         // a swing lands at this time (0 none)
+fixed[96] as_aBurnUntil;
+int[96] as_aBurnBy;
+fixed[96] as_aStunUntil;
+fixed[96] as_aLeapUntil;     // parasite leap in the air, ripper lunge
+fixed[96] as_aLeapX;
+fixed[96] as_aLeapY;
+fixed[96] as_aSpawnAt;       // harvester's next parasite / egg's hatch time
+int[96] as_aParent;
+int[96] as_aChildren;
+fixed[96] as_aBornAt;
+fixed[96] as_aStuckX;
+fixed[96] as_aStuckY;
+fixed[96] as_aStuckAt;
+fixed[96] as_aHitAng;                 // direction the last hit travelled (gore sprays that way)
+fixed[96] as_aLastDmg;                // size of the last hit (big ones blow aliens apart)
+int as_alive2;                         // aliens alive (eggs and biomass not counted)
+
+string[13] as_kindUnit;
+string[13] as_kindDie;
+string[13] as_kindName;
+fixed[13] as_kindHp;
+fixed[13] as_kindRadius;
+fixed[13] as_kindDamage;
+fixed[13] as_kindCooldown;
+fixed[13] as_kindReach;
+
+void AS_KindsInit () {
+    int k;
+    k=AS_DRONE; as_kindUnit[k]="ASDrone"; as_kindDie[k]="ASDieDrone"; as_kindName[k]="DRONE"; as_kindHp[k]=40.0; as_kindRadius[k]=0.40; as_kindDamage[k]=8.0; as_kindCooldown[k]=0.9; as_kindReach[k]=0.55;
+    k=AS_PARASITE; as_kindUnit[k]="ASParasite"; as_kindDie[k]="ASDieParasite"; as_kindName[k]="PARASITE"; as_kindHp[k]=25.0; as_kindRadius[k]=0.22; as_kindDamage[k]=5.0; as_kindCooldown[k]=2.0; as_kindReach[k]=0.4;
+    k=AS_SHIELDBUG; as_kindUnit[k]="ASShieldbug"; as_kindDie[k]="ASDieShieldbug"; as_kindName[k]="SHIELDBUG"; as_kindHp[k]=1000.0; as_kindRadius[k]=0.95; as_kindDamage[k]=22.0; as_kindCooldown[k]=1.6; as_kindReach[k]=0.75;
+    k=AS_BOOMER; as_kindUnit[k]="ASBoomer"; as_kindDie[k]="ASDieBoomer"; as_kindName[k]="BOOMER"; as_kindHp[k]=400.0; as_kindRadius[k]=0.75; as_kindDamage[k]=30.0; as_kindCooldown[k]=1.0; as_kindReach[k]=1.2;
+    k=AS_BUZZER; as_kindUnit[k]="ASBuzzer"; as_kindDie[k]="ASDieBuzzer"; as_kindName[k]="BUZZER"; as_kindHp[k]=30.0; as_kindRadius[k]=0.30; as_kindDamage[k]=5.0; as_kindCooldown[k]=0.8; as_kindReach[k]=0.5;
+    k=AS_RANGER; as_kindUnit[k]="ASRanger"; as_kindDie[k]="ASDieRanger"; as_kindName[k]="RANGER"; as_kindHp[k]=101.0; as_kindRadius[k]=0.40; as_kindDamage[k]=10.0; as_kindCooldown[k]=2.0; as_kindReach[k]=6.5;
+    k=AS_MORTAR; as_kindUnit[k]="ASMortarbug"; as_kindDie[k]="ASDieMortar"; as_kindName[k]="MORTARBUG"; as_kindHp[k]=350.0; as_kindRadius[k]=0.55; as_kindDamage[k]=20.0; as_kindCooldown[k]=3.5; as_kindReach[k]=10.0;
+    k=AS_HARVESTER; as_kindUnit[k]="ASHarvester"; as_kindDie[k]="ASDieHarvester"; as_kindName[k]="HARVESTER"; as_kindHp[k]=200.0; as_kindRadius[k]=0.70; as_kindDamage[k]=5.0; as_kindCooldown[k]=4.0; as_kindReach[k]=7.0;
+    k=AS_UBER; as_kindUnit[k]="ASUberDrone"; as_kindDie[k]="ASDieUber"; as_kindName[k]="UBER DRONE"; as_kindHp[k]=500.0; as_kindRadius[k]=0.55; as_kindDamage[k]=18.0; as_kindCooldown[k]=1.1; as_kindReach[k]=0.7;
+    k=AS_RIPPER; as_kindUnit[k]="ASRipper"; as_kindDie[k]="ASDieRipper"; as_kindName[k]="RIPPER"; as_kindHp[k]=160.0; as_kindRadius[k]=0.50; as_kindDamage[k]=15.0; as_kindCooldown[k]=1.2; as_kindReach[k]=0.75;
+    k=AS_EGG; as_kindUnit[k]="ASEgg"; as_kindDie[k]="ASDieEgg"; as_kindName[k]="EGG"; as_kindHp[k]=30.0; as_kindRadius[k]=0.45; as_kindDamage[k]=0.0; as_kindCooldown[k]=0.0; as_kindReach[k]=4.0;
+    k=AS_BIOMASS; as_kindUnit[k]="ASBiomass"; as_kindDie[k]="ASDieBiomass"; as_kindName[k]="BIOMASS"; as_kindHp[k]=600.0; as_kindRadius[k]=1.2; as_kindDamage[k]=0.0; as_kindCooldown[k]=0.0; as_kindReach[k]=0.0;
+}
+
+// ---- director ---------------------------------------------------------
+bool as_director = true;
+fixed as_nextHorde;
+fixed as_hordeUntil;
+int as_hordeLeft;
+fixed as_hordeNextSpawn;
+int as_wave;
+int as_light;                          // lighting preset index
+string[5] as_lightName;
+string[5] as_lightId;
+
+// ---- level tables (filled by AS_LevelInit, generated by build.py) ----
+point[32] as_vent;
+int as_ventCount;
+point[16] as_ammoAt;
+int as_ammoCount;
+fixed[24] as_roomX0;
+fixed[24] as_roomY0;
+fixed[24] as_roomX1;
+fixed[24] as_roomY1;
+string[24] as_roomKind;
+string[24] as_roomName;
+int as_roomCount;
+
+// ---- small helpers ----------------------------------------------------
+fixed AS_Clamp (fixed v, fixed lo, fixed hi) {
+    if(v<lo) {return lo;}
+    if(v>hi) {return hi;}
+    return v;
+}
+fixed AS_AngleDiff (fixed a, fixed b) {
+    fixed d=a-b;
+    while(d>180.0) {d-=360.0;}
+    while(d< -180.0) {d+=360.0;}
+    return d;
+}
+bool AS_Person (int p) {return p>=1 && p<=AS_PLAYERS && as_on[p];}
+playergroup AS_Me (int p) {return PlayerGroupSingle(p);}
