@@ -143,6 +143,14 @@ A side-by-side of the bottom-left HUD against an Alien Swarm capture lines up on
 - three item slots instead of AS's one, so the squad starts further right;
 - helmet portraits instead of AS's face renders;
 - no squad item hotkey numbers (AS shows those only offline).
+**Debrief, after AS's stats screen (2026-10-23).** It is now full screen in steel blue, with:
+- a top strip: the mission time, DEBRIEF, and the mission and place;
+- the level's map, framed on the left;
+- the result panel on the right: a centred MISSION COMPLETE header, the squad table, and the next line;
+- a bottom strip naming the next mission, or CAMPAIGN COMPLETE.
+
+Checked in the client (`dist/screens/hud-debrief.jpg`). AS's kills-over-time graph and its READY/SUMMARY/STATS tabs are not reproduced.
+
 **Portraits are cosmetics (2026-10-23).**
 - **Keys:** each marine wears a portrait key `<model>_<skin>` from `tools/hudart.py` PORTRAITS. A model is a renderer (only `marine` so far, in PORTRAIT_MODELS); a skin is a style (armour, stripe, visor glass, trim).
 - **Skins:** four defaults, one per slot (`marine_steel`, `olive`, `rust`, `sand`), and two veteran skins to award (`marine_veteran`, `marine_shadow`).

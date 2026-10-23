@@ -106,6 +106,10 @@ int[5] as_cDebPlace;
 int[5] as_cDebTime;
 int[5][5] as_cDebCol;
 int[5] as_cDebNext;
+int[5] as_dDebriefBg;
+int[5] as_cDebMap;
+int[5] as_cDebResult;
+int[5] as_cDebFoot;
 fixed[5] as_msgUntil;
 fixed[5] as_bigUntil;
 // What is on screen, so a control is only touched when it changes.
@@ -300,21 +304,32 @@ void AS_HudCreate (int p) {
     DialogSetVisible(d,AS_Me(p),false);
     d=AS_Panel(p,64,64,c_anchorCenter,0,0);as_dCross[p]=d;
     as_cCross[p]=AS_Art(d,0,0,64,64,"cross",AS_Rgb(140,255,160));
-    // The debrief (the stats screen after a mission).
-    d=AS_Panel(p,1100,620,c_anchorCenter,0,-20);as_dDebrief[p]=d;
-    AS_Art(d,0,0,1100,620,"frame",AS_Full());
-    AS_Art(d,0,0,1100,56,"header",AS_Full());
-    as_cDebTitle[p]=AS_Lbl(d,28,6,520,44,"ASHead","MISSION COMPLETE");
-    as_cDebPlace[p]=AS_Lbl(d,540,6,532,44,"ASHeadR","");
-    as_cDebTime[p]=AS_Lbl(d,40,74,1020,30,"ASFrame","");
-    AS_Art(d,30,112,1040,2,"white",AS_Rgb(64,112,150));
-    as_cDebCol[p][0]=AS_Lbl(d,40,120,360,250,"ASBody","");
-    as_cDebCol[p][1]=AS_Lbl(d,400,120,140,250,"ASBodyR","");
-    as_cDebCol[p][2]=AS_Lbl(d,560,120,160,250,"ASBodyR","");
-    as_cDebCol[p][3]=AS_Lbl(d,740,120,180,250,"ASBodyR","");
-    as_cDebCol[p][4]=AS_Lbl(d,930,120,130,250,"ASBodyR","");
-    AS_Art(d,30,388,1040,2,"white",AS_Rgb(64,112,150));
-    as_cDebNext[p]=AS_Lbl(d,40,404,1020,190,"ASBody","");
+    // The debrief, after AS's stats screen: the whole screen a dark steel blue, a strip across the top with
+    // the mission time and title, the level's map framed on the left, the result panel with the squad's
+    // numbers on the right, and a strip across the bottom saying what happens next.
+    d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);as_dDebriefBg[p]=d;
+    AS_Image(d,c_anchorCenter,0,0,3200,1200,AS_WHITE,AS_Rgb(20,34,48));
+    AS_Image(d,c_anchorTop,0,90,3200,64,AS_Ui("shade75"),AS_Rgb(0,0,0));
+    AS_Image(d,c_anchorBottom,0,90,3200,72,AS_Ui("shade75"),AS_Rgb(0,0,0));
+    DialogSetVisible(d,AS_Me(p),false);
+    d=AS_Panel(p,1500,1020,c_anchorCenter,0,0);as_dDebrief[p]=d;
+    as_cDebTime[p]=AS_Lbl(d,20,0,200,64,"ASDebTitle","");
+    as_cDebTitle[p]=AS_Lbl(d,230,0,500,64,"ASDebTitle","DEBRIEF");
+    as_cDebPlace[p]=AS_Lbl(d,740,0,740,64,"ASDebPlace","");
+    AS_Art(d,40,110,540,540,"black75",AS_Full());
+    AS_Art(d,40,110,540,2,"white",AS_Rgb(64,112,150));AS_Art(d,40,648,540,2,"white",AS_Rgb(64,112,150));
+    AS_Art(d,40,110,2,540,"white",AS_Rgb(64,112,150));AS_Art(d,578,110,2,540,"white",AS_Rgb(64,112,150));
+    as_cDebMap[p]=AS_Art(d,60,130,500,500,"map0",AS_Full());
+    AS_Art(d,620,110,840,540,"frame",AS_Full());
+    AS_Art(d,620,110,840,52,"header",AS_Full());
+    as_cDebResult[p]=AS_Lbl(d,620,110,840,52,"ASPanelHead","MISSION COMPLETE");
+    as_cDebCol[p][0]=AS_Lbl(d,650,190,300,220,"ASBody","");
+    as_cDebCol[p][1]=AS_Lbl(d,930,190,100,220,"ASBodyR","");
+    as_cDebCol[p][2]=AS_Lbl(d,1040,190,130,220,"ASBodyR","");
+    as_cDebCol[p][3]=AS_Lbl(d,1180,190,160,220,"ASBodyR","");
+    as_cDebCol[p][4]=AS_Lbl(d,1350,190,90,220,"ASBodyR","");
+    as_cDebNext[p]=AS_Lbl(d,650,520,780,110,"ASBody","");
+    as_cDebFoot[p]=AS_Lbl(d,0,948,1500,72,"ASBtn","");
     DialogSetVisible(d,AS_Me(p),false);
     // Kit comparison readout, top right.
     d=AS_Panel(p,760,130,c_anchorTopRight,20,20);
@@ -372,7 +387,7 @@ void AS_ObjToggle (int p) {
     if(!as_objPinned[p]) {as_objShowUntil[p]=as_now+1.0;}
 }
 void AS_DebriefHide (int p) {
-    if(as_dDebrief[p]!=0) {DialogSetVisible(as_dDebrief[p],AS_Me(p),false);}
+    if(as_dDebrief[p]!=0) {DialogSetVisible(as_dDebrief[p],AS_Me(p),false);DialogSetVisible(as_dDebriefBg[p],AS_Me(p),false);}
     as_tagsOff[p]=false;
 }
 void AS_NameTagsHide (int p) {
@@ -720,8 +735,9 @@ void AS_MissionHud (int p) {
 void AS_Debrief (int p, string next) {
     int q;int acc;string c0;string c1;string c2;string c3;string c4;
     if(as_dDebrief[p]==0) {return;}
-    AS_Text(as_cDebPlace[p],p,as_levelTitle[as_level]);
-    AS_Text(as_cDebTime[p],p,as_levelPlace[as_level]+"    //    MISSION TIME  "+AS_Clock(as_missionEnd-as_missionStart));
+    AS_Text(as_cDebPlace[p],p,as_levelTitle[as_level]+"  //  "+as_levelPlace[as_level]);
+    AS_Text(as_cDebTime[p],p,AS_Clock(as_missionEnd-as_missionStart));
+    AS_SetArt(as_cDebMap[p],p,"map"+IntToString(as_level));
     c0="<c val=\"8CC8F0\">MARINE</c><n/>";c1="<c val=\"8CC8F0\">KILLS</c><n/>";c2="<c val=\"8CC8F0\">ACCURACY</c><n/>";
     c3="<c val=\"8CC8F0\">DAMAGE TAKEN</c><n/>";c4="<c val=\"8CC8F0\">DEATHS</c><n/>";
     for(q=1;q<=AS_PLAYERS;q+=1) {
@@ -738,6 +754,9 @@ void AS_Debrief (int p, string next) {
     AS_Text(as_cDebCol[p][0],p,c0);AS_Text(as_cDebCol[p][1],p,c1);AS_Text(as_cDebCol[p][2],p,c2);
     AS_Text(as_cDebCol[p][3],p,c3);AS_Text(as_cDebCol[p][4],p,c4);
     AS_Text(as_cDebNext[p],p,next);
+    if(as_level+1<AS_LEVELS) {AS_Text(as_cDebFoot[p],p,"NEXT MISSION  //  "+as_levelTitle[as_level+1]);}
+    else {AS_Text(as_cDebFoot[p],p,"CAMPAIGN COMPLETE");}
+    DialogSetVisible(as_dDebriefBg[p],AS_Me(p),true);
     DialogSetVisible(as_dDebrief[p],AS_Me(p),true);
     AS_NameTagsHide(p);
 }
