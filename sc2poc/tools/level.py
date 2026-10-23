@@ -638,13 +638,13 @@ def decal_spots(floor, room, solid, seed=7):
     for y in range(1, H):
         for x in range(2, W - 2, 4):
             k = kind(x, y - 1)
-            if k not in ('mess', 'lab', 'reactor', 'bay') or not all(wall(x + i, y) and deck(x + i, y - 1) for i in (-1, 0)):
+            if k not in ('mess', 'lab', 'reactor', 'bay', 'cargo') or not all(wall(x + i, y) and deck(x + i, y - 1) for i in (-1, 0)):
                 continue
             if any(solid[y - 1 - dy, x + dx] for dx in (-1, 0) for dy in (0, 1) if y - 1 - dy >= 0):
                 continue
             if k == 'mess' and rng.random() < 0.7:
                 spots.append(('KPLockers', float(x), float(y), 0.0))
-            elif k in ('lab', 'reactor') and rng.random() < 0.5 or k == 'bay' and rng.random() < 0.15:
+            elif k in ('lab', 'reactor') and rng.random() < 0.5 or k in ('bay', 'cargo') and rng.random() < 0.2:
                 spots.append(('KPConsole', float(x), float(y), 0.0))
     # Barrels and crate stacks tucked into the rooms' corners (cells with hull on two sides).
     for x, y in open_cells:
