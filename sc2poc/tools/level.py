@@ -52,7 +52,7 @@ SPAWN_FACING = 45.0
 # Lamps (x, y, kind, flicker): kinds are white, cold, red, green, orange, purple. Flicker
 # 0 steady, 1 failing (long dark spells), 2 sputtering, 3 alarm pulse.
 LIGHTS = [
-    (12.0, 10.0, 'white', 0), (24.0, 10.0, 'white', 2), (12.0, 20.0, 'cold', 0), (24.0, 20.0, 'white', 0),
+    (12.0, 10.0, 'yellow', 0), (24.0, 10.0, 'white', 2), (12.0, 20.0, 'cold', 0), (24.0, 20.0, 'yellow', 0),
     (17.0, 25.0, 'white', 1), (17.0, 31.0, 'red', 3), (22.0, 30.0, 'cold', 0),
     (9.0, 39.0, 'white', 2), (22.0, 39.0, 'white', 0), (9.0, 47.0, 'white', 1), (22.0, 47.0, 'orange', 2),
     (30.0, 43.0, 'red', 3),
@@ -475,9 +475,9 @@ def paint_spots():
     for model, x, y, rot, scale, rad in PROPS:
         if model == 'Hercules':
             spots.append(('KNPad', x, y, 0.0))
-    # A haze of light under each steady white or cold lamp.
+    # A haze of light under each steady white, yellow or cold lamp.
     for x, y, kind, flick in LIGHTS:
-        if flick == 0 and kind in ('white', 'whitebig', 'cold'):
+        if flick == 0 and kind in ('white', 'whitebig', 'yellow', 'cold'):
             spots.append(('KVCold' if kind == 'cold' else 'KVWarm', x, y, 0.0))
     # Yellow guide lines round the bays and cargo rooms, a unit and a half in from the walls.
     floor, room = carve()

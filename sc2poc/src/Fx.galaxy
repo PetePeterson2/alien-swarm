@@ -137,6 +137,11 @@ void AS_LampsClear () {
     as_lampCount=0;
 }
 // Failing lamps: long dark spells; sputtering lamps: rapid stutter; alarms pulse.
+void AS_LampSparks (int i) {
+    point q=UnitGetPosition(as_lamp[i]);int k;
+    for(k=0;k<3;k+=1) {AS_Fx("ASFxSpark",PointGetX(q)+RandomFixed(-0.3,0.3),PointGetY(q)+RandomFixed(-0.3,0.3),RandomFixed(1.4,2.0),RandomFixed(0.0,360.0));}
+    AS_Burst(PointGetX(q),PointGetY(q),2.0,0.5,"255,230,170",2);
+}
 void AS_LampPulse () {
     int i;
     for(i=0;i<as_lampCount;i+=1) {
@@ -147,6 +152,8 @@ void AS_LampPulse () {
         }
         else if(as_lampFlicker[i]==2) {
             AS_LampSet(i,!as_lampOn[i]);
+            // A sputtering lamp spits sparks now and then as it catches, as Alien Swarm's broken lights do.
+            if(as_lampOn[i] && RandomInt(0,11)==0) {AS_LampSparks(i);}
             if(RandomInt(0,9)==0) {as_lampNext[i]=as_now+RandomFixed(1.0,4.0);}
             else {as_lampNext[i]=as_now+RandomFixed(0.06,0.2);}
         }

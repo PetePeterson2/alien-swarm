@@ -248,4 +248,6 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **Lab floors** carry a faint cyan glow in their seams (first try was far too bright: a Tron grid).
 - **Team colours**: the squad wears the HUD's blue, red, green and yellow; the swarm is orange-brown (`PlayerSetColorIndex` in `AS_Init`), nearer AS's drones.
 - **Hull tops** darker again, so the deck stands out as in AS; two more lamps in Cargo Elevator's freight junction.
+- **Viewports** onto space (the window bay, now with stars) in the docking bay's and cargo hold's north walls (`level.py VIEWPORTS`, look only; the gallery's `WINDOWS` still give way in mission 2).
+- **Sputtering lamps spit sparks** now and then as they catch (`AS_LampSparks`).
 
