@@ -76,7 +76,7 @@ def shaft_columns():
 
 # Lamps (x, y, kind, flicker): 0 steady, 1 failing, 2 sputtering, 3 alarm pulse.
 LIGHTS = [
-    (10.0, 8.0, 'white', 0), (22.0, 8.0, 'white', 2), (10.0, 20.0, 'cold', 0), (22.0, 20.0, 'white', 0), (16.0, 14.0, 'whitebig', 0),
+    (10.0, 8.0, 'yellow', 0), (22.0, 8.0, 'white', 2), (10.0, 20.0, 'cold', 0), (22.0, 20.0, 'yellow', 0), (16.0, 14.0, 'whitebig', 0),
     (18.5, 28.0, 'white', 1), (18.5, 36.0, 'red', 3),
     (18.5, 43.0, 'cold', 0), (18.5, 49.0, 'white', 2), (18.5, 55.0, 'cold', 1), (18.5, 60.0, 'red', 3),
     (9.0, 47.0, 'white', 0), (12.0, 54.0, 'green', 0),
