@@ -490,7 +490,7 @@ def decal_warning(size=256):
 
 FLOORS = {
     'floor_plate': lambda: (floor_plate(), None),
-    'floor_plate2': lambda: (floor_plate(21, (104, 100, 94)), None),
+    'floor_plate2': lambda: (floor_plate(21, (100, 106, 112)), None),
     'floor_tile': lambda: (floor_tile(), None),
     'floor_tile2': lambda: (floor_tile(22, (126, 134, 140)), None),
     'floor_lab': lambda: floor_lab(),
