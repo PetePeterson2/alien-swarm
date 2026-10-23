@@ -41,6 +41,8 @@ STATICS = [
     ('ASSentry', 'SentryGun', 0.85, 300),
     ('ASAmmo', 'ASAmmoCaseModel', 1.0, 0),       # Alien Swarm's ammo case (tools/propart.py KPAmmo)
     ('ASMedkit', 'PickupHealth100', 0.9, 0),
+    ('ASPickup', 'PickupPlasmaGun', 0.8, 0),     # a weapon or item lying on the deck (src/Weapons.galaxy AS_DropAt)
+    ('ASBarrel', 'ASBarrelModel', 1.0, 30),      # an explosive barrel, shot like an alien (AS_BARREL)
 ]
 # Projectiles moved by the script.
 PROJECTILES = [('ASGrenade', 'TossGrenadeWeapon', 0.9), ('ASBile', 'RavagerCorrosiveBileMissile', 0.8),
@@ -139,6 +141,8 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
     child(a, 'FogVisibility', value='Visible')
     m = child(cat['Model'], 'CModel', id='ASAmmoCaseModel', parent='Doodad')
     child(m, 'Model', value='Derelict\\KPAmmo.m3')
+    m = child(cat['Model'], 'CModel', id='ASBarrelModel', parent='Doodad')
+    child(m, 'Model', value='Derelict\\KPBarrel.m3')
     for ident, model, scale, life in STATICS:
         unit(ident, model, scale, life, radius=0.5 if life else 0.0, collide=ident in ('ASSentry',))
     for ident, model, scale in PROJECTILES:
@@ -258,7 +262,15 @@ def font_styles():
             ('ASTagAI', reg, 17, 'Center', white, False), ('ASDebTitle', reg, 32, 'Left', steel, False),
             ('ASDebPlace', reg, 24, 'Right', steel, False), ('ASPanelHead', reg, 24, 'Center', white, False),
             ('ASSmallC', reg, 17, 'Center', steel, False), ('ASDebPlace2', reg, 24, 'Left', white, False),
-            ('ASTab', reg, 17, 'Center', steel, False)]:
+            ('ASTab', reg, 17, 'Center', steel, False),
+            # Hacking, the briefing, hints and toasts.
+            ('ASHackTitle', reg, 22, 'Left', white, False), ('ASLogged', reg, 17, 'Right', '255,255,40,30', False),
+            ('ASLoggedL', reg, 17, 'Left', '255,255,40,30', False), ('ASGranted', ext, 28, 'Center', '255,255,60,40', True),
+            ('ASCompTitle', ext, 30, 'Center', white, True), ('ASCompSmall', reg, 17, 'Left', white, False),
+            ('ASCompSmallC', reg, 15, 'Center', white, False), ('ASMail', reg, 20, 'Left', '255,200,230,255', False),
+            ('ASTumb1', bold, 32, 'Center', white, True), ('ASTumb0', bold, 32, 'Center', '255,64,64,64', False),
+            ('ASHint', reg, 23, 'Left', white, True), ('ASSubtitle', reg, 21, 'Left', '255,226,240,240', False),
+            ('ASToastHead', ext, 18, 'Left', '255,240,200,80', True)]:
         child(root, 'Style', name=name, template='ModCenterSize20', font=font, height=size, vjustify='Middle', hjustify=align,
               styleflags='Shadow | Glow | InlineJustification' if lit else 'Shadow | InlineJustification',
               textcolor=color, highlightcolor=color, disabledcolor=color, glowcolor=glow if lit else '0,0,0,0',

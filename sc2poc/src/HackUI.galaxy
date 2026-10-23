@@ -1,0 +1,306 @@
+// =====================================================================
+// The hacking screens, after Alien Swarm's (asw_vgui_hack_wire_tile and
+// asw_vgui_computer_*), scaled to SC2's 1200-high UI (32 px tiles -> 50):
+//   ":: Maintenance Access ::"  the wire panel: "Actuator Charge:" and its bar,
+//      a red fast-hack marker sliding along it, each wire's tiles between its
+//      sockets, a lamp per wire that lights with it, "Access Granted"
+//   ":: Terminal Access ::"     the tumbler override (EXEC: Sec-Override), the
+//      critical-data download, and a PDA's mail
+// One dialog of each per player, rebuilt each time it opens.
+// =====================================================================
+
+int[5] as_dWire;
+int[5][72] as_cWireTile;
+int[5][72] as_cWireBtn;
+int[5][3] as_cWireSockR;
+int[5][3] as_cWireLamp;
+int[5] as_cWireFill;
+int[5] as_cWireMark;
+int[5] as_cWireLogged;
+int[5] as_cWireDone;
+int[5] as_wireBarX;
+int[5] as_wireBarW;
+int[5] as_wireDoor;
+trigger as_hackTrig;
+int[5] as_dComp;
+int[5] as_compRef;
+int[5] as_compPage;              // 0 menu, 1 override, 2 download, 3 mail
+int[5][64] as_cTumb;             // column*8 + entry
+int[5][8] as_cTumbBtn;
+int[5][8] as_cTumbBtnImg;
+int[5][8] as_cTumbBlock;
+int[5] as_cCompTitle;
+int[5] as_cCompBody;
+int[5] as_cCompBarBg;
+int[5] as_cCompBar;
+int[5] as_cCompErr;
+int[5] as_cCompBg;
+int[5] as_cCompIcon;
+int[5] as_tumbX0;
+int[5] as_tumbY0;
+fixed[5] as_compDoneAt;
+
+void AS_HackTrigger () {
+    if(as_hackTrig==null) {as_hackTrig=TriggerCreate("AS_HackClickT");}
+}
+// ---- the wire panel ---------------------------------------------------------------------
+void AS_WireOpen (int p, int d) {
+    int T=AS_TILE;int rows=as_wtRows[d];int cols=as_wtCols[d];int wires=as_wtWires[d];int space=3*T;int W;int H;int dlg;int w;int r;int c;int i;int top;int x0=10;int y0=57;int lamp;
+    if(rows!=2) {space=4*T;}
+    W=T*(7+cols);H=space*wires+3*T;
+    AS_HackTrigger();
+    if(as_dWire[p]!=0) {DialogDestroy(as_dWire[p]);as_dWire[p]=0;}
+    dlg=DialogCreate(W+20,H+y0+10,c_anchorCenter,0,-60,false);DialogSetImageVisible(dlg,false);as_dWire[p]=dlg;as_wireDoor[p]=d;
+    AS_Image(dlg,c_anchorTopLeft,0,0,W+20,H+y0+10,AS_WHITE,Color(0.0,0.0,0.0));
+    DialogSetTransparency(dlg,0.0);
+    AS_Art(dlg,0,0,W+20,y0-4,"header",AS_Full());
+    AS_Lbl(dlg,14,4,W-8,y0-12,"ASHackTitle",":: Maintenance Access ::");
+    AS_Image(dlg,c_anchorTopLeft,x0,y0,W,H,AS_WHITE,Color(0.0,0.0,0.0));
+    AS_Lbl(dlg,x0+T*3/2,y0+6,W/2,30,"ASHackTitle","Actuator Charge:");
+    as_wireBarW[p]=W*8/10;as_wireBarX[p]=x0+(W-as_wireBarW[p])/2;
+    AS_Image(dlg,c_anchorTopLeft,as_wireBarX[p],y0+44,as_wireBarW[p],19,AS_WHITE,AS_Rgb(65,74,96));
+    as_cWireFill[p]=AS_Image(dlg,c_anchorTopLeft,as_wireBarX[p],y0+44,1,19,AS_WHITE,AS_Rgb(255,255,255));
+    as_cWireMark[p]=AS_Art(dlg,as_wireBarX[p],y0+44,11,19,"fastmark",AS_Full());AS_Show(as_cWireMark[p],p,false);
+    as_cWireLogged[p]=AS_Lbl(dlg,as_wireBarX[p],y0+66,as_wireBarW[p],24,"ASLogged","");
+    for(w=0;w<wires;w+=1) {
+        top=y0+T*5/2+space*w+(space-rows*T)/2;
+        AS_Art(dlg,x0+T*3/2,top,T,T,"sock_l",AS_Full());
+        for(r=0;r<rows;r+=1) {
+            for(c=0;c<cols;c+=1) {
+                i=AS_WtAt(w,r,c);
+                AS_Art(dlg,x0+T*5/2+c*T,top+r*T,T,T,"wire_bg",AS_Full());
+                as_cWireTile[p][i]=AS_Art(dlg,x0+T*5/2+c*T,top+r*T,T,T,AS_WtArt(as_wtType[d][i],as_wtRot[d][i]),AS_Rgb(64,64,64));
+                libNtve_gf_CreateDialogItemButton(dlg,T,T,c_anchorTopLeft,x0+T*5/2+c*T,top+r*T,StringToText(""),StringToText(""),"");
+                as_cWireBtn[p][i]=DialogControlLastCreated();
+                DialogControlSetPropertyAsString(as_cWireBtn[p][i],c_triggerControlPropertyImage,PlayerGroupAll(),AS_Ui("clear"));
+                DialogControlSetPropertyAsString(as_cWireBtn[p][i],c_triggerControlPropertyHoverImage,PlayerGroupAll(),AS_Ui("hover"));
+                TriggerAddEventDialogControl(as_hackTrig,p,as_cWireBtn[p][i],c_triggerControlEventTypeClick);
+            }
+        }
+        as_cWireSockR[p][w]=AS_Art(dlg,x0+T*5/2+cols*T,top+(rows-1)*T,T,T,"sock_r",AS_Rgb(64,64,64));
+        lamp=W*15/100;
+        as_cWireLamp[p][w]=AS_Art(dlg,x0+W-lamp-10,top+(rows*T-lamp)/2,lamp,lamp,"wire_open",AS_Rgb(32,32,32));
+    }
+    as_cWireDone[p]=AS_Label(dlg,p,c_anchorBottom,0,14,W,36,"ASGranted","");
+    as_wireDoneAt[p]=0.0;
+    DialogSetVisible(dlg,AS_Me(p),true);
+    AS_WireUpdate(p,d);
+    AS_SoundUI(p,"UI_BnetClick");
+}
+void AS_WireUpdate (int p, int d) {
+    int w;int r;int c;int i;bool lit;fixed f;int x;
+    if(as_dWire[p]==0 || as_wireDoor[p]!=d) {return;}
+    for(w=0;w<as_wtWires[d];w+=1) {
+        lit=AS_WtWireLit(d,w);
+        for(r=0;r<as_wtRows[d];r+=1) {
+            for(c=0;c<as_wtCols[d];c+=1) {
+                i=AS_WtAt(w,r,c);
+                AS_SetArt(as_cWireTile[p][i],p,AS_WtArt(as_wtType[d][i],as_wtRot[d][i]));
+                if(as_wtLit[d][i]) {AS_SetTint(as_cWireTile[p][i],p,AS_Rgb(255,255,255));}else {AS_SetTint(as_cWireTile[p][i],p,AS_Rgb(64,64,64));}
+            }
+        }
+        if(lit) {AS_SetTint(as_cWireSockR[p][w],p,AS_Full());AS_SetTint(as_cWireLamp[p][w],p,AS_Full());}
+        else {AS_SetTint(as_cWireSockR[p][w],p,AS_Rgb(64,64,64));AS_SetTint(as_cWireLamp[p][w],p,AS_Rgb(32,32,32));}
+    }
+    DialogControlSetSize(as_cWireFill[p],AS_Me(p),MaxI(1,FixedToInt(IntToFixed(as_wireBarW[p])*as_drHack[d])),19);
+    // The fast-hack marker slides along the bar from the first click; past the end the attempt is logged.
+    if(as_wtStart[d]>0.0 && as_drHack[d]<1.0) {
+        f=AS_Clamp((as_now-as_wtStart[d])/MaxF(0.1,as_wtFast[d]-as_wtStart[d]),0.0,1.0);
+        x=as_wireBarX[p]+FixedToInt(IntToFixed(as_wireBarW[p]-11)*f);
+        AS_Show(as_cWireMark[p],p,true);AS_Place(as_cWireMark[p],p,x,57+44);
+    }
+    if(as_wtLogged[d]) {AS_Text(as_cWireLogged[p],p,"ACCESS ATTEMPT LOGGED");}
+}
+void AS_WireDone (int p) {
+    if(as_dWire[p]==0) {return;}
+    AS_WireUpdate(p,as_wireDoor[p]);
+    AS_Text(as_cWireDone[p],p,"Access Granted");
+    as_wireDoneAt[p]=as_now;
+}
+void AS_WireClose (int p) {
+    if(as_dWire[p]!=0) {DialogDestroy(as_dWire[p]);as_dWire[p]=0;}
+}
+// A click on a tile of an unlit wire turns it a quarter turn clockwise.
+void AS_WireClick (int p, int c) {
+    int d=as_wireDoor[p];int i;
+    if(as_using[p]!=d || as_useWhat[p]!=AS_USE_PANEL || as_drHack[d]>=1.0) {return;}
+    for(i=0;i<72;i+=1) {
+        if(as_cWireBtn[p][i]!=c || c==0) {continue;}
+        AS_WireClickTile(p,i);
+        return;
+    }
+}
+void AS_WireClickTile (int p, int i) {
+    int d=as_wireDoor[p];int w=i/24;
+    if(as_using[p]!=d || as_useWhat[p]!=AS_USE_PANEL || as_drHack[d]>=1.0) {return;}
+    if(AS_WtWireLit(d,w)) {return;}
+    as_wtRot[d][i]=(as_wtRot[d][i]+1)%4;
+    if(as_wtStart[d]==0.0) {as_wtStart[d]=as_now;as_wtFast[d]=as_now+AS_WtFastTime(d);}
+    AS_WtLight(d);
+    AS_SoundUI(p,"UI_BnetClick");
+    if(AS_WtWireLit(d,w)) {AS_SoundUI(p,"UI_Achievement");}
+    AS_WireUpdate(p,d);
+}
+
+// ---- the terminal -----------------------------------------------------------------------
+void AS_CompOpen (int p, int i) {
+    int W=1040;int H=780;int dlg;
+    AS_HackTrigger();
+    AS_CompClose(p);
+    dlg=DialogCreate(W,H,c_anchorCenter,0,-40,false);DialogSetImageVisible(dlg,false);as_dComp[p]=dlg;as_compRef[p]=i;
+    AS_Image(dlg,c_anchorTopLeft,0,0,W,H,AS_WHITE,Color(0.0,0.0,0.0));
+    as_cCompBg[p]=AS_Art(dlg,6,6,W-12,H-12,"comp_blue",AS_Full());
+    AS_Art(dlg,0,0,W,48,"header",AS_Full());
+    if(as_cpPda[i]) {AS_Lbl(dlg,14,2,W-28,44,"ASHackTitle",":: SynTek PDA ::");}
+    else {AS_Lbl(dlg,14,2,W-28,44,"ASHackTitle",":: Terminal Access ::");}
+    as_cCompTitle[p]=AS_Label(dlg,p,c_anchorTop,0,FixedToInt(0.08*IntToFixed(H)),W,44,"ASCompTitle","");
+    as_cCompBody[p]=AS_Lbl(dlg,60,160,W-120,H-260,"ASMail","");
+    as_cCompIcon[p]=AS_Art(dlg,W/2-80,250,160,160,"icon_files",AS_Full());AS_Show(as_cCompIcon[p],p,false);
+    as_cCompBarBg[p]=AS_Image(dlg,c_anchorTopLeft,140,470,W-280,28,AS_WHITE,Color(0.0,0.0,0.0));AS_Show(as_cCompBarBg[p],p,false);
+    as_cCompBar[p]=AS_Image(dlg,c_anchorTopLeft,142,472,1,24,AS_WHITE,AS_Rgb(255,255,255));AS_Show(as_cCompBar[p],p,false);
+    as_cCompErr[p]=AS_Lbl(dlg,40,H-110,W-80,40,"ASLoggedL","");
+    as_compPage[p]= -1;
+    DialogSetVisible(dlg,AS_Me(p),true);
+    AS_SoundUI(p,"UI_BnetClick");
+}
+void AS_CompClose (int p) {
+    if(as_dComp[p]!=0) {DialogDestroy(as_dComp[p]);as_dComp[p]=0;}
+}
+// The columns of the override, each with its switch, and the status blocks.
+void AS_CompTumblers (int p, int i) {
+    int dlg=as_dComp[p];int W=1040;int H=780;int k;int e;int cw=47;int gap=8;int n=as_cpTumblers[i];int E=as_cpEntries[i];int gw;int x;int bx;int by;int bw;int bh;
+    gw=n*cw+(n-1)*gap;as_tumbX0[p]=FixedToInt(0.316*IntToFixed(W))-gw/2;as_tumbY0[p]=(H-E*cw)/2;
+    AS_Lbl(dlg,40,FixedToInt(0.204*IntToFixed(H))-40,FixedToInt(0.7*IntToFixed(W)),30,"ASCompSmall","SUBSYSTEM PROCESS ALIGNMENT");
+    for(k=0;k<n;k+=1) {
+        x=as_tumbX0[p]+k*(cw+gap);
+        AS_Image(dlg,c_anchorTopLeft,x,as_tumbY0[p],cw,E*cw,AS_WHITE,Color(0.0,0.0,0.0));
+        for(e=0;e<E;e+=1) {as_cTumb[p][k*8+e]=AS_Lbl(dlg,x,as_tumbY0[p]+e*cw,cw,cw,"ASTumb0","0");}
+        as_cTumbBtnImg[p][k]=AS_Art(dlg,x,as_tumbY0[p]+E*cw+10,cw,cw,"tumb_dn",AS_Full());
+        libNtve_gf_CreateDialogItemButton(dlg,cw,cw,c_anchorTopLeft,x,as_tumbY0[p]+E*cw+10,StringToText(""),StringToText(""),"");
+        as_cTumbBtn[p][k]=DialogControlLastCreated();
+        DialogControlSetPropertyAsString(as_cTumbBtn[p][k],c_triggerControlPropertyImage,PlayerGroupAll(),AS_Ui("clear"));
+        DialogControlSetPropertyAsString(as_cTumbBtn[p][k],c_triggerControlPropertyHoverImage,PlayerGroupAll(),AS_Ui("hover"));
+        TriggerAddEventDialogControl(as_hackTrig,p,as_cTumbBtn[p][k],c_triggerControlEventTypeClick);
+    }
+    // ACCESS STATUS: a block per column, lit when that column is in line.
+    bx=FixedToInt(0.614*IntToFixed(W));by=FixedToInt(0.204*IntToFixed(H));bw=FixedToInt(0.295*IntToFixed(W));bh=FixedToInt(0.612*IntToFixed(H));
+    AS_Image(dlg,c_anchorTopLeft,bx,by,bw,bh,AS_WHITE,Color(0.0,0.0,0.0));
+    AS_Lbl(dlg,bx+10,by+6,bw-20,28,"ASCompSmall","ACCESS STATUS");
+    for(k=0;k<n;k+=1) {
+        as_cTumbBlock[p][k]=AS_Image(dlg,c_anchorTopLeft,bx+20+(k%2)*(bw/2-10),by+bh-60-(k/2)*90-(k%2)*30,bw/2-40,40,AS_WHITE,AS_Rgb(32,32,32));
+        AS_Lbl(dlg,bx+20+(k%2)*(bw/2-10),by+bh-60-(k/2)*90-(k%2)*30,bw/2-40,40,"ASCompSmallC",AS_TbBlockName(k,n));
+    }
+}
+string AS_TbBlockName (int k, int n) {
+    if(k==n-1) {return "OS KERNEL";}
+    if(k==0) {return "ACCESS POINT";}if(k==1) {return "SSI";}if(k==2) {return "REMOTE AUTH";}if(k==3) {return "RPC GATEWAY";}
+    if(k==4) {return "ZRAM SEARCH";}if(k==5) {return "PROCESS WATCHER";}
+    return "INNER NETWORK HUB";
+}
+void AS_CompPage (int p, int page) {
+    int i=as_compRef[p];
+    if(as_dComp[p]==0) {return;}
+    as_compPage[p]=page;
+    AS_Show(as_cCompIcon[p],p,page==2);AS_Show(as_cCompBarBg[p],p,page==2);AS_Show(as_cCompBar[p],p,page==2);
+    AS_Text(as_cCompErr[p],p,"");
+    if(page==1) {
+        AS_SetArt(as_cCompBg[p],p,"comp_blue");
+        AS_Text(as_cCompTitle[p],p,"EXEC: Sec-Override v4.00774");AS_Text(as_cCompBody[p],p,"");
+        AS_CompTumblers(p,i);AS_CompTumblerShow(p,i);
+        AS_SoundUI(p,"UI_Achievement");
+        return;
+    }
+    if(page==2) {
+        AS_SetArt(as_cCompBg[p],p,"comp_blue");AS_SetArt(as_cCompIcon[p],p,"icon_files");
+        AS_Text(as_cCompTitle[p],p,"Downloading Critical Data");AS_Text(as_cCompBody[p],p,"");
+        as_compDoneAt[p]=0.0;
+        return;
+    }
+    if(page==3) {
+        AS_SetArt(as_cCompBg[p],p,"comp_blue");
+        AS_Text(as_cCompTitle[p],p,"Mail  -  "+as_cpOwner[i]);
+        AS_Text(as_cCompBody[p],p,AS_MailText(as_cpMail[i]));
+        AS_MissionPdaRead(i,p);
+        return;
+    }
+    AS_Text(as_cCompTitle[p],p,"SynTek Megacorporation, Inc.");
+    AS_Text(as_cCompBody[p],p,"<c val=\"8CC8F0\">Terminal unlocked.</c><n/><n/>No further records on this terminal.<n/><n/>Press E to log off.");
+}
+// The columns as they stand, part way through a slide when sliding.
+void AS_CompTumblerShow (int p, int i) {
+    int k;int e;int row;int n=as_cpTumblers[i];int E=as_cpEntries[i];int cw=47;int off=0;int y;int right;
+    if(as_compPage[p]!=1) {return;}
+    for(k=0;k<n;k+=1) {
+        row=AS_TbRow(i,k);
+        if(as_tbPhase[i]==1) {off=FixedToInt(AS_Clamp((as_now-as_tbPhaseAt[i])/0.5,0.0,1.0)*IntToFixed(cw))*as_tbDir[i][k];}
+        else {off=0;}
+        for(e=0;e<E;e+=1) {
+            y=as_tumbY0[p]+((e*cw+off+E*cw*2)%(E*cw));
+            AS_Place(as_cTumb[p][k*8+e],p,as_tumbX0[p]+k*(cw+8),y);
+            if(e==row) {AS_Text(as_cTumb[p][k*8+e],p,"1");AS_SetStyle(as_cTumb[p][k*8+e],p,"ASTumb1");}
+            else {AS_Text(as_cTumb[p][k*8+e],p,"0");AS_SetStyle(as_cTumb[p][k*8+e],p,"ASTumb0");}
+        }
+        if(AS_TbDirNow(i,k)>0) {AS_SetArt(as_cTumbBtnImg[p][k],p,"tumb_dn");}else {AS_SetArt(as_cTumbBtnImg[p][k],p,"tumb_up");}
+    }
+    right=AS_TbCorrectCount(i);
+    for(k=0;k<n;k+=1) {
+        if(k<right) {AS_SetTint(as_cTumbBlock[p][k],p,AS_Rgb(255,255,255));}else {AS_SetTint(as_cTumbBlock[p][k],p,AS_Rgb(32,32,32));}
+    }
+    if(right<n) {AS_Text(as_cCompErr[p],p,"ERROR: ROOT PRIVILEGES REJECTED BY "+AS_TbBlockName(right,n)+". ERRCODE "+IntToString(100+right*201)+".");}
+    else {AS_Text(as_cCompErr[p],p,"");}
+}
+void AS_CompPulse (int p, int i) {
+    fixed rate;
+    if(as_dComp[p]==0) {return;}
+    if(as_compPage[p]==1) {AS_CompTumblerShow(p,i);return;}
+    if(as_compPage[p]==2) {
+        if(as_cpDone[i]<1.0) {
+            // 15 s for the whole download, twice as fast for a tech, half for anyone else.
+            rate=2.0;if(!AS_IsTech(p)) {rate=0.5;}
+            as_cpDone[i]=MinF(1.0,as_cpDone[i]+AS_DT/as_cpDownload[i]*rate);
+            DialogControlSetSize(as_cCompBar[p],AS_Me(p),MaxI(1,FixedToInt(756.0*as_cpDone[i])),24);
+            if(as_tick%16==0) {AS_SoundUI(p,"UI_BnetClick");}
+            if(as_cpDone[i]>=1.0) {
+                AS_Text(as_cCompTitle[p],p,"Download Complete");AS_SoundUI(p,"UI_Achievement");
+                as_compDoneAt[p]=as_now;
+                AS_MissionDownloaded(i,p);
+            }
+        }
+        else if(as_compDoneAt[p]>0.0 && as_now>as_compDoneAt[p]+1.0) {AS_UseStop(p);}
+    }
+}
+// Tumbler switches and wire tiles.
+bool AS_HackClickT (bool testConds, bool runActions) {
+    int p=EventPlayer();int c=EventDialogControl();int i;int k;
+    if(!AS_Person(p) || as_using[p]<0) {return true;}
+    if(as_useWhat[p]==AS_USE_PANEL) {AS_WireClick(p,c);return true;}
+    i=as_using[p];
+    if(as_compPage[p]!=1 || as_cpHacked[i]) {return true;}
+    for(k=0;k<as_cpTumblers[i];k+=1) {
+        if(as_cTumbBtn[p][k]==c) {AS_TumblerClick(p,i,k);return true;}
+    }
+    return true;
+}
+// A tumbler column's switch: its reversal is queued for the next slide.
+void AS_TumblerClick (int p, int i, int k) {
+    if(as_using[p]!=i || as_compPage[p]!=1 || as_cpHacked[i]) {return;}
+    as_tbFlip[i][k]=!as_tbFlip[i][k];
+    AS_SoundUI(p,"UI_BnetClick");
+    AS_CompTumblerShow(p,i);
+    AS_TbCheck(i);
+}
+// The crew's mail, after the original's landingbaymail1-3 (written anew here).
+string AS_MailText (int n) {
+    if(n==1) {
+        return "<c val=\"8CC8F0\">From:</c> Brian Howe<n/><c val=\"8CC8F0\">Subject:</c> Lockdown<n/><n/>Security sealed the booth with me still inside it. "
+            +"They say it's procedure. Something has been banging on the vents all night and the comms are dead past the landing pads.<n/><n/>"
+            +"If anyone reads this, there is a sentry case behind the gun rack. Use it. I can't.";
+    }
+    if(n==2) {
+        return "<c val=\"8CC8F0\">From:</c> Laura Callen<n/><c val=\"8CC8F0\">Subject:</c> Re: missing shipment<n/><n/>The freight from bay 7 never logged out. "
+            +"Flight control says the escape pod's beacon is still pinging the traffic net, but nobody will go up there to check.<n/><n/>"
+            +"I've put both welders on the supply bench. If the tank room doors stay welded we are not getting through that way.";
+    }
+    return "<c val=\"8CC8F0\">From:</c> John Cain<n/><c val=\"8CC8F0\">Subject:</c> Shift change<n/><n/>Night shift didn't show. The pump room is making noises "
+        +"I have never heard a pump make. I'm locking the office and heading for the docks.<n/><n/>Whoever takes my desk: don't open the north door.";
+}

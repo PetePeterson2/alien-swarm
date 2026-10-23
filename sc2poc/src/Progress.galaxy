@@ -1,0 +1,356 @@
+// =====================================================================
+// Progression, after Alien Swarm's (asw_player_experience, asw_medals,
+// asw_achievements):
+//   XP        a mission won is worth 1000 (a lost one 1000 x the share of its
+//             objectives done); then up to 100 for kills, 100 for beating the par
+//             time (gone 5 min past it), 100 less the friendly fire done, 100 less
+//             the damage taken, 50 for healing (a tenth of it), 25 or 50 for fast
+//             hacks, 50 for each medal and achievement; the whole scaled by the
+//             difficulty (Easy x0.5, Hard x1.2, Insane x1.4, Brutal x1.5)
+//   levels    27, from 1000 XP for level 2 to 42,250 for level 27; equipment
+//             unlocks level by level (src/State.galaxy unlock)
+//   promotion at level 27 a player may take a promotion: back to level 1 with
+//             every unlock locked again, and a medal: Titanium Star, Carbide Star,
+//             Gallium Cross, Platinum Star, Osmium Star, Iridium Medallion (from the
+//             fourth on, every level needs twice, four times, six times the XP)
+//   medals    awarded at the end of a mission (Perfect, Zero Mortality, Sharpshooter,
+//             the speed runs...), shown on the debrief
+//   achievements  kept for good in the player's bank; a toast when one is earned
+// Everything lives in each player's bank (HalcyonDrift.SC2Bank), saved at the end of
+// each mission.
+// =====================================================================
+
+const int AS_LEVELS_XP = 27;
+int[28] as_xpLevel;                    // XP needed for level n (1-based)
+int[5] as_xp;
+int[5] as_promo;
+int[5] as_xpGained;                    // the last mission's award, for the debrief
+string[5] as_xpLines;                  // its breakdown
+string[5] as_medalsWon;                // this mission's medals, "|" separated names
+int[5] as_medalsN;
+int[5] as_achWonN;                     // achievements earned this mission
+bool as_cheated;                       // god mode, QA skips: no XP, no medals (asw "CHEATS USED")
+int[5] as_levelBefore;
+
+void AS_XpInit () {
+    int i;
+    as_xpLevel[1]=0;as_xpLevel[2]=1000;as_xpLevel[3]=2050;as_xpLevel[4]=3150;as_xpLevel[5]=4300;as_xpLevel[6]=5500;as_xpLevel[7]=6750;
+    as_xpLevel[8]=8050;as_xpLevel[9]=9400;as_xpLevel[10]=10800;as_xpLevel[11]=12250;as_xpLevel[12]=13750;as_xpLevel[13]=15300;as_xpLevel[14]=16900;
+    as_xpLevel[15]=18550;as_xpLevel[16]=20250;as_xpLevel[17]=22000;as_xpLevel[18]=23800;as_xpLevel[19]=25650;as_xpLevel[20]=27550;as_xpLevel[21]=29500;
+    as_xpLevel[22]=31500;as_xpLevel[23]=33550;as_xpLevel[24]=35650;as_xpLevel[25]=37800;as_xpLevel[26]=40000;as_xpLevel[27]=42250;
+    AS_AchievementsInit();
+}
+fixed AS_PromoScale (int promo) {
+    if(promo>=6) {return 6.0;}if(promo==5) {return 4.0;}if(promo==4) {return 2.0;}
+    return 1.0;
+}
+int AS_XpFor (int p, int level) {return FixedToInt(IntToFixed(as_xpLevel[MaxI(1,MinI(27,level))])*AS_PromoScale(as_promo[p]));}
+int AS_PlayerLevel (int p) {
+    int n=1;
+    while(n<27 && as_xp[p]>=AS_XpFor(p,n+1)) {n+=1;}
+    return n;
+}
+// The level whose unlocks an AI marine uses: its commander's (the first human's).
+int AS_LoadoutLevel (int p) {
+    int q;
+    if(!as_bot[p] || (as_auto && p==1)) {return AS_PlayerLevel(p);}
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && !as_bot[q]) {return AS_PlayerLevel(q);}}
+    return 1;
+}
+bool AS_Unlocked (int p, int it) {return as_it[it].unlock<=AS_LoadoutLevel(p);}
+string AS_PromoName (int k) {
+    if(k==1) {return "Titanium Star";}if(k==2) {return "Carbide Star";}if(k==3) {return "Gallium Cross";}
+    if(k==4) {return "Platinum Star";}if(k==5) {return "Osmium Star";}if(k==6) {return "Iridium Medallion";}
+    return "";
+}
+bool AS_CanPromote (int p) {return as_promo[p]<6 && as_xp[p]>=AS_XpFor(p,27);}
+void AS_Promote (int p) {
+    if(!AS_CanPromote(p)) {return;}
+    as_promo[p]+=1;as_xp[p]=0;
+    AS_BankSet(p,"xp","xp",0);AS_BankSet(p,"xp","promo",as_promo[p]);
+    AS_BankSave(p);
+    AS_AllMsg(AS_MarineNameS(p)+" (player "+IntToString(p)+") has received the "+AS_PromoName(as_promo[p])+".");
+    AS_SoundUI(p,"Alert_Victory");
+}
+
+// ---- the bank -------------------------------------------------------------------------
+void AS_BankSet (int p, string sec, string key, int v) {
+    if(!as_bankOn[p]) {return;}
+    BankValueSetFromInt(as_bank[p],sec,key,v);as_bankDirty[p]=true;
+}
+int AS_BankGet (int p, string sec, string key) {
+    if(!as_bankOn[p] || !BankKeyExists(as_bank[p],sec,key)) {return 0;}
+    return BankValueGetAsInt(as_bank[p],sec,key);
+}
+void AS_BankSave (int p) {
+    if(!as_bankOn[p]) {return;}
+    BankSave(as_bank[p]);as_bankDirty[p]=false;
+}
+void AS_ProgressLoad (int p) {
+    as_xp[p]=AS_BankGet(p,"xp","xp");as_promo[p]=AS_BankGet(p,"xp","promo");
+    AS_HintsLoad(p);
+}
+void AS_CountAdd (int p, string key, int n) {
+    if(!AS_Person(p) || (as_bot[p] && !(as_auto && p==1))) {return;}
+    AS_BankSet(p,"cnt",key,AS_BankGet(p,"cnt",key)+n);
+}
+
+// ---- achievements ----------------------------------------------------------------------
+const int AS_ACHS = 48;
+int as_achN;
+string[48] as_achKey;
+string[48] as_achName;
+string[48] as_achDesc;
+int[48] as_achGoal;                     // a counter's target (0: earned at once)
+string[48] as_achCount;                 // the counter it watches
+void AS_Ach (string key, string name, string desc, int goal, string count) {
+    int i=as_achN;
+    if(i>=AS_ACHS) {return;}
+    as_achN+=1;
+    as_achKey[i]=key;as_achName[i]=name;as_achDesc[i]=desc;as_achGoal[i]=goal;as_achCount[i]=count;
+}
+void AS_AchievementsInit () {
+    as_achN=0;
+    AS_Ach("camp_easy","Easy Campaign","Complete every mission of the campaign on Easy or harder.",0,"");
+    AS_Ach("camp_normal","Normal Campaign","Complete every mission of the campaign on Normal or harder.",0,"");
+    AS_Ach("camp_hard","Hard Campaign","Complete every mission of the campaign on Hard or harder.",0,"");
+    AS_Ach("camp_insane","Insane Campaign","Complete every mission of the campaign on Insane or harder.",0,"");
+    AS_Ach("camp_brutal","Brutal Campaign","Complete every mission of the campaign on Brutal.",0,"");
+    AS_Ach("speed_bay","Landing Bay Speed Run","Complete Landing Bay within 1:25 on Normal or harder with no marine lost.",0,"");
+    AS_Ach("speed_cargo","Cargo Elevator Speed Run","Complete Cargo Elevator within 2:50 on Normal or harder with no marine lost.",0,"");
+    AS_Ach("no_ff","Short Controlled Bursts","Complete a mission with no friendly fire, four marines present.",0,"");
+    AS_Ach("clear_firing","Clear Firing","Kill 25 drones without friendly fire, four marines present.",0,"");
+    AS_Ach("shield_down","Shield Down","Deliver the finishing blow to a shieldbug.",0,"");
+    AS_Ach("blast_radius","Blast Radius","Kill 6 aliens with a single grenade.",0,"");
+    AS_Ach("sharpshooter","Sharpshooter","Complete a mission with better than 90% accuracy.",0,"");
+    AS_Ach("perfect","Perfect","Complete a mission on Normal or harder without taking any damage.",0,"");
+    AS_Ach("zero_mortality","Zero Mortality","Complete a mission on Normal or harder without losing a marine.",0,"");
+    AS_Ach("static_defender","Static Defender","Kill 500 aliens with sentry guns.",500,"sentry_kills");
+    AS_Ach("parasite_punch","Parasite Puncher","Kill a parasite with a melee attack.",0,"");
+    AS_Ach("close_encounters","Close Encounters","Kill 20 aliens with melee in a single mission.",0,"");
+    AS_Ach("smoking_barrels","Smoking Barrels","Kill 5 aliens with explosive barrels in a single mission.",0,"");
+    AS_Ach("infestation_savior","Infestation Savior","Cure an infested marine.",0,"");
+    AS_Ach("circuit_breaker","Circuit Breaker","Complete 10 wire hacks without access being logged.",10,"fast_wire");
+    AS_Ach("security_expert","Security Expert","Complete 10 computer hacks without access being logged.",10,"fast_comp");
+    AS_Ach("group_heal","Group Heal","Heal all four marines with a single heal beacon.",0,"");
+    AS_Ach("gunslinger","Gunslinger","Perform 5 fast reloads in a row.",0,"");
+    AS_Ach("quick_load","Quick Load","Perform a fast reload.",0,"");
+    AS_Ach("peace_medic","Peace Medic","Heal 300 damage in a mission without hurting the swarm except in melee.",0,"");
+    AS_Ach("protect_tech","Protect the Tech","Guard the squad's tech so the tech takes no damage during the hack.",0,"");
+    AS_Ach("tech_secured","Technician Secured","Finish a mission without the tech being killed.",0,"");
+    AS_Ach("electro_stunned","Electro-Stunned","Stun 6 aliens with a single stun grenade.",0,"");
+    AS_Ach("seal_of_quality","Seal of Quality","Seal a door with the welder.",0,"");
+    AS_Ach("stay_frosty","Stay Frosty","Freeze 6 aliens with a single freeze grenade.",0,"");
+    AS_Ach("ammo_tech","Ammo Technician","Deploy 10 ammo stashes used by other marines.",10,"ammo_shared");
+    AS_Ach("kills_1000","On the Ready Line","Kill 1,000 aliens.",1000,"kills");
+    AS_Ach("kills_5000","Another Bughunt","Kill 5,000 aliens.",5000,"kills");
+    AS_Ach("kills_25000","Kill Them All","Kill 25,000 aliens.",25000,"kills");
+    AS_Ach("kills_100000","Nuke From Orbit","Kill 100,000 aliens.",100000,"kills");
+    AS_Ach("w_rifle","Assault Specialist","Kill 250 aliens with the assault rifle.",250,"k1");
+    AS_Ach("w_prifle","Prototype Professional","Kill 250 aliens with the prototype rifle.",250,"k2");
+    AS_Ach("w_autogun","Autogun Expert","Kill 250 aliens with the autogun.",250,"k3");
+    AS_Ach("w_vindicator","Vindicator Veteran","Kill 250 aliens with the Vindicator.",250,"k4");
+    AS_Ach("w_pistols","Pistols Expert","Kill 250 aliens with the twin pistols.",250,"k5");
+    AS_Ach("w_shotgun","Shotgun Specialist","Kill 250 aliens with the shotgun.",250,"k9");
+    AS_Ach("w_tesla","High Voltage Expert","Kill 250 aliens with the tesla cannon.",250,"k10");
+    AS_Ach("w_flamer","Pyrotechnician","Kill 250 aliens with the flamer.",250,"k14");
+    AS_Ach("w_minigun","Minigun Master","Kill 250 aliens with the minigun.",250,"k16");
+    AS_Ach("armory","Armory Access","Unlock all the available weapons.",0,"");
+    AS_Ach("hat_trick","Hat Trick","Complete 2 co-op missions with other players.",2,"coop_wins");
+    AS_Ach("hardcore","Hardcore","Complete a mission on Brutal with Onslaught.",0,"");
+    AS_Ach("read_mail","Nosy","Read a crew member's mail.",0,"");
+}
+int AS_AchIndex (string key) {
+    int i;
+    for(i=0;i<as_achN;i+=1) {if(as_achKey[i]==key) {return i;}}
+    return -1;
+}
+bool AS_HasAch (int p, string key) {return AS_BankGet(p,"ach",key)>0;}
+int AS_AchievedCount (int p) {
+    int i;int n=0;
+    for(i=0;i<as_achN;i+=1) {if(AS_HasAch(p,as_achKey[i])) {n+=1;}}
+    return n;
+}
+bool AS_Banked2 (int p) {return AS_Person(p) && (!as_bot[p] || (as_auto && p==1)) && as_bankOn[p];}
+void AS_Achieve (int p, string key) {
+    int i=AS_AchIndex(key);
+    if(i<0 || !AS_Banked2(p) || AS_HasAch(p,key)) {return;}
+    AS_BankSet(p,"ach",key,1);AS_BankSave(p);
+    as_achWonN[p]+=1;
+    AS_Log("achievement p"+IntToString(p)+": "+key);
+    AS_HudToast(p,"ACHIEVEMENT UNLOCKED",as_achName[i],as_achDesc[i]);
+}
+// A counter went up: any achievement watching it that has reached its goal is earned.
+void AS_AchCount (int p, string count, int n) {
+    int i;int v;
+    if(!AS_Banked2(p)) {return;}
+    AS_CountAdd(p,count,n);v=AS_BankGet(p,"cnt",count);
+    for(i=0;i<as_achN;i+=1) {if(as_achCount[i]==count && as_achGoal[i]>0 && v>=as_achGoal[i]) {AS_Achieve(p,as_achKey[i]);}}
+}
+// Things happening in play (weapons, the use key, the debrief) report here.
+int[5] as_fastReloadRun;
+void AS_AchieveEvent (int p, string ev) {
+    if(!AS_Person(p)) {return;}
+    if(ev=="fast_reload") {as_fastReloadRun[p]+=1;AS_Achieve(p,"quick_load");if(as_fastReloadRun[p]>=5) {AS_Achieve(p,"gunslinger");AS_MedalEvent(p,"gunslinger");}return;}
+    if(ev=="fast_reload_miss") {as_fastReloadRun[p]=0;return;}
+    if(ev=="fast_wire") {AS_AchCount(p,"fast_wire",1);return;}
+    if(ev=="fast_comp") {AS_AchCount(p,"fast_comp",1);return;}
+    if(ev=="ammo_shared") {AS_AchCount(p,"ammo_shared",1);return;}
+    if(ev=="parasite_punch") {AS_Achieve(p,"parasite_punch");AS_MedalEvent(p,"parasite_puncher");return;}
+    if(ev=="blast_radius") {AS_Achieve(p,"blast_radius");AS_MedalEvent(p,"blast_radius");return;}
+    if(ev=="electro_stunned") {AS_Achieve(p,"electro_stunned");AS_MedalEvent(p,"electro_stunned");return;}
+    if(ev=="stay_frosty") {AS_Achieve(p,"stay_frosty");AS_MedalEvent(p,"stay_frosty");return;}
+    if(ev=="smoking_barrels") {AS_Achieve(p,"smoking_barrels");AS_MedalEvent(p,"smoking_barrels");return;}
+    if(ev=="group_heal") {AS_Achieve(p,"group_heal");return;}
+    if(ev=="infestation_savior") {AS_Achieve(p,"infestation_savior");AS_MedalEvent(p,"infestation_savior");return;}
+    AS_Achieve(p,ev);
+}
+// A kill: the squad's running counts, and the weapon's.
+int[5] as_dronesNoFF;
+void AS_KillEvent (int p, int kind, int how) {
+    int w=as_slot[p];
+    if(as_dmgItem>0) {w=as_dmgItem;}
+    if(kind==AS_SHIELDBUG) {AS_Achieve(p,"shield_down");AS_MedalEvent(p,"shield_down");}
+    if((kind==AS_DRONE || kind==AS_JUMPER) && as_ffDealt[p]<=0.0 && AS_SquadCount()>=4) {
+        as_dronesNoFF[p]+=1;
+        if(as_dronesNoFF[p]>=25) {AS_Achieve(p,"clear_firing");}
+    }
+    if(as_meleeKills[p]>=20) {AS_Achieve(p,"close_encounters");AS_MedalEvent(p,"close_encounters");}
+    AS_KillCounted(p,w);
+}
+// Kill counts go to the bank at the end of the mission, not per kill: one write a mission.
+int[5][39] as_killsWith;
+void AS_KillCounted (int p, int w) {
+    if(w>=1 && w<=AS_ITEMS) {as_killsWith[p][w]+=1;}
+}
+int AS_SquadCount () {
+    int q;int n=0;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q)) {n+=1;}}
+    return n;
+}
+
+// ---- medals ---------------------------------------------------------------------------
+void AS_MedalEvent (int p, string key) {
+    string name=AS_MedalName(key);
+    if(!AS_Person(p) || as_cheated || name=="") {return;}
+    if(StringFind("|"+as_medalsWon[p]+"|","|"+name+"|",c_stringCase)>=1) {return;}
+    if(as_medalsWon[p]!="") {as_medalsWon[p]=as_medalsWon[p]+"|";}
+    as_medalsWon[p]=as_medalsWon[p]+name;as_medalsN[p]+=1;
+}
+string AS_MedalName (string key) {
+    if(key=="no_ff") {return "Short Controlled Bursts";}if(key=="shield_down") {return "Shield Down";}if(key=="blast_radius") {return "Blast Radius";}
+    if(key=="electro_stunned") {return "Electro-Stunned";}if(key=="sharpshooter") {return "Sharpshooter";}if(key=="perfect") {return "Perfect";}
+    if(key=="zero_mortality") {return "Zero Mortality";}if(key=="parasite_puncher") {return "Parasite Puncher";}if(key=="close_encounters") {return "Close Encounters";}
+    if(key=="smoking_barrels") {return "Smoking Barrels";}if(key=="stay_frosty") {return "Stay Frosty";}if(key=="gunslinger") {return "Gunslinger";}
+    if(key=="peace_medic") {return "Peace Medic";}if(key=="infestation_savior") {return "Infestation Savior";}if(key=="protect_tech") {return "Protect the Tech";}
+    if(key=="speed_bay") {return "Landing Bay Speed Run";}if(key=="speed_cargo") {return "Cargo Elevator Speed Run";}
+    return "";
+}
+// The end of a mission, won or lost: medals, achievements, XP, the bank.
+int AS_AllSurvived () {
+    int q;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && (!as_alive[q] || as_deaths[q]>0)) {return 0;}}
+    return 1;
+}
+void AS_MissionAwards (bool won) {
+    int p;int acc;fixed secs=as_missionEnd-as_missionStart;int squad=AS_SquadCount();bool techAlive=false;int q;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && as_alive[q] && AS_IsTech(q)) {techAlive=true;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p)) {continue;}
+        as_levelBefore[p]=AS_PlayerLevel(p);
+        if(won && !as_cheated) {
+            acc=0;if(as_shotsFired[p]>0) {acc=as_shotsHit[p]*100/as_shotsFired[p];}
+            if(as_ffDealt[p]<=0.0 && as_kills[p]>=25 && as_shotsFired[p]>=25 && squad>=4) {AS_MedalEvent(p,"no_ff");AS_Achieve(p,"no_ff");}
+            if(acc>90 && as_kills[p]>=10) {AS_MedalEvent(p,"sharpshooter");AS_Achieve(p,"sharpshooter");}
+            if(as_dmgTaken[p]<=0.0 && as_kills[p]>=25 && as_skill>=2) {AS_MedalEvent(p,"perfect");AS_Achieve(p,"perfect");}
+            if(as_skill>=2 && AS_AllSurvived()==1 && squad>=4) {AS_MedalEvent(p,"zero_mortality");AS_Achieve(p,"zero_mortality");}
+            if(as_healed[p]>=300.0 && as_shotsFired[p]==0) {AS_MedalEvent(p,"peace_medic");AS_Achieve(p,"peace_medic");}
+            if(AS_AllSurvived()==1 && secs<=IntToFixed(as_levelPar[as_level])) {
+                if(as_level==AS_LV_BAY) {AS_MedalEvent(p,"speed_bay");if(as_skill>=2) {AS_Achieve(p,"speed_bay");}}
+                if(as_level==AS_LV_CARGO) {AS_MedalEvent(p,"speed_cargo");if(as_skill>=2) {AS_Achieve(p,"speed_cargo");}}
+            }
+            if(techAlive) {AS_Achieve(p,"tech_secured");}
+            if(as_skill>=5 && as_onslaught) {AS_Achieve(p,"hardcore");}
+            if(AS_HumanCount()>=2) {AS_AchCount(p,"coop_wins",1);}
+            AS_CampaignAchievements(p);
+        }
+        AS_AwardXp(p,won);
+    }
+}
+// Each mission won at a difficulty or above is a bit of the campaign achievements.
+void AS_CampaignAchievements (int p) {
+    int s;int n;bool all;string key;
+    for(s=1;s<=as_skill;s+=1) {AS_BankSet(p,"won",IntToString(as_level)+"_"+IntToString(s),1);}
+    for(s=1;s<=5;s+=1) {
+        all=true;
+        for(n=0;n<AS_LEVELS;n+=1) {if(AS_BankGet(p,"won",IntToString(n)+"_"+IntToString(s))==0) {all=false;}}
+        if(!all) {continue;}
+        if(s==1) {key="camp_easy";}else if(s==2) {key="camp_normal";}else if(s==3) {key="camp_hard";}else if(s==4) {key="camp_insane";}else {key="camp_brutal";}
+        AS_Achieve(p,key);
+    }
+}
+void AS_AwardXp (int p, bool won) {
+    int mission;int kills;int timeXp=0;int ff=0;int dmg=0;int heal;int hack=0;int medals;int total;fixed scale=1.0;fixed secs=as_missionEnd-as_missionStart;int par=as_levelPar[as_level];
+    int k;int done=0;int w;string s;
+    as_xpGained[p]=0;as_xpLines[p]="";
+    if(!AS_Banked2(p)) {return;}
+    // Kill counts to the bank whatever happens.
+    AS_AchCount(p,"kills",as_kills[p]);
+    for(w=1;w<=AS_ITEMS;w+=1) {if(as_killsWith[p][w]>0) {AS_AchCount(p,"k"+IntToString(w),as_killsWith[p][w]);}}
+    k=as_killsWith[p][AS_IT_SENTRY]+as_killsWith[p][AS_IT_SENTRYFREEZE]+as_killsWith[p][AS_IT_SENTRYFLAME]+as_killsWith[p][AS_IT_SENTRYCANNON];
+    if(k>0) {AS_AchCount(p,"sentry_kills",k);}
+    if(as_cheated) {as_xpLines[p]="<c val=\"FF6050\">CHEATS USED</c>  -  no experience this mission";AS_BankSave(p);return;}
+    for(k=0;k<as_objCount;k+=1) {if(as_objState[k]==2) {done+=1;}}
+    if(won) {mission=1000;}else {mission=1000*done/MaxI(1,as_objCount);}
+    kills=MinI(100,as_kills[p]);
+    if(won) {
+        if(secs<=IntToFixed(par)) {timeXp=100;}
+        else {timeXp=MaxI(0,FixedToInt(100.0*(1.0-(secs-IntToFixed(par))/300.0)));}
+        ff=MaxI(0,MinI(100,100-FixedToInt(as_ffDealt[p])));
+        dmg=MaxI(0,MinI(100,100-FixedToInt(as_dmgTaken[p])));
+    }
+    heal=MinI(50,FixedToInt(as_healed[p]/10.0));
+    if(as_fastHacks[p]>=2) {hack=50;}else if(as_fastHacks[p]==1) {hack=25;}
+    medals=50*(as_medalsN[p]+as_achWonN[p]);
+    total=mission+kills+timeXp+ff+dmg+heal+hack+medals;
+    if(as_skill==1) {scale=0.5;}else if(as_skill==3) {scale=1.2;}else if(as_skill==4) {scale=1.4;}else if(as_skill==5) {scale=1.5;}
+    as_xpGained[p]=FixedToInt(IntToFixed(total)*scale);
+    s="Objectives Complete<n/>Kills<n/>Completion Time (Par "+AS_Clock(IntToFixed(par))+")<n/>Friendly Fire Done<n/>Damage Taken<n/>Damage Healed<n/>Fast Hacks<n/>Medals<n/>Difficulty Bonus";
+    as_xpLines[p]=s+"|"+IntToString(mission)+"<n/>"+IntToString(kills)+"<n/>"+IntToString(timeXp)+"<n/>"+IntToString(ff)+"<n/>"+IntToString(dmg)+"<n/>"+IntToString(heal)+"<n/>"+IntToString(hack)+"<n/>"+IntToString(medals)+"<n/>"+AS_SkillBonus();
+    as_xp[p]=MinI(as_xp[p]+as_xpGained[p],AS_XpFor(p,27));
+    AS_BankSet(p,"xp","xp",as_xp[p]);
+    if(AS_PlayerLevel(p)>=27) {AS_Achieve(p,"armory");}
+    AS_BankSave(p);
+    AS_Log("xp p"+IntToString(p)+" +"+IntToString(as_xpGained[p])+" now "+IntToString(as_xp[p])+" level "+IntToString(AS_PlayerLevel(p)));
+}
+string AS_SkillBonus () {
+    if(as_skill==1) {return "-50%";}if(as_skill==3) {return "+20%";}if(as_skill==4) {return "+40%";}if(as_skill==5) {return "+50%";}
+    return "";
+}
+// The items a level-up opened, for the debrief: "New Weapon Unlocked!".
+string AS_NewUnlocks (int p) {
+    int it;string s="";int lv=AS_PlayerLevel(p);
+    for(it=1;it<=AS_ITEMS;it+=1) {
+        if(as_it[it].unlock>as_levelBefore[p] && as_it[it].unlock<=lv) {
+            if(s!="") {s=s+", ";}
+            s=s+as_it[it].title;
+        }
+    }
+    return s;
+}
+// The next item a player will unlock, and at which level ("Next Weapon Unlock").
+string AS_NextUnlock (int p) {
+    int it;int best=99;string s="";int lv=AS_PlayerLevel(p);
+    for(it=1;it<=AS_ITEMS;it+=1) {
+        if(as_it[it].unlock>lv && as_it[it].unlock<best) {best=as_it[it].unlock;s=as_it[it].title+" at level "+IntToString(best);}
+    }
+    return s;
+}
+void AS_MissionStatsReset () {
+    int p;int w;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        as_medalsWon[p]="";as_medalsN[p]=0;as_achWonN[p]=0;as_dronesNoFF[p]=0;as_meleeKills[p]=0;as_barrelKills[p]=0;as_fastHacks[p]=0;as_healed[p]=0.0;
+        for(w=0;w<=AS_ITEMS;w+=1) {as_killsWith[p][w]=0;}
+    }
+    as_cheated=false;
+}

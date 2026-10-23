@@ -15,25 +15,28 @@ The archive writer and MapInfo/terrain writers come from ../../Documents/GameNig
 PUBG: Battle Royale project's city kit.
 """
 from pathlib import Path
-import argparse, hashlib, json, math, re, shutil, struct, sys, zlib, xml.etree.ElementTree as ET
+import argparse, hashlib, json, math, re, shutil, struct, subprocess, sys, zlib, xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'tools/vendor'))
 sys.path.insert(0, str(ROOT))
 import mpyq
 import numpy as np
-from tools import alien, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout
+from tools import alien, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout, uiart
 
 NAME = 'AlienPOC'
 TITLE = 'Halcyon Drift'
-MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Director', 'Mission', 'Bots', 'HUD', 'Campaign', 'Main']
+WIPE = False
+REFERENCE_SOUNDS = Path.home() / 'OneDrive/Documents/sc2map/doodad-royale/reference/catalog/Sound.txt'
+MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Bots',
+           'Progress', 'HUD', 'Hints', 'Briefing', 'Campaign', 'Main']
 SEATS = 4
-# The campaign in order: the level's module (tools/level.py's deck, else tools/<name>.py), its title,
-# where it is, and the briefing line shown as it starts.
-LEVELS = [('deck', 'DISTRESS BEACON', 'USCSS HALCYON DRIFT  //  DECK 3',
-           'Distress beacon traced to deck 3. Get the reactor running again. Press H for controls.'),
-          ('cargo', 'CARGO ELEVATOR', 'COLONY LANDING BAY',
-           'Take the freight elevator down to the colony. Press H for controls.')]
+# The campaign in order, after Alien Swarm's Jacob's Rest: the level's module (tools/<name>.py), its title,
+# where it is, the briefing line, and the par (speed-run) time in seconds (Landing Bay's speedruntime is 85).
+LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII  //  SYNTEK LANDING BAY 7',
+           'Sweep the landing bay and download the flight data. Press H for controls.', 85),
+          ('cargo', 'CARGO ELEVATOR', 'VEREON XII  //  CARGO ELEVATOR',
+           'Take the freight elevator down to the colony. Press H for controls.', 170)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 
@@ -181,9 +184,10 @@ def level_galaxy(n, solid, room, floor, MW, MH):
         out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % (piece, x, y, rot))
     out += ['}', 'void AS_LevelData%d () {' % n, '    int i;']
     out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (L.SPAWN + (L.SPAWN_FACING,)))
-    for i, (x, y) in enumerate(tour_spots(solid)):
+    spots = tour_spots(solid)[:64]
+    for i, (x, y) in enumerate(spots):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))
-    out.append('    as_tourCount=%d;as_tourAt= -1;' % len(L.AREAS))
+    out.append('    as_tourCount=%d;as_tourAt= -1;' % len(spots))
     for x, y, kind, flick in L.LIGHTS + L.corridor_lamps(floor, room):
         out.append('    AS_Lamp(%.2f,%.2f,"%s",%d);' % (x, y, kind, flick))
     for i, (x, y) in enumerate(L.VENTS):
@@ -211,8 +215,8 @@ def level_common():
     """What every level shares: the row readers, and the dispatch by level number."""
     out = ['void AS_WallRow (int y, string s) {', '    int x;', '    for(x=0;x<AS_W;x+=1) {as_wall[x][y]=StringSub(s,x+1,x+1)=="1";}', '}',
            'void AS_LevelNames () {']
-    for n, (name, title, place, brief) in enumerate(LEVELS):
-        out.append('    as_levelTitle[%d]="%s";as_levelPlace[%d]="%s";as_levelBrief[%d]="%s";' % (n, title, n, place, n, brief))
+    for n, (name, title, place, brief, par) in enumerate(LEVELS):
+        out.append('    as_levelTitle[%d]="%s";as_levelPlace[%d]="%s";as_levelBrief[%d]="%s";as_levelPar[%d]=%d;' % (n, title, n, place, n, brief, n, par))
     out.append('    as_kitMode=true;')
     for k, kind in enumerate(L.KIT_KINDS):
         out.append('    as_kitPanels[%d]="%s";' % (k, ''.join(map(str, L.KIT_PANELS[kind]))))
@@ -245,6 +249,25 @@ def mission_galaxy(n):
     for i, (x, y) in enumerate(L.WINDOWS):
         out.append('    as_winX[%d]=%d.0;as_winY[%d]=%d.0;' % (i, x, i, y))
     out.append('    as_winCount=%d;' % len(L.WINDOWS))
+    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3}
+    for name, (x0, y0, x1, y1), kind, seal, panel in getattr(L, 'DOORS', []):
+        px, py = panel if panel else (0.0, 0.0)
+        out.append('    AS_Door("%s",%d,%d,%d,%d,%d,%.2f,%.2f,%.2f);' % (name, x0, y0, x1, y1, kinds[kind], seal, px, py))
+    for sp in getattr(L, 'SPAWNERS', []):
+        out.append('    AS_Spawner("%s",%.2f,%.2f,%s,%d,%d,%.2f,%d,%d,%d,%d,%d);' % sp)
+    for (x0, y0, x1, y1), once, chance, acts in getattr(L, 'TRIGGERS', []):
+        out.append('    AS_Trigger(%.2f,%.2f,%.2f,%.2f,%s,%.2f);' % (x0, y0, x1, y1, 'true' if once else 'false', chance))
+        for act, arg, delay in acts:
+            out.append('    AS_TriggerDo("%s","%s",%.2f);' % (act, arg, delay))
+    if hasattr(L, 'COMPUTER'):
+        hd, ent, interval, download = L.COMPUTER_HACK
+        out.append('    AS_Terminal(%.2f,%.2f,true,%d,%d,%.2f,%.2f,true);' % (L.COMPUTER + (hd, ent, interval, download)))
+    for (x, y), owner, mail in getattr(L, 'PDAS', []):
+        out.append('    AS_Pda(%.2f,%.2f,"%s",%d);' % (x, y, owner, mail))
+    rows, cols, wires = getattr(L, 'PANEL_WIRES', (2, 5, 2))
+    out.append('    as_pnRows=%d;as_pnCols=%d;as_pnWires=%d;' % (rows, cols, wires))
+    sx, sy = getattr(L, 'SENTRY_SPOT', (0.0, 0.0))
+    out.append('    as_sentrySpotX=%.2f;as_sentrySpotY=%.2f;' % (sx, sy))
     if L.LIFT is not None:
         out.append('    as_liftX0=%d.0;as_liftY0=%d.0;as_liftX1=%d.0;as_liftY1=%d.0;' % L.LIFT)
         out.append('    as_doorX0=%d;as_doorY0=%d;as_doorX1=%d;as_doorY1=%d;' % L.DOOR)
@@ -257,6 +280,16 @@ def mission_galaxy(n):
     else:
         out.append('    as_colCount=0;')
     out.append('}')
+    # What lies on the deck at the start: drones asleep, explosive barrels, pickups.
+    out.append('void AS_LevelThings%d () {' % n)
+    out.append('    int i;')
+    for kind, x, y in getattr(L, 'SLEEPERS', []):
+        out.append('    i=AS_SpawnAlien(%s,%.2f,%.2f,false);' % (kind, x, y))
+    for x, y in getattr(L, 'BARRELS', []):
+        out.append('    i=AS_SpawnAlien(AS_BARREL,%.2f,%.2f,false);' % (x, y))
+    for kind, x, y in getattr(L, 'PICKUPS', []):
+        out.append('    AS_LevelPickup("%s",%.2f,%.2f);' % (kind, x, y))
+    out.append('}')
     return '\n'.join(out)
 
 
@@ -264,7 +297,16 @@ def mission_common():
     out = ['void AS_MissionData () {']
     for n in range(len(LEVELS)):
         out.append('    %sif(as_level==%d) {AS_MissionData%d();}' % ('else ' if n else '', n, n))
-    out.append('}')
+    out += ['}', 'void AS_LevelThings () {']
+    for n in range(len(LEVELS)):
+        out.append('    %sif(as_level==%d) {AS_LevelThings%d();}' % ('else ' if n else '', n, n))
+    # The commander's lines of every level (tools/<level>.py LINES), by key.
+    out += ['}', 'string AS_LineText (string key) {']
+    for name, *_ in LEVELS:
+        L.use(name)
+        for key, text in getattr(L, 'LINES', {}).items():
+            out.append('    if(key=="%s") {return "%s";}' % (key, text.replace('"', "'")))
+    out += ['    return "";', '}']
     return '\n'.join(out)
 
 
@@ -324,10 +366,20 @@ def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=
     code = code.replace('@W@', str(MW)).replace('@H@', str(MH)).replace('@LEVELS@', str(len(LEVELS)))
     assert '@' not in code.replace('"@', '').replace('@"', ''), 'unreplaced placeholder'
     for line, value in [('bool as_qa = false;', str(qa).lower()), ('bool as_demo = false;', str(demo).lower()),
-                        ('bool as_auto = false;', str(auto).lower()), ('int as_startLevel = -1;', str(start)),
+                        ('bool as_auto = false;', str(auto).lower()), ('bool as_autoWipe = false;', str(WIPE).lower()),
+                        ('int as_startLevel = -1;', str(start)),
                         ('string as_bankName = "%s";' % BANK, '"%s"' % bank)]:
         assert line in code, 'build switch line missing: ' + line
         code = code.replace(line, line.rsplit('=', 1)[0] + '= ' + value + ';')
+    if qa:
+        # Every string literal that names a sound, called or listed: probed at start (src/Main.galaxy AS_SoundProbe).
+        known = set((REFERENCE_SOUNDS.read_text(encoding='utf-8').split()) if REFERENCE_SOUNDS.exists() else ())
+        ids = set(re.findall(r'SoundLink\("(\w+)"', code)) | set(re.findall(r'AS_\w*Sound\w*\([^;"]*"(\w+)"', code))
+        ids |= {s for s in re.findall(r'"(\w+)"', code) if s in known and len(s) > 3}
+        probe = ''.join('    SoundPlay(SoundLink("%s",-1),PlayerGroupSingle(1),0.0,0.0);\n' % s for s in sorted(ids))
+        stub = 'void AS_SoundProbe () {\n}'
+        assert stub in code, 'AS_SoundProbe stub missing'
+        code = code.replace(stub, 'void AS_SoundProbe () {\n' + probe + '}')
     code = code.replace('string as_runId = "unset";', 'string as_runId = "%s";' % sha(code.encode())[:12])
     # The compiler refuses a global declared twice ("Invalid global variable name"); galaxy_check does not see it.
     names = re.findall(r'^(?:const\s+)?\w+(?:\[[^\]]*\])*\s+((?:as|AS)_\w+)\s*[=;]', code, re.M)
@@ -376,6 +428,7 @@ def ui_textures(levels):
     a = (np.clip((r - 0.55) / 0.6, 0, 1) ** 1.6 * 255).astype(np.uint8)
     vig = Image.fromarray(np.dstack([np.full_like(a, 255)] * 3 + [a]), 'RGBA')
     files, frames = hudart.files(levels)
+    files.update({'Base.SC2Assets/Derelict/UI/%s.dds' % k: shipkit.dds_rgba(v) for k, v in uiart.textures().items()})
     files.update({'Base.SC2Assets/Derelict/UI/white.dds': shipkit.dds_rgba(white),
                   'Base.SC2Assets/Derelict/UI/vignette.dds': shipkit.dds_rgba(vig)})
     return files, frames
@@ -404,6 +457,7 @@ def compose(qa, demo=False, auto=False, start=-1):
         floors.add(L.FLOOR)
         if L.LIFT is not None:
             pieces.update(elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR))
+        pieces.update(elevator.door_meshes())
         report.append('%s %dx%d' % (name, L.W, L.H))
     assert len(floors) == 1, 'levels at different deck heights share one terrain: %s' % floors
     W, H = MAP_SIZE
@@ -468,9 +522,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--qa', action='store_true')
     ap.add_argument('--auto', action='store_true', help='QA autopilot: player 1 plays the campaign by itself and logs to the ASAuto bank')
+    ap.add_argument('--wipe', action='store_true', help='with --auto: Landing Bay loses its tech first (restart), then the whole squad (failed), then plays through')
     ap.add_argument('--demo', action='store_true', help='scripted firing range for screenshots (shows script errors too)')
-    ap.add_argument('--start', type=int, default=-1, help='QA: skip the level menu and start at this level (0 the deck, 1 the cargo elevator)')
+    ap.add_argument('--start', type=int, default=-1, help='QA: skip the briefing and start at this level (0 Landing Bay, 1 the cargo elevator)')
     args = ap.parse_args()
+    global WIPE
+    WIPE = args.wipe
+    args.auto = args.auto or args.wipe
     qa = args.qa or args.demo or args.auto or args.start >= 0
     start = args.start if args.start >= 0 else (0 if args.auto or args.demo else -1)
     name = NAME + ('-Demo' if args.demo else '-Auto' if args.auto else '-QA' if qa else '')
@@ -482,6 +540,12 @@ def main():
         dest = editable / member
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
+    # The client stops at the first compile or load error: catch types and constant bounds here, all at once.
+    for tool in ('galaxy_types.py', 'galaxy_bounds.py'):
+        check = subprocess.run([sys.executable, str(ROOT / 'tools' / tool), str(editable / 'MapScript.galaxy')], capture_output=True, text=True)
+        if check.returncode != 0:
+            print(check.stdout[-4000:])
+            sys.exit('%s found problems; nothing was packed.' % tool)
     report = pack(files, ROOT / 'dist' / (name + '.SC2Map'))
     report['levels'] = levels
     report['scriptBytes'] = len(files['MapScript.galaxy'])

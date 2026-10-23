@@ -2,17 +2,24 @@
 // Aliens. They walk with native move orders over the painted pathing
 // layer; the script decides who they hunt and resolves every claw, leap,
 // spit, bile and burst, after Alien Swarm's alien roster:
-//   drone       Zergling            fast melee swarmer
+//   drone       Zergling            fast melee swarmer; bashes shut doors down
+//   jumper      Zergling            a drone that leaps the last few metres
 //   uber drone  Primal zergling     the armoured drone
-//   parasite    Broodling           leaps on a marine and infests it
+//   parasite    Broodling           leaps on a marine and infests it (20 s of damage)
+//   xenomite    Broodling           the harvester's brood: a weak bite, no infestation
 //   shieldbug   Ultralisk           armoured from the front, shoves marines
-//   boomer      Baneling (large)    bursts into parasites and acid
+//   boomer      Baneling (large)    bursts into acid
 //   buzzer      Mutalisk (small)    flies over everything, bites
 //   ranger      Hydralisk           keeps its distance, spits acid
 //   mortarbug   Ravager             lobs bile with a warning ring
-//   harvester   Swarm host          breeds parasites at range
+//   harvester   Swarm host          breeds xenomites at range
 //   ripper      original mesh       stalks in on four legs, lunges with two scythes
 //   egg / biomass                   hatch parasites / block passages, burn them
+//   barrel      (not an alien)      an explosive barrel: shoot it
+// Health and claws scale with the difficulty (State.galaxy); drones, jumpers and
+// parasites also run faster. Shocked aliens crawl at 0.3 for 6 s, frozen ones
+// stop, burning ones take 2.5 a second for 5 s, and under adrenaline the whole
+// swarm moves at a third of its speed.
 // =====================================================================
 
 int AS_AlienSlot () {
@@ -25,14 +32,20 @@ int AS_SpawnAlien (int kind, fixed x, fixed y, bool awake) {
     if(i<0) {return -1;}
     UnitCreate(1,as_kindUnit[kind],c_unitCreateIgnorePlacement,AS_HOSTILE,q,RandomFixed(0.0,360.0));
     as_a[i]=UnitLastCreated();
-    as_aKind[i]=kind;as_aHp[i]=as_kindHp[kind];as_aRadius[i]=as_kindRadius[kind];as_aAwake[i]=awake;
-    as_aTarget[i]=0;as_aNextOrder[i]=as_now+RandomFixed(0.0,0.3);as_aNextAttack[i]=as_now+0.5;as_aHitAt[i]=0.0;
-    as_aBurnUntil[i]=0.0;as_aStunUntil[i]=0.0;as_aLeapUntil[i]=0.0;as_aParent[i]= -1;as_aChildren[i]=0;
+    as_aKind[i]=kind;as_aHp[i]=AS_KindHealth(kind);as_aRadius[i]=as_kindRadius[kind];as_aAwake[i]=awake;
+    as_aTarget[i]=0;as_aNextOrder[i]=as_now+RandomFixed(0.0,0.3);as_aNextAttack[i]=as_now+0.5;as_aHitAt[i]=0.0;as_aHitDoor[i]= -1;
+    as_aBurnUntil[i]=0.0;as_aStunUntil[i]=0.0;as_aFreezeUntil[i]=0.0;as_aLeapUntil[i]=0.0;as_aParent[i]= -1;as_aChildren[i]=0;
     as_aSpawnAt[i]=as_now+RandomFixed(1.0,3.0);as_aBornAt[i]=as_now;
     as_aStuckX[i]=x;as_aStuckY[i]=y;as_aStuckAt[i]=as_now;
-    as_aX[i]=x;as_aY[i]=y;
+    as_aX[i]=x;as_aY[i]=y;as_aSpawner[i]= -1;
     as_aFlashUntil[i]=0.0;as_aFlinchUntil[i]=0.0;as_aFlinchNext[i]=0.0;as_aTagDmg[i]=0.0;as_aTagBy[i]=0;as_aTagKind[i]=0;
-    if(kind!=AS_EGG && kind!=AS_BIOMASS) {as_alive2+=1;}
+    UnitSetPropertyFixed(as_a[i],c_unitPropLifeMax,MaxF(1.0,as_aHp[i]));UnitSetPropertyFixed(as_a[i],c_unitPropLife,MaxF(1.0,as_aHp[i]));
+    if(!AS_IsThing(kind)) {
+        as_alive2+=1;
+        UnitSetPropertyFixed(as_a[i],c_unitPropMovementSpeed,AS_KindSpeed(kind));
+        if(kind==AS_XENOMITE) {UnitSetScale(as_a[i],70.0,70.0,70.0);ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"SetTintColor 180,255,140");}
+        if(kind==AS_JUMPER) {ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"SetTintColor 255,190,150");}
+    }
     if(kind==AS_BIOMASS) {as_bioCount+=1;}
     return i;
 }
@@ -43,6 +56,31 @@ void AS_AlienCache () {
         if(as_a[i]==null) {continue;}
         q=UnitGetPosition(as_a[i]);as_aX[i]=PointGetX(q);as_aY[i]=PointGetY(q);
     }
+}
+
+// ---- status effects -------------------------------------------------------------
+// The speed an alien moves at now: shocked x0.3, frozen 0, under adrenaline x0.35.
+void AS_AlienSpeedUpdate (int i) {
+    fixed s=AS_KindSpeed(as_aKind[i]);
+    if(as_aFreezeUntil[i]>as_now) {s=0.0;}
+    else if(as_aStunUntil[i]>as_now) {s*=0.3;}
+    if(as_slowMo>as_now) {s*=0.35;}
+    UnitSetPropertyFixed(as_a[i],c_unitPropMovementSpeed,s);
+}
+void AS_Stun (int i, fixed secs) {
+    if(as_a[i]==null || AS_IsThing(as_aKind[i])) {return;}
+    as_aStunUntil[i]=MaxF(as_aStunUntil[i],as_now+secs);AS_AlienSpeedUpdate(i);
+    ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(60.0,80.0,100.0),1.3,0.0));
+}
+void AS_Freeze (int i, fixed secs) {
+    if(as_a[i]==null || AS_IsThing(as_aKind[i])) {return;}
+    as_aFreezeUntil[i]=MaxF(as_aFreezeUntil[i],as_now+secs);as_aBurnUntil[i]=0.0;AS_AlienSpeedUpdate(i);AS_Halt(i);
+    ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(60.0,85.0,100.0),1.5,0.0));
+    ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"AnimSetPaused Default 1");
+}
+void AS_Ignite (int i, int p, fixed secs) {
+    if(as_a[i]==null || as_aKind[i]==AS_BARREL || as_aKind[i]==AS_EGG) {return;}
+    as_aBurnUntil[i]=MaxF(as_aBurnUntil[i],as_now+secs);as_aBurnBy[i]=p;as_aFreezeUntil[i]=0.0;
 }
 
 // ---- hit feedback -------------------------------------------------------
@@ -62,7 +100,6 @@ void AS_HitFlash (int i, int kind) {
 void AS_DamageTag (int i, bool kill) {
     int p=as_aTagBy[i];string tint="FFFFFF";int size=22;fixed z=0.9;fixed dmg=as_aTagDmg[i];
     as_aTagDmg[i]=0.0;as_aTagAt[i]=0.0;
-
     if(dmg<0.5 || !AS_Person(p) || as_bot[p] || !as_numbers[p] || as_a[i]==null) {as_aTagKind[i]=0;return;}
     if(as_aTagKind[i]==1) {tint="FFA040";}
     else if(as_aTagKind[i]==2) {tint="FFD24A";size=26;}
@@ -73,7 +110,6 @@ void AS_DamageTag (int i, bool kill) {
     as_aTagKind[i]=0;
     TextTagCreate(StringToText("<c val=\""+tint+"\">"+FixedToString(dmg,0)+"</c>"),size,Point(as_aX[i]+RandomFixed(-0.25,0.25),as_aY[i]+RandomFixed(-0.1,0.2)),z,true,false,PlayerGroupSingle(p));
     TextTagSetTextShadow(TextTagLastCreated(),true);TextTagSetVelocity(TextTagLastCreated(),1.1,90.0);
-
     TextTagSetTime(TextTagLastCreated(),c_textTagTimeDuration,0.8);TextTagSetTime(TextTagLastCreated(),c_textTagTimeFadeOut,0.45);
 }
 void AS_TagAdd (int i, int p, fixed dmg, int kind) {
@@ -88,8 +124,8 @@ void AS_TagAdd (int i, int p, fixed dmg, int kind) {
 // more often; the heavy kinds never do, and one stagger cannot follow another at once.
 void AS_Flinch (int i, fixed ang, fixed dmg) {
     int k=as_aKind[i];fixed chance=MinF(0.7,0.1+dmg*0.012);fixed nx;fixed ny;
-    if(as_a[i]==null || k==AS_SHIELDBUG || k==AS_BOOMER || k==AS_MORTAR || k==AS_HARVESTER || k==AS_EGG || k==AS_BIOMASS) {return;}
-    if(as_now<as_aFlinchNext[i] || as_aLeapUntil[i]>as_now) {return;}
+    if(as_a[i]==null || k==AS_SHIELDBUG || k==AS_BOOMER || k==AS_MORTAR || k==AS_HARVESTER || AS_IsThing(k) || k==AS_QUEEN) {return;}
+    if(as_now<as_aFlinchNext[i] || as_aLeapUntil[i]>as_now || as_aFreezeUntil[i]>as_now) {return;}
     if(k==AS_UBER) {chance*=0.4;}
     if(RandomFixed(0.0,1.0)>chance) {return;}
     as_aFlinchUntil[i]=as_now+0.22;as_aFlinchNext[i]=as_now+0.8;
@@ -101,7 +137,7 @@ void AS_Flinch (int i, fixed ang, fixed dmg) {
 void AS_HitFeedbackPulse (int i) {
     if(as_aFlashUntil[i]>0.0 && as_now>=as_aFlashUntil[i]) {
         as_aFlashUntil[i]=0.0;
-        ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(100.0,100.0,100.0),1.0,0.15));
+        if(as_aFreezeUntil[i]<=as_now && as_aStunUntil[i]<=as_now) {ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(100.0,100.0,100.0),1.0,0.15));}
     }
     if(as_aTagAt[i]>0.0 && as_now>=as_aTagAt[i]) {AS_DamageTag(i,false);}
 }
@@ -136,36 +172,45 @@ void AS_HurtAlien (int i, fixed dmg, int kind, int p, fixed fromX, fixed fromY) 
     }
     if(as_aKind[i]==AS_BIOMASS && kind!=1) {dmg*=0.05;}
     as_aHp[i]-=dmg;as_aLastDmg[i]=dmg;
-    if(turned && kind!=1) {AS_HitFlash(i,4);AS_TagAdd(i,p,dmg,4);}
-    else {AS_HitFlash(i,kind);AS_TagAdd(i,p,dmg,kind);}
+    if(as_aKind[i]!=AS_BARREL) {
+        if(turned && kind!=1) {AS_HitFlash(i,4);AS_TagAdd(i,p,dmg,4);}
+        else {AS_HitFlash(i,kind);AS_TagAdd(i,p,dmg,kind);}
+    }
     if(kind!=0) {as_aHitAng[i]=ATan2(PointGetY(q)-fromY,PointGetX(q)-fromX);}
     // Anything that is shot notices who shot it.
-    if(!as_aAwake[i] && as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS) {as_aAwake[i]=true;if(p>=1) {as_aTarget[i]=p;}}
+    if(!as_aAwake[i] && !AS_IsThing(as_aKind[i])) {as_aAwake[i]=true;if(p>=1) {as_aTarget[i]=p;}}
     if(as_aHp[i]<=0.0) {AS_KillAlien(i,p,kind);return;}
     UnitSetPropertyFixed(as_a[i],c_unitPropLife,MaxF(1.0,as_aHp[i]));
 }
 void AS_KillAlien (int i, int p, int kind) {
     point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);int k=as_aKind[i];int j;fixed facing=UnitGetFacing(as_a[i]);
-    string die=as_kindDie[k];
     as_aX[i]=x;as_aY[i]=y;
     if(p>=1 && p<=AS_PLAYERS) {as_aTagBy[i]=p;}
-    AS_DamageTag(i,p>=1 && p<=AS_PLAYERS);
+    if(k!=AS_BARREL) {AS_DamageTag(i,p>=1 && p<=AS_PLAYERS);}
     UnitRemove(as_a[i]);as_a[i]=null;
-    if(k!=AS_EGG && k!=AS_BIOMASS) {as_alive2-=1;}
+    AS_AlienGone(i);
+    if(!AS_IsThing(k)) {as_alive2-=1;AS_DirectorKill(k,x,y);}
     if(k==AS_BIOMASS) {as_bioCount=MaxI(0,as_bioCount-1);}
     if(as_aParent[i]>=0 && as_aParent[i]<AS_MAXALIEN) {as_aChildren[as_aParent[i]]=MaxI(0,as_aChildren[as_aParent[i]]-1);}
-    if(p>=1 && p<=AS_PLAYERS) {as_kills[p]+=1;}
+    if(p>=1 && p<=AS_PLAYERS && !AS_IsThing(k)) {as_kills[p]+=1;AS_KillEvent(p,k,kind);}
+    // A barrel goes up: a blast of its own, and the kills are the shooter's.
+    if(k==AS_BARREL) {
+        j=0;if(p>=1 && p<=AS_PLAYERS) {j=as_kills[p];}
+        AS_Fx("ASFxBigBoom",x,y,0.2,0.0);AS_Explode(p,x,y,3.0,150.0);
+        if(p>=1 && p<=AS_PLAYERS) {as_barrelKills[p]+=as_kills[p]-j;if(as_barrelKills[p]>=5) {AS_AchieveEvent(p,"smoking_barrels");}}
+        return;
+    }
     AS_Gore(i,k,kind,x,y,facing);
-    if(k==AS_DRONE || k==AS_UBER || k==AS_PARASITE) {AS_Sound("Broodling_Death",x,y,70.0,0.08);}
+    if(k==AS_DRONE || k==AS_JUMPER || k==AS_UBER || k==AS_PARASITE || k==AS_XENOMITE) {AS_Sound("Broodling_Death",x,y,70.0,0.08);}
     else if(k==AS_RANGER || k==AS_RIPPER) {AS_Sound("Hydralisk_Death",x,y,80.0,0.1);}
     else if(k==AS_EGG) {AS_Sound("Egg_Death",x,y,80.0,0.1);}
-    // A boomer bursts: acid all round and a brood of parasites.
+    // A boomer bursts: acid all round, and blobs of it flung out.
     if(k==AS_BOOMER) {
         AS_Fx("ASFxBigBoom",x,y,0.2,0.0);
-        AS_AlienSplash(x,y,2.6,as_kindDamage[AS_BOOMER],"ASFxAcid");
-        for(j=0;j<4;j+=1) {AS_SpawnNear(AS_PARASITE,x+Cos(IntToFixed(j)*90.0)*0.6,y+Sin(IntToFixed(j)*90.0)*0.6,true);}
+        AS_AlienSplash(x,y,2.6,AS_KindDamage(AS_BOOMER),"ASFxAcid");
+        for(j=0;j<5;j+=1) {AS_Lob(0,3,x,y,IntToFixed(j)*72.0+RandomFixed(-20.0,20.0),RandomFixed(1.5,3.0),AS_KindDamage(AS_BOOMER)*0.5,1.0);}
     }
-    if(k==AS_HARVESTER) {for(j=0;j<3;j+=1) {AS_SpawnNear(AS_PARASITE,x+Cos(IntToFixed(j)*120.0)*0.7,y+Sin(IntToFixed(j)*120.0)*0.7,true);}}
+    if(k==AS_HARVESTER) {for(j=0;j<3;j+=1) {AS_SpawnNear(AS_XENOMITE,x+Cos(IntToFixed(j)*120.0)*0.7,y+Sin(IntToFixed(j)*120.0)*0.7,true);}}
     if(k==AS_BIOMASS) {CreepModify(Point(x,y),2.0,false,true);}
 }
 // How an alien dies: burnt, blown apart or cut down, and always a spray of blood
@@ -183,9 +228,9 @@ void AS_Gore (int i, int k, int kind, fixed x, fixed y, fixed facing) {
     // Blasts, heavy rounds and overkill blow aliens apart; the shieldbug only falls to blasts.
     gib=kind==2 || (k!=AS_SHIELDBUG && (as_aLastDmg[i]>=40.0 || (kind==0 && as_aLastDmg[i]>=as_kindHp[k]*0.6)));
     if(kind==1) {
-        if(k==AS_DRONE) {AS_Fx("ASFireDrone",x,y,0.0,facing);}
+        if(k==AS_DRONE || k==AS_JUMPER) {AS_Fx("ASFireDrone",x,y,0.0,facing);}
         else if(k==AS_UBER) {AS_Fx("ASFireUber",x,y,0.0,facing);}
-        else if(k==AS_PARASITE) {AS_Fx("ASFireParasite",x,y,0.0,facing);}
+        else if(k==AS_PARASITE || k==AS_XENOMITE) {AS_Fx("ASFireParasite",x,y,0.0,facing);}
         else if(k==AS_SHIELDBUG) {AS_Fx("ASFireShieldbug",x,y,0.0,facing);}
         else if(k==AS_RANGER) {AS_Fx("ASFireRanger",x,y,0.0,facing);}
         else if(k==AS_MORTAR) {AS_Fx("ASFireMortar",x,y,0.0,facing);}
@@ -195,7 +240,7 @@ void AS_Gore (int i, int k, int kind, fixed x, fixed y, fixed facing) {
         AS_FxUnit("ASLightOrange",x,y,0.8,0.0,0.8,0.8,"",8);
     }
     else if(gib) {
-        if(k==AS_DRONE) {tear="ASEviscDrone";}
+        if(k==AS_DRONE || k==AS_JUMPER) {tear="ASEviscDrone";}
         if(k==AS_UBER) {tear="ASEviscUber";}
         if(k==AS_RANGER) {tear="ASAcidRanger";}
         if(k==AS_MORTAR) {tear="ASAcidMortar";}
@@ -213,14 +258,14 @@ void AS_Gore (int i, int k, int kind, fixed x, fixed y, fixed facing) {
     AS_Spray(x,y,0.35+z,ang,1.1+big);
     AS_Splat(x+Cos(ang)*0.3,y+Sin(ang)*0.3,ang,0.6+big*1.3);
 }
-// Acid, bile and bursts: harm every marine within reach.
+// Acid, bile and bursts: harm every marine within reach (a rolling marine slips the spit).
 void AS_AlienSplash (fixed x, fixed y, fixed radius, fixed dmg, string fx) {
     int p;fixed d;
     AS_Fx(fx,x,y,0.1,RandomFixed(0.0,360.0));
     AS_Burst(x,y,0.4,radius*0.8,"120,255,60",3);
     AS_Sound("Ravager_Attack_Impact",x,y,90.0,0.05);
     for(p=1;p<=AS_PLAYERS;p+=1) {
-        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        if(!AS_Person(p) || !as_alive[p] || as_rollUntil[p]>as_now) {continue;}
         d=DistanceBetweenPoints(UnitGetPosition(as_m[p]),Point(x,y));
         if(d<radius+0.3) {AS_HurtMarine(p,dmg*(1.0-0.4*d/(radius+0.3)),x,y,1.5);}
     }
@@ -246,17 +291,28 @@ void AS_Halt (int i) {
 void AS_Swing (int i) {
     ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"AnimPlay Attack Attack 0");
 }
+// Swings take longer under adrenaline.
+fixed AS_AlienTime (fixed t) {
+    if(as_slowMo>as_now) {return t/0.35;}
+    return t;
+}
 void AS_AlienThink (int i) {
-    int k=as_aKind[i];int p;point q=UnitGetPosition(as_a[i]);point mq;fixed d;fixed ang;fixed x=PointGetX(q);fixed y=PointGetY(q);fixed reach;fixed far;
-    bool sees;
-    // Stunned by the tesla cannon: rooted, twitching.
-    if(as_aStunUntil[i]>as_now) {
-        if(RandomInt(0,3)==0) {AS_Arc(x-0.3,y,x+0.3,y+RandomFixed(-0.3,0.3),0.4);}
-        AS_Halt(i);return;
+    int k=as_aKind[i];int p;point q=UnitGetPosition(as_a[i]);point mq;fixed d;fixed ang;fixed x=PointGetX(q);fixed y=PointGetY(q);fixed reach;int door;
+    // Frozen solid: nothing at all until it thaws.
+    if(as_aFreezeUntil[i]>0.0) {
+        if(as_aFreezeUntil[i]>as_now) {return;}
+        as_aFreezeUntil[i]=0.0;AS_AlienSpeedUpdate(i);ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"AnimSetPaused Default 0");
+        ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(100.0,100.0,100.0),1.0,0.3));
     }
-    // Burning things take damage until the fire dies.
+    if(as_aStunUntil[i]>0.0) {
+        // Shocked: it crawls, twitching, at three tenths of its speed.
+        if(as_aStunUntil[i]<=as_now) {as_aStunUntil[i]=0.0;AS_AlienSpeedUpdate(i);ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(100.0,100.0,100.0),1.0,0.3));}
+        else if(RandomInt(0,5)==0) {AS_Arc(x-0.3,y,x+0.3,y+RandomFixed(-0.3,0.3),0.4);}
+    }
+    if(as_tick%8==i%8) {AS_AlienSpeedUpdate(i);}
+    // Burning things take 2.5 a second (three times that for aliens) until the fire dies.
     if(as_aBurnUntil[i]>as_now) {
-        AS_HurtAlien(i,10.0*AS_DT/3.0,1,as_aBurnBy[i],x,y);
+        AS_HurtAlien(i,2.5*AS_DT,1,as_aBurnBy[i],x,y);
         if(as_a[i]==null) {return;}
         if(RandomInt(0,2)==0) {AS_FxUnit("ASFxFlame",x+RandomFixed(-0.3,0.3),y+RandomFixed(-0.3,0.3),0.3,0.0,0.35,0.35,"",3);}
     }
@@ -264,7 +320,7 @@ void AS_AlienThink (int i) {
     // had started lands late, if the marine is still in reach by then.
     if(as_aFlinchUntil[i]>as_now) {return;}
     if(k==AS_EGG) {AS_EggThink(i);return;}
-    if(k==AS_BIOMASS) {return;}
+    if(AS_IsThing(k)) {return;}
     // Asleep: a wanderer waits until a marine comes near, or is heard firing.
     p=AS_Nearest(q,1000.0);
     if(p==0) {if(as_now>=as_aNextOrder[i]) {AS_Halt(i);as_aNextOrder[i]=as_now+1.0;}return;}
@@ -286,27 +342,44 @@ void AS_AlienThink (int i) {
     as_aTarget[i]=p;
     reach=as_aRadius[i]+AS_MARINE_R+as_kindReach[k];
     ang=ATan2(PointGetY(mq)-y,PointGetX(mq)-x);
-    // A swing that was started lands now, if the marine is still there.
+    // A swing that was started lands now, at the door it was bashing or at the marine if still in reach.
     if(as_aHitAt[i]>0.0 && as_now>=as_aHitAt[i]) {
         as_aHitAt[i]=0.0;
-        if(d<reach+0.45) {
-            if(k==AS_SHIELDBUG) {AS_HurtMarine(p,as_kindDamage[k],x,y,7.0);}
-            else {AS_HurtMarine(p,as_kindDamage[k],x,y,0.0);}
+        if(as_aHitDoor[i]>=0) {AS_DoorHit(as_aHitDoor[i],30.0,x,y);as_aHitDoor[i]= -1;}
+        else if(d<reach+0.45 && as_aStunUntil[i]<=as_now) {
+            if(k==AS_SHIELDBUG) {AS_HurtMarine(p,AS_KindDamage(k),x,y,7.0);}
+            else {AS_HurtMarine(p,AS_KindDamage(k),x,y,0.0);}
             AS_Sound("Broodling_AttackImpact",PointGetX(mq),PointGetY(mq),80.0,0.05);
+            // Electric armour bites back.
+            if(as_elecUntil[p]>as_now && as_a[i]!=null) {AS_Stun(i,6.0);AS_HurtAlien(i,20.0,3,p,PointGetX(mq),PointGetY(mq));}
+            if(as_a[i]==null) {return;}
         }
     }
-    if(k==AS_PARASITE) {AS_ParasiteThink(i,p,d,ang);return;}
+    if(k==AS_PARASITE || k==AS_XENOMITE) {AS_ParasiteThink(i,p,d,ang);return;}
     if(k==AS_RIPPER && AS_RipperLunge(i,p,d,ang)) {return;}
+    if(k==AS_JUMPER && AS_JumperLeap(i,p,d,ang)) {return;}
     if(k==AS_BOOMER && d<reach) {
         // A boomer that reaches a marine bursts on it.
         AS_KillAlien(i,0,2);return;
     }
     if(k==AS_RANGER || k==AS_MORTAR || k==AS_HARVESTER) {AS_RangedThink(i,p,d,ang);return;}
+    // Drones blocked by a shut door with their quarry behind it bash it down (asw_drone_door_distance).
+    if((k==AS_DRONE || k==AS_JUMPER || k==AS_UBER) && d>reach) {
+        door=AS_DoorInTheWay(i,mq);
+        if(door>=0) {
+            if(as_now>=as_aNextAttack[i]) {
+                AS_Halt(i);UnitSetFacing(as_a[i],ATan2(AS_DoorCY(door)-y,AS_DoorCX(door)-x),0.1);AS_Swing(i);
+                as_aHitAt[i]=as_now+AS_AlienTime(0.25);as_aHitDoor[i]=door;as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[k]);
+                AS_Sound("Broodling_Attack",x,y,60.0,0.12);
+            }
+            return;
+        }
+    }
     // Melee: close in, then claw.
     if(d<reach) {
-        if(as_now>=as_aNextAttack[i]) {
+        if(as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now) {
             AS_Halt(i);UnitSetFacing(as_a[i],ang,0.1);AS_Swing(i);
-            as_aHitAt[i]=as_now+0.25;as_aNextAttack[i]=as_now+as_kindCooldown[k];
+            as_aHitAt[i]=as_now+AS_AlienTime(0.25);as_aHitDoor[i]= -1;as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[k]);
             if(k==AS_SHIELDBUG) {AS_Sound("Ultralisk_Attack",x,y,90.0,0.2);}
             else {AS_Sound("Broodling_Attack",x,y,70.0,0.08);}
         }
@@ -318,32 +391,55 @@ void AS_AlienThink (int i) {
         AS_Order(i,mq);
     }
 }
-// Parasites run in, then leap the last few metres.
+// Parasites run in, then leap the last few metres; one that lands infests its marine (20 s of damage) unless
+// the marine's electric armour throws it off. Xenomites only bite.
 void AS_ParasiteThink (int i, int p, fixed d, fixed ang) {
     point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);fixed nx;fixed ny;
     if(as_aLeapUntil[i]>as_now) {
         nx=x+as_aLeapX[i]*AS_DT;ny=y+as_aLeapY[i]*AS_DT;
         if(AS_Free(nx,ny,0.2)) {UnitSetPosition(as_a[i],Point(nx,ny),true);}
         UnitSetHeight(as_a[i],0.5*Sin(180.0*(1.0-(as_aLeapUntil[i]-as_now)/0.4)),AS_DT);
-        if(DistanceBetweenPoints(Point(nx,ny),UnitGetPosition(as_m[p]))<0.55) {
+        if(DistanceBetweenPoints(Point(nx,ny),UnitGetPosition(as_m[p]))<0.55 && as_rollUntil[p]<=as_now) {
+            if(as_aKind[i]==AS_XENOMITE) {AS_HurtMarine(p,AS_KindDamage(AS_XENOMITE),x,y,0.0);as_aLeapUntil[i]=as_now;return;}
+            if(as_elecUntil[p]>as_now) {AS_HurtAlien(i,as_aHp[i]*2.0,3,p,nx,ny);return;}
             // Latched on: the marine is infested and the parasite is spent.
-            as_infestUntil[p]=MaxF(as_infestUntil[p],as_now)+5.0;
-            AS_HurtMarine(p,as_kindDamage[AS_PARASITE],x,y,0.0);
-            AS_Message(p,"<c val=\"90FF60\">INFESTED!</c>  -  press E for a medkit");
-            UnitRemove(as_a[i]);as_a[i]=null;as_alive2-=1;
+            as_infestUntil[p]=as_now+20.0;
+            AS_HurtMarine(p,AS_KindDamage(AS_PARASITE),x,y,0.0);
+            AS_Message(p,"<c val=\"90FF60\">INFESTED!</c>  -  heal to survive it");
+            AS_HintEvent("infested",p);
+            UnitRemove(as_a[i]);as_a[i]=null;as_alive2-=1;AS_AlienGone(i);
             if(as_aParent[i]>=0) {as_aChildren[as_aParent[i]]=MaxI(0,as_aChildren[as_aParent[i]]-1);}
         }
         return;
     }
     UnitSetHeight(as_a[i],0.0,0.1);
-    if(d<3.2 && as_now>=as_aNextAttack[i] && AS_LineClear(x,y,PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])))) {
+    if(d<3.2 && as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now && AS_LineClear(x,y,PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])))) {
         AS_Halt(i);UnitSetFacing(as_a[i],ang,0.0);AS_Swing(i);
         as_aLeapUntil[i]=as_now+0.4;as_aLeapX[i]=Cos(ang)*8.5;as_aLeapY[i]=Sin(ang)*8.5;
-        as_aNextAttack[i]=as_now+as_kindCooldown[AS_PARASITE];
+        as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[as_aKind[i]]);
         AS_Sound("Broodling_AttackLaunch",x,y,80.0,0.1);
         return;
     }
     if(as_now>=as_aNextOrder[i]) {as_aNextOrder[i]=as_now+0.2;AS_Order(i,UnitGetPosition(as_m[p]));}
+}
+// Drone jumpers leap the last few metres claws first.
+bool AS_JumperLeap (int i, int p, fixed d, fixed ang) {
+    point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);fixed nx;fixed ny;point mq=UnitGetPosition(as_m[p]);
+    if(as_aLeapUntil[i]>as_now) {
+        nx=x+as_aLeapX[i]*AS_DT;ny=y+as_aLeapY[i]*AS_DT;
+        if(!AS_Free(nx,ny,as_aRadius[i]) || DistanceBetweenPoints(Point(nx,ny),mq)<as_aRadius[i]+AS_MARINE_R+0.2) {as_aLeapUntil[i]=as_now;}
+        else {UnitSetPosition(as_a[i],Point(nx,ny),true);UnitSetHeight(as_a[i],0.7*Sin(180.0*(1.0-(as_aLeapUntil[i]-as_now)/0.35)),AS_DT);}
+        return true;
+    }
+    UnitSetHeight(as_a[i],0.0,0.1);
+    if(d>1.8 && d<4.0 && as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now && AS_LineClear(x,y,PointGetX(mq),PointGetY(mq))) {
+        AS_Halt(i);UnitSetFacing(as_a[i],ang,0.0);AS_Swing(i);
+        as_aLeapUntil[i]=as_now+0.35;as_aLeapX[i]=Cos(ang)*9.0;as_aLeapY[i]=Sin(ang)*9.0;
+        as_aHitAt[i]=as_now+0.35;as_aHitDoor[i]= -1;as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[AS_JUMPER]*2.0);
+        AS_Sound("Broodling_AttackLaunch",x,y,80.0,0.1);
+        return true;
+    }
+    return false;
 }
 // Rippers close at a walk, then lunge the last few metres with both scythes:
 // the slash started on the lunge lands when it arrives (AS_AlienThink's swing).
@@ -359,13 +455,13 @@ bool AS_RipperLunge (int i, int p, fixed d, fixed ang) {
     if(d>2.2 && d<4.6 && as_now>=as_aNextAttack[i] && AS_LineClear(x,y,PointGetX(mq),PointGetY(mq))) {
         AS_Halt(i);UnitSetFacing(as_a[i],ang,0.0);AS_Swing(i);
         as_aLeapUntil[i]=as_now+0.3;as_aLeapX[i]=Cos(ang)*10.0;as_aLeapY[i]=Sin(ang)*10.0;
-        as_aHitAt[i]=as_now+0.3;as_aNextAttack[i]=as_now+as_kindCooldown[AS_RIPPER]*2.5;
+        as_aHitAt[i]=as_now+0.3;as_aHitDoor[i]= -1;as_aNextAttack[i]=as_now+as_kindCooldown[AS_RIPPER]*2.5;
         AS_Sound("Broodling_AttackLaunch",x,y,85.0,0.1);
         return true;
     }
     return false;
 }
-// Rangers spit, mortarbugs lob bile, harvesters breed parasites: all from a distance.
+// Rangers spit, mortarbugs lob bile, harvesters breed xenomites: all from a distance.
 void AS_RangedThink (int i, int p, fixed d, fixed ang) {
     int k=as_aKind[i];point q=UnitGetPosition(as_a[i]);point mq=UnitGetPosition(as_m[p]);fixed x=PointGetX(q);fixed y=PointGetY(q);
     fixed keep=as_kindReach[k];bool sees=AS_LineClear(x,y,PointGetX(mq),PointGetY(mq));int c;
@@ -377,20 +473,20 @@ void AS_RangedThink (int i, int p, fixed d, fixed ang) {
             else {AS_Halt(i);}
         }
         UnitSetFacing(as_a[i],ang,0.2);
-        if(as_now>=as_aNextAttack[i]) {
-            as_aNextAttack[i]=as_now+as_kindCooldown[k]*RandomFixed(0.85,1.15);
+        if(as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now) {
+            as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[k]*RandomFixed(0.85,1.15));
             AS_Swing(i);
             if(k==AS_RANGER) {
-                AS_Lob(0,2,x+Cos(ang)*0.5,y+Sin(ang)*0.5,ang+RandomFixed(-3.0,3.0),d+1.0,as_kindDamage[k],0.6);
+                AS_Lob(0,2,x+Cos(ang)*0.5,y+Sin(ang)*0.5,ang+RandomFixed(-3.0,3.0),d+1.0,AS_KindDamage(k),0.6);
                 AS_Sound("Hydralisk_Attack",x,y,80.0,0.1);
             }
             else if(k==AS_MORTAR) {
                 // Lead the target a little.
-                AS_Lob(0,3,x,y,ATan2(PointGetY(mq)+as_mvY[p]*0.5-y,PointGetX(mq)+as_mvX[p]*0.5-x),MinF(12.0,d+0.3),as_kindDamage[k],2.0);
+                AS_Lob(0,3,x,y,ATan2(PointGetY(mq)+as_mvY[p]*0.5-y,PointGetX(mq)+as_mvX[p]*0.5-x),MinF(12.0,d+0.3),AS_KindDamage(k),2.0);
                 AS_Sound("Ravager_CorrosiveBile_AttackLaunch",x,y,90.0,0.2);
             }
             else if(as_aChildren[i]<4) {
-                c=AS_SpawnNear(AS_PARASITE,x+Cos(ang)*0.9,y+Sin(ang)*0.9,true);
+                c=AS_SpawnNear(AS_XENOMITE,x+Cos(ang)*0.9,y+Sin(ang)*0.9,true);
                 if(c>=0) {as_aParent[c]=i;as_aChildren[i]+=1;}
                 AS_Sound("SwarmHost_SpawnLaunch",x,y,80.0,0.2);
             }
@@ -418,9 +514,10 @@ void AS_EggThink (int i) {
 }
 // Native movement leaves a wanderer stuck on a corner now and then: nudge it.
 void AS_Unstick (int i) {
-    point q=UnitGetPosition(as_a[i]);
+    point q=UnitGetPosition(as_a[i]);int k=as_aKind[i];
     if(as_now-as_aStuckAt[i]<2.0) {return;}
-    if(as_aAwake[i] && DistanceBetweenPoints(q,Point(as_aStuckX[i],as_aStuckY[i]))<0.3 && as_aHitAt[i]==0.0 && as_aKind[i]!=AS_RANGER && as_aKind[i]!=AS_MORTAR && as_aKind[i]!=AS_HARVESTER) {
+    if(as_aAwake[i] && DistanceBetweenPoints(q,Point(as_aStuckX[i],as_aStuckY[i]))<0.3 && as_aHitAt[i]==0.0 && k!=AS_RANGER && k!=AS_MORTAR && k!=AS_HARVESTER
+       && as_aFreezeUntil[i]<=as_now && as_aHitDoor[i]<0 && as_now-as_aNextAttack[i]>1.0) {
         AS_Order(i,Point(PointGetX(q)+RandomFixed(-2.0,2.0),PointGetY(q)+RandomFixed(-2.0,2.0)));
         as_aNextOrder[i]=as_now+0.6;
     }
@@ -432,12 +529,12 @@ void AS_AlienPulse () {
         if(as_a[i]==null) {continue;}
         AS_HitFeedbackPulse(i);
         AS_AlienThink(i);
-        if(as_a[i]!=null && as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS) {AS_Unstick(i);}
+        if(as_a[i]!=null && !AS_IsThing(as_aKind[i])) {AS_Unstick(i);}
     }
 }
 // Every alien, egg and growth gone at once, without gore or kills: the level is being cleared.
 void AS_AliensClear () {
     int i;
-    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null) {UnitRemove(as_a[i]);as_a[i]=null;}}
+    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null) {UnitRemove(as_a[i]);as_a[i]=null;}as_aSpawner[i]= -1;}
     as_alive2=0;as_bioCount=0;
 }

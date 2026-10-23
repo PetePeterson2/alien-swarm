@@ -15,6 +15,7 @@ const int AS_PANEL_WINDOW = 8;    // KIT_WALLS index of the window panel
 int[@W@][@H@] as_kitMark;         // scratch: 1 a tile covers the cell, 2 a pathing block does
 bool[@W@][@H@] as_kitNear;        // hull cell within five of the deck: gets a cap
 bool[@W@][@H@] as_kitEdge;        // collision cell touching the deck: gets a pathing blocker
+bool[@W@][@H@] as_doorCell;        // a door's cells: the kit lays no pathing blocker there, the door does its own (Doors)
 bool[@W@][@H@] as_kitFloorDone;   // scratch: the cell has its floor plating
 string[16] as_kitPanels;        // per kind: the wall panels it draws from, one digit each
 int as_kitWalls;
@@ -228,13 +229,14 @@ void AS_KitPathing () {
         for(x=0;x+1<AS_W;x+=2) {
             if(!(as_wall[x][y] && as_wall[x+1][y] && as_wall[x][y+1] && as_wall[x+1][y+1])) {continue;}
             if(!(as_kitEdge[x][y] || as_kitEdge[x+1][y] || as_kitEdge[x][y+1] || as_kitEdge[x+1][y+1])) {continue;}
+            if(as_doorCell[x][y] || as_doorCell[x+1][y] || as_doorCell[x][y+1] || as_doorCell[x+1][y+1]) {continue;}
             AS_KitBlock("PathingBlocker2x2",IntToFixed(x+1),IntToFixed(y+1));
             as_kitMark[x][y]=2;as_kitMark[x+1][y]=2;as_kitMark[x][y+1]=2;as_kitMark[x+1][y+1]=2;
         }
     }
     for(y=0;y<AS_H;y+=1) {
         for(x=0;x<AS_W;x+=1) {
-            if(as_kitEdge[x][y] && as_kitMark[x][y]!=2) {AS_KitBlock("PathingBlocker1x1",IntToFixed(x)+0.5,IntToFixed(y)+0.5);as_kitMark[x][y]=2;}
+            if(as_kitEdge[x][y] && as_kitMark[x][y]!=2 && !as_doorCell[x][y]) {AS_KitBlock("PathingBlocker1x1",IntToFixed(x)+0.5,IntToFixed(y)+0.5);as_kitMark[x][y]=2;}
         }
     }
 }
@@ -245,7 +247,7 @@ void AS_KitPathCheck () {
     for(y=0;y<AS_H;y+=1) {
         for(x=0;x<AS_W;x+=1) {
             open=PathingType(Point(IntToFixed(x)+0.5,IntToFixed(y)+0.5))==c_pathingGround;
-            if(as_kitEdge[x][y] && open) {as_kitLeaks+=1;}
+            if(as_kitEdge[x][y] && open && !as_doorCell[x][y]) {as_kitLeaks+=1;}
             if(!as_wall[x][y] && !open) {as_kitShut+=1;}
         }
     }
@@ -399,8 +401,8 @@ void AS_KitUnpath (int p) {
 }
 
 // ---- QA: room tour (Ctrl+N) -------------------------------------------
-fixed[32] as_tourX;
-fixed[32] as_tourY;
+fixed[64] as_tourX;
+fixed[64] as_tourY;
 int as_tourCount;
 int as_tourAt= -1;
 void AS_Tour (int p) {

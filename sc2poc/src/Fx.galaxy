@@ -160,12 +160,14 @@ void AS_LampPulse () {
         else {
             AS_LampSet(i,!as_lampOn[i]);
             as_lampNext[i]=as_now+0.5;
-            if(as_hordeUntil>as_now) {as_lampNext[i]=as_now+0.25;}
+            if(AS_HordeActive()) {as_lampNext[i]=as_now+0.25;}
         }
     }
 }
 
 // ---- flame puffs ------------------------------------------------------
+// The flamer's burning gobs (and the incendiary sentry's); cold puffs are the extinguisher's spray
+// (no damage: they put fires out) and the freeze sentry's nitrogen (they freeze what they touch).
 const int AS_PUFFS = 64;
 unit[64] as_puff;
 fixed[64] as_puffX;
@@ -174,10 +176,13 @@ fixed[64] as_puffVX;
 fixed[64] as_puffVY;
 fixed[64] as_puffAge;
 fixed[64] as_puffLife;
+fixed[64] as_puffDmg;
+bool[64] as_puffCold;
+int[64] as_puffItem;
 int[64] as_puffBy;
 int as_puffNext;
 // lead: how long ago in this step the puff left the nozzle, so a stream spreads evenly.
-void AS_Puff (int p, fixed x, fixed y, fixed angle, fixed speed, fixed life, fixed lead) {
+void AS_Puff (int p, fixed x, fixed y, fixed angle, fixed speed, fixed life, fixed lead, fixed dmg, bool cold) {
     int i=as_puffNext;
     as_puffNext=(as_puffNext+1)%AS_PUFFS;
     if(as_puff[i]!=null) {UnitRemove(as_puff[i]);}
@@ -185,8 +190,9 @@ void AS_Puff (int p, fixed x, fixed y, fixed angle, fixed speed, fixed life, fix
     UnitCreate(1,"ASFxFlame",c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
     as_puff[i]=UnitLastCreated();
     UnitSetHeight(as_puff[i],0.55,0.0);UnitSetScale(as_puff[i],30.0,30.0,30.0);
+    if(cold) {ActorSend(libNtve_gf_MainActorofUnit(as_puff[i]),"SetTintColor 170,220,255");}
     as_puffX[i]=x;as_puffY[i]=y;as_puffVX[i]=Cos(angle)*speed;as_puffVY[i]=Sin(angle)*speed;
-    as_puffAge[i]=0.0;as_puffLife[i]=life;as_puffBy[i]=p;
+    as_puffAge[i]=0.0;as_puffLife[i]=life;as_puffBy[i]=p;as_puffDmg[i]=dmg;as_puffCold[i]=cold;as_puffItem[i]=as_dmgItem;
 }
 void AS_PuffPulse () {
     int i;int j;fixed nx;fixed ny;fixed t;fixed r;fixed s;
@@ -205,13 +211,18 @@ void AS_PuffPulse () {
         UnitSetPosition(as_puff[i],Point(nx,ny),true);
         UnitSetScale(as_puff[i],s,s,s);
         if(t>0.6) {ActorSend(libNtve_gf_MainActorofUnit(as_puff[i]),"SetOpacity "+FixedToString(1.0-(t-0.6)*2.5,2)+" 0.0625");}
-        // Everything the flame touches burns.
+        // Everything the flame touches burns; the cold freezes or puts fires out.
         for(j=0;j<AS_MAXALIEN;j+=1) {
-            if(as_a[j]==null) {continue;}
+            if(as_a[j]==null || as_aKind[j]==AS_BARREL && as_puffCold[i]) {continue;}
             if(AbsF(as_aX[j]-nx)>r+as_aRadius[j] || AbsF(as_aY[j]-ny)>r+as_aRadius[j]) {continue;}
             if((as_aX[j]-nx)*(as_aX[j]-nx)+(as_aY[j]-ny)*(as_aY[j]-ny)<(r+as_aRadius[j])*(r+as_aRadius[j])) {
-                AS_HurtAlien(j,as_gun[4].damage*AS_DT*4.0,1,as_puffBy[i],as_puffX[i]-as_puffVX[i],as_puffY[i]-as_puffVY[i]);
-                if(as_a[j]!=null) {as_aBurnUntil[j]=as_now+4.0;as_aBurnBy[j]=as_puffBy[i];}
+                if(as_puffCold[i]) {
+                    as_aBurnUntil[j]=0.0;
+                    if(as_puffDmg[i]>0.0) {AS_Freeze(j,0.6);}
+                    continue;
+                }
+                as_dmgItem=as_puffItem[i];AS_HurtAlien(j,as_puffDmg[i]*AS_DT*3.0,1,as_puffBy[i],as_puffX[i]-as_puffVX[i],as_puffY[i]-as_puffVY[i]);as_dmgItem=0;
+                if(as_a[j]!=null) {AS_Ignite(j,as_puffBy[i],5.0);}
             }
         }
     }

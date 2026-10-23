@@ -1,0 +1,471 @@
+// =====================================================================
+// E, the use key: door panels, terminals and PDAs, things lying on the deck,
+// ammo stashes and sentries waiting to be assembled; and the two hacking
+// minigames, after Alien Swarm's (asw_hack_wire_tile, asw_hack_computer):
+//
+//   Wire panel ("Maintenance Access"): each wire is its own grid of tiles,
+//     straight pieces and corners; clicking a tile turns it a quarter turn
+//     clockwise. A wire carries current when a path runs from the socket at its
+//     top left to the socket at its bottom right. The actuator charges at
+//     2/3 a second, but never past the share of wires lit; full, the door
+//     unlocks. Finish within the fast-hack time (7.5 s from the first click on
+//     Landing Bay's panels) or the attempt is logged: no failure, only the
+//     bonus lost. Only a tech can hack; anyone else is turned away ("Tech only")
+//     and an AI tech nearby is sent to do it (10 s).
+//   Terminal ("EXEC: Sec-Override"): columns of numbers scroll a step a
+//     second, each its own way, each with one lit "1"; clicking under a column
+//     reverses it (taking effect between steps). Get every 1 into one row with
+//     every column moving the same way. Then the critical data downloads,
+//     15 s / 2 for a tech, while the tech stays at the terminal.
+// =====================================================================
+
+const int AS_USE_PANEL = 1;
+const int AS_USE_TERMINAL = 2;
+const int AS_USE_PDA = 3;
+const int AS_TILE = 50;                     // 32 x 768/1200 scale
+const int AS_COMPUTERS = 6;
+int as_cpN;
+fixed[6] as_tmX;
+fixed[6] as_tmY;
+bool[6] as_cpLocked;
+bool[6] as_cpPda;
+string[6] as_cpOwner;
+int[6] as_cpMail;
+int[6] as_cpTumblers;
+int[6] as_cpEntries;
+fixed[6] as_cpInterval;
+fixed[6] as_cpDownload;                     // seconds for the whole download
+fixed[6] as_cpDone;                         // 0..1 downloaded
+bool[6] as_cpHasData;
+int[6] as_cpUser;                           // the marine using it, 0 none
+bool[6] as_cpStarted;                       // the hack has been started (spawners fired)
+bool[6] as_cpHacked;
+int[6][8] as_tbPos;
+int[6][8] as_tbCorrect;
+int[6][8] as_tbDir;
+bool[6][8] as_tbFlip;                       // a reversal waiting for the next idle moment
+int[6] as_tbPhase;                          // 0 idle, 1 sliding
+fixed[6] as_tbPhaseAt;
+fixed[6] as_cpAiHack;                       // an AI tech's plain progress 0..1
+int[6] as_cpHackTaken;                      // damage taken by the tech during the hack (Protect the Tech)
+int[6] as_cpHackKills;
+// The wire puzzle of each door panel (door index): types and turns, wire*24 + row*8 + column.
+int[24][72] as_wtType;
+int[24][72] as_wtRot;
+bool[24][72] as_wtLit;
+bool[24] as_wtReady;
+fixed[5] as_wireDoneAt;                // when the player's panel showed Access Granted (src/HackUI.galaxy)
+int[24] as_wtWires;
+int[24] as_wtRows;
+int[24] as_wtCols;
+fixed[24] as_wtStart;                       // the first click (0 not yet)
+fixed[24] as_wtFast;                        // the fast-hack deadline
+int[24] as_wtUser;
+fixed[24] as_wtAiHack;
+bool[24] as_wtLogged;
+int[5] as_useWhat;                          // what marine p is using: a panel, a terminal or a PDA
+int[5] as_weldDir;                          // the welder: 1 sealing, -1 cutting
+int as_pnRows = 2;                          // the level's wire panels (trigger_asw_button_area wirerows, wirecolumns, numwires)
+int as_pnCols = 5;
+int as_pnWires = 2;
+
+// ---- the level's terminals -------------------------------------------------------
+void AS_Terminal (fixed x, fixed y, bool locked, int tumblers, int entries, fixed interval, fixed download, bool data) {
+    int i=as_cpN;int k;
+    if(i>=AS_COMPUTERS) {return;}
+    as_cpN+=1;
+    as_tmX[i]=x;as_tmY[i]=y;as_cpLocked[i]=locked;as_cpPda[i]=false;as_cpOwner[i]="";as_cpMail[i]=0;
+    // HackDifficulty columns (at least 3); entries forced to 4, 6 or 8; the idle gap 0.3-2 s.
+    as_cpTumblers[i]=MaxI(3,MinI(8,tumblers));
+    k=MaxI(4,MinI(8,entries));if(k%2==1) {k+=1;}
+    as_cpEntries[i]=k;as_cpInterval[i]=AS_Clamp(interval,0.3,2.0);as_cpDownload[i]=download;as_cpDone[i]=0.0;as_cpHasData[i]=data;
+    as_cpUser[i]=0;as_cpStarted[i]=false;as_cpHacked[i]=!locked;as_cpAiHack[i]=0.0;as_tbPhase[i]=0;as_tbPhaseAt[i]=0.0;
+    for(k=0;k<as_cpTumblers[i];k+=1) {
+        // Start and lit entries both even, so every column can be brought into line.
+        as_tbPos[i][k]=RandomInt(0,as_cpEntries[i]/2-1)*2;as_tbCorrect[i][k]=RandomInt(0,as_cpEntries[i]/2-1)*2;
+        as_tbDir[i][k]=1;if(RandomInt(0,1)==0) {as_tbDir[i][k]= -1;}
+        as_tbFlip[i][k]=false;
+    }
+}
+void AS_Pda (fixed x, fixed y, string owner, int mail) {
+    AS_Terminal(x,y,false,2,6,0.5,10.0,false);
+    as_cpPda[as_cpN-1]=true;as_cpOwner[as_cpN-1]=owner;as_cpMail[as_cpN-1]=mail;
+}
+void AS_UseClear () {
+    int p;int i;
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(as_using[p]>=0) {AS_UseStop(p);}}
+    as_cpN=0;
+    for(i=0;i<24;i+=1) {as_wtReady[i]=false;as_wtUser[i]=0;as_wtAiHack[i]=0.0;}
+}
+
+// ---- the wire puzzle ---------------------------------------------------------------
+// Connections (N E S W) of a tile type at a turn: 0 straight W-E, 1 corner W-S, 2 corner E-S; each turn moves them clockwise.
+bool AS_WtConn (int type, int rot, int side) {
+    int base=(side-rot+8)%4;
+    if(type==0) {return base==1 || base==3;}
+    if(type==1) {return base==2 || base==3;}
+    return base==1 || base==2;
+}
+int AS_WtAt (int w, int r, int c) {return w*24+r*8+c;}
+// A wire's path from its top-left socket to its bottom-right one, then scrambled: the tiles off the path turned
+// at random, then up to five on it turned out of line, the last columns first.
+void AS_WtBuild (int d, int rows, int cols, int wires) {
+    int w;int r;int c;int i;int row;int n;int tries;bool stay;
+    as_wtRows[d]=rows;as_wtCols[d]=cols;as_wtWires[d]=wires;as_wtStart[d]=0.0;as_wtLogged[d]=false;
+    for(w=0;w<wires;w+=1) {
+        for(r=0;r<rows;r+=1) {for(c=0;c<cols;c+=1) {i=AS_WtAt(w,r,c);as_wtType[d][i]=RandomInt(0,2);as_wtRot[d][i]=RandomInt(0,3);}}
+        row=0;
+        for(c=0;c<cols;c+=1) {
+            stay=RandomFixed(0.0,1.0)<0.4;
+            if(rows==1) {stay=true;}
+            // The last column must leave from the bottom row.
+            if(c==cols-1) {stay=row==rows-1;}
+            if(stay) {i=AS_WtAt(w,row,c);as_wtType[d][i]=0;as_wtRot[d][i]=0;continue;}
+            if(row==0) {
+                // Down: a corner W-S here, a corner N-E below it.
+                as_wtType[d][AS_WtAt(w,0,c)]=1;as_wtRot[d][AS_WtAt(w,0,c)]=0;
+                as_wtType[d][AS_WtAt(w,1,c)]=2;as_wtRot[d][AS_WtAt(w,1,c)]=3;
+                row=1;
+            }
+            else {
+                // Up: a corner W-N here, a corner S-E above it.
+                as_wtType[d][AS_WtAt(w,row,c)]=1;as_wtRot[d][AS_WtAt(w,row,c)]=1;
+                as_wtType[d][AS_WtAt(w,row-1,c)]=2;as_wtRot[d][AS_WtAt(w,row-1,c)]=0;
+                row-=1;
+            }
+        }
+        // Mistakes, clustered toward the end; at least one.
+        AS_WtLight(d);
+        n=0;tries=0;
+        while((n==0 || tries<3) && tries<10) {
+            tries+=1;
+            for(c=cols-1;c>=0 && n<5;c-=1) {
+                for(r=0;r<rows && n<5;r+=1) {
+                    i=AS_WtAt(w,r,c);
+                    if(as_wtLit[d][i] && RandomInt(0,1)==0) {as_wtRot[d][i]=(as_wtRot[d][i]+RandomInt(1,3))%4;AS_WtLight(d);if(!AS_WtWireLit(d,w)) {n+=1;}}
+                }
+            }
+        }
+        if(AS_WtWireLit(d,w)) {i=AS_WtAt(w,rows-1,cols-1);as_wtRot[d][i]=(as_wtRot[d][i]+1)%4;}
+    }
+    AS_WtLight(d);
+    as_wtReady[d]=true;
+}
+// Light the path from each wire's start: up, down, right, left, through tiles that join both ways.
+void AS_WtLight (int d) {
+    int w;int r;int c;int i;int pr;int pc;int nr;int nc;int k;int steps;bool moved;
+    for(i=0;i<72;i+=1) {as_wtLit[d][i]=false;}
+    for(w=0;w<as_wtWires[d];w+=1) {
+        i=AS_WtAt(w,0,0);
+        if(!AS_WtConn(as_wtType[d][i],as_wtRot[d][i],3)) {continue;}
+        as_wtLit[d][i]=true;r=0;c=0;pr= -1;pc= -1;
+        for(steps=0;steps<64;steps+=1) {
+            moved=false;
+            for(k=0;k<4 && !moved;k+=1) {
+                nr=r;nc=c;
+                if(k==0) {nr=r-1;}else if(k==1) {nr=r+1;}else if(k==2) {nc=c+1;}else {nc=c-1;}
+                if(nr<0 || nc<0 || nr>=as_wtRows[d] || nc>=as_wtCols[d] || (nr==pr && nc==pc) || as_wtLit[d][AS_WtAt(w,nr,nc)]) {continue;}
+                if(!AS_WtJoined(d,w,r,c,nr,nc)) {continue;}
+                pr=r;pc=c;r=nr;c=nc;as_wtLit[d][AS_WtAt(w,r,c)]=true;moved=true;
+            }
+            if(!moved) {break;}
+        }
+    }
+}
+bool AS_WtJoined (int d, int w, int r, int c, int nr, int nc) {
+    int a=AS_WtAt(w,r,c);int b=AS_WtAt(w,nr,nc);int sa;int sb;
+    if(nr<r) {sa=0;sb=2;}else if(nr>r) {sa=2;sb=0;}else if(nc>c) {sa=1;sb=3;}else {sa=3;sb=1;}
+    return AS_WtConn(as_wtType[d][a],as_wtRot[d][a],sa) && AS_WtConn(as_wtType[d][b],as_wtRot[d][b],sb);
+}
+bool AS_WtWireLit (int d, int w) {
+    int i=AS_WtAt(w,as_wtRows[d]-1,as_wtCols[d]-1);
+    return as_wtLit[d][i] && AS_WtConn(as_wtType[d][i],as_wtRot[d][i],1);
+}
+int AS_WtLitCount (int d) {
+    int w;int n=0;
+    for(w=0;w<as_wtWires[d];w+=1) {if(AS_WtWireLit(d,w)) {n+=1;}}
+    return n;
+}
+string AS_WtArt (int type, int rot) {
+    bool n=AS_WtConn(type,rot,0);bool e=AS_WtConn(type,rot,1);bool s=AS_WtConn(type,rot,2);bool w=AS_WtConn(type,rot,3);
+    if(e && w) {return "wire_h";}
+    if(n && s) {return "wire_v";}
+    if(w && s) {return "wire_ws";}
+    if(n && w) {return "wire_nw";}
+    if(n && e) {return "wire_ne";}
+    return "wire_es";
+}
+// The fast-hack time for a wire panel (UTIL_ASW_CalcFastDoorHackTime: about 3 s to set each wire, then the
+// actuator's charge at hack level 6): 7.5 s for Landing Bay's two-wire panels.
+fixed AS_WtFastTime (int d) {return 1.5*IntToFixed(MaxI(1,as_wtWires[d]-1))+6.0;}
+
+// ---- the tumblers ----------------------------------------------------------------------
+int AS_TbRow (int i, int k) {return (as_tbPos[i][k]+as_tbCorrect[i][k])%as_cpEntries[i];}
+int AS_TbDirNow (int i, int k) {
+    if(as_tbFlip[i][k]) {return -as_tbDir[i][k];}
+    return as_tbDir[i][k];
+}
+// The row and way most columns share; a column is right when it matches them.
+int AS_TbCorrectCount (int i) {
+    int k;int j;int best=0;int n;int right=0;int bestK=0;
+    for(k=0;k<as_cpTumblers[i];k+=1) {
+        n=0;
+        for(j=0;j<as_cpTumblers[i];j+=1) {if(AS_TbRow(i,j)==AS_TbRow(i,k) && AS_TbDirNow(i,j)==AS_TbDirNow(i,k)) {n+=1;}}
+        if(n>best) {best=n;bestK=k;}
+    }
+    return best;
+}
+void AS_TbStep (int i) {
+    int k;
+    for(k=0;k<as_cpTumblers[i];k+=1) {as_tbPos[i][k]=(as_tbPos[i][k]+as_tbDir[i][k]+as_cpEntries[i])%as_cpEntries[i];}
+}
+void AS_TbPulse (int i) {
+    int k;int p=as_cpUser[i];
+    if(as_cpHacked[i] || p<=0) {return;}
+    if(as_tbPhase[i]==0 && as_now>=as_tbPhaseAt[i]+as_cpInterval[i]) {
+        // Reversals queued while idle take effect as the slide begins.
+        for(k=0;k<as_cpTumblers[i];k+=1) {if(as_tbFlip[i][k]) {as_tbFlip[i][k]=false;as_tbDir[i][k]= -as_tbDir[i][k];}}
+        as_tbPhase[i]=1;as_tbPhaseAt[i]=as_now;
+    }
+    else if(as_tbPhase[i]==1 && as_now>=as_tbPhaseAt[i]+0.5) {
+        AS_TbStep(i);as_tbPhase[i]=0;as_tbPhaseAt[i]=as_now;
+        AS_SoundUI(p,"UI_BnetClick");
+        AS_TbCheck(i);
+    }
+}
+void AS_TbCheck (int i) {
+    int p=as_cpUser[i];
+    if(AS_TbCorrectCount(i)>=as_cpTumblers[i]) {
+        as_cpHacked[i]=true;as_cpLocked[i]=false;
+        AS_SoundUI(p,"UI_Achievement");
+        AS_Log("terminal hacked by p"+IntToString(p));
+        AS_MissionHackDone(i,p);
+        if(as_cpHasData[i]) {AS_CompPage(p,2);}
+        else {AS_CompPage(p,0);}
+    }
+}
+
+// ---- who may use what --------------------------------------------------------------
+bool AS_IsTech (int p) {return AS_Class(p)==AS_CL_TECH;}
+// The use spot within reach of marine p: a door panel (kind 1, door index), a terminal (2) or a PDA (3); -1 none.
+int as_useKind;
+int as_useRef;
+bool AS_UseFind (int p) {
+    point here=UnitGetPosition(as_m[p]);int i;fixed bd=1.5;fixed d;
+    as_useKind=0;as_useRef= -1;
+    for(i=0;i<as_drN;i+=1) {
+        if(!as_drHasPanel[i] || as_drBroken[i]) {continue;}
+        d=DistanceBetweenPoints(here,Point(as_drPanelX[i],as_drPanelY[i]));
+        if(d<bd) {bd=d;as_useKind=AS_USE_PANEL;as_useRef=i;}
+    }
+    for(i=0;i<as_cpN;i+=1) {
+        d=DistanceBetweenPoints(here,Point(as_tmX[i],as_tmY[i]));
+        if(d<bd) {
+            bd=d;as_useRef=i;
+            if(as_cpPda[i]) {as_useKind=AS_USE_PDA;}else {as_useKind=AS_USE_TERMINAL;}
+        }
+    }
+    return as_useKind>0;
+}
+// E pressed.
+void AS_UsePress (int p) {
+    int i;
+    if(!as_alive[p]) {return;}
+    as_useHeld[p]=true;
+    if(as_using[p]>=0) {AS_UseStop(p);return;}
+    if(AS_UseFind(p)) {AS_UseStart(p,as_useKind,as_useRef);return;}
+    i=AS_DropNear(p);
+    if(i>=0) {AS_PickUp(p,i);return;}
+    i=AS_StashNear(p);
+    if(i>=0) {AS_StashTake(p,i);return;}
+}
+void AS_UseStart (int p, int kind, int ref) {
+    if(kind==AS_USE_PANEL) {
+        if(!as_drLocked[ref]) {AS_Message(p,"Panel unlocked");return;}
+        if(as_wtUser[ref]>0 && as_wtUser[ref]!=p) {AS_Message(p,"Someone is already at this panel");return;}
+        if(!AS_IsTech(p)) {
+            AS_Message(p,"<c val=\"FF6050\">Tech only</c>  -  a tech must hack this panel");AS_SoundUI(p,"UI_BnetError");
+            AS_OrderTechHack(p,kind,ref);AS_HintEvent("need_tech",p);
+            return;
+        }
+        if(!as_wtReady[ref]) {AS_WtBuild(ref,as_pnRows,as_pnCols,as_pnWires);}
+        as_wtUser[ref]=p;as_using[p]=ref;as_useWhat[p]=AS_USE_PANEL;
+        AS_DirectorHackStarted();
+        AS_WireOpen(p,ref);
+        AS_HintEvent("hacking",p);
+        AS_Log("p"+IntToString(p)+" at wire panel "+as_drName[ref]);
+        return;
+    }
+    if(as_cpUser[ref]>0 && as_cpUser[ref]!=p) {AS_Message(p,"Someone is already at this terminal");return;}
+    if(kind==AS_USE_TERMINAL && as_cpLocked[ref] && !AS_IsTech(p)) {
+        AS_Message(p,"<c val=\"FF6050\">ACCESS DENIED</c>  -  Tech only");AS_SoundUI(p,"UI_BnetError");
+        AS_OrderTechHack(p,kind,ref);AS_HintEvent("need_tech",p);
+        return;
+    }
+    as_cpUser[ref]=p;as_using[p]=ref;as_useWhat[p]=kind;
+    if(kind==AS_USE_PDA) {AS_CompOpen(p,ref);AS_CompPage(p,3);return;}
+    AS_CompOpen(p,ref);
+    if(as_cpLocked[ref]) {
+        if(!as_cpStarted[ref]) {as_cpStarted[ref]=true;as_cpHackTaken[ref]=FixedToInt(as_dmgTaken[p]);as_cpHackKills[ref]=AS_SquadKills();AS_MissionHackStarted(ref,p);AS_DirectorHackStarted();}
+        as_tbPhaseAt[ref]=as_now;as_tbPhase[ref]=0;
+        AS_CompPage(p,1);
+    }
+    else if(as_cpHasData[ref] && as_cpDone[ref]<1.0) {AS_CompPage(p,2);}
+    else {AS_CompPage(p,0);}
+}
+void AS_UseStop (int p) {
+    int ref=as_using[p];
+    if(ref<0) {return;}
+    if(as_useWhat[p]==AS_USE_PANEL) {if(as_wtUser[ref]==p) {as_wtUser[ref]=0;}AS_WireClose(p);}
+    else {if(as_cpUser[ref]==p) {as_cpUser[ref]=0;}AS_CompClose(p);}
+    as_using[p]= -1;as_useWhat[p]=0;
+}
+int AS_SquadKills () {
+    int q;int n=0;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q)) {n+=as_kills[q];}}
+    return n;
+}
+
+// ---- every step ------------------------------------------------------------------------
+void AS_UsePulse () {
+    int p;int i;fixed f;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p)) {continue;}
+        if(as_using[p]>=0 && !as_alive[p]) {AS_UseStop(p);continue;}
+        if(!as_alive[p]) {continue;}
+        if(as_using[p]>=0) {
+            if(as_useWhat[p]==AS_USE_PANEL) {AS_WirePulse(p,as_using[p]);}
+            else {AS_CompPulse(p,as_using[p]);}
+        }
+        // Hold E beside a sentry case to assemble it.
+        else if(as_useHeld[p] || (as_bot[p] && !(as_auto && p==1))) {AS_SentryBuildStep(p);}
+        // The extra item held: the welder at a door (seals, or cuts a welded door).
+        if(as_extraHeld[p] && as_inv[p][2]==AS_IT_WELDER) {AS_WeldStep(p,as_weldDir[p]);}
+    }
+    for(i=0;i<as_cpN;i+=1) {AS_TbPulse(i);}
+    AS_TechAiPulse();
+}
+// 1 pressed with the welder: seal a door, or cut it if it is welded and nobody here has been sealing it.
+void AS_WelderStart (int p) {
+    int d=AS_WeldTarget(p);
+    as_weldDir[p]=1;
+    if(d<0) {
+        if(as_now-as_ammoMsgAt[p]>1.5) {as_ammoMsgAt[p]=as_now;AS_Message(p,"Face a door to weld or cut it");}
+        return;
+    }
+    if(as_drSeal[d]>=AS_SEAL_FULL || (as_drSeal[d]>0.0 && !(as_drWeldBy[d]>0 && as_drWeldDir[d]==1))) {as_weldDir[p]= -1;}
+}
+// The wire panel: the charge rises at 2/3 a second up to the share of wires lit.
+void AS_WirePulse (int p, int d) {
+    fixed goal=IntToFixed(AS_WtLitCount(d))/IntToFixed(MaxI(1,as_wtWires[d]));fixed before=as_drHack[d];
+    // Hacked: "Access Granted" stays up a second, then the panel closes.
+    if(as_drHack[d]>=1.0) {
+        if(as_wireDoneAt[p]<=0.0 || as_now>as_wireDoneAt[p]+1.0) {AS_UseStop(p);}
+        return;
+    }
+    as_drHack[d]=MinF(goal,as_drHack[d]+MaxF((goal-as_drHack[d])*0.1*AS_DT,AS_DT/6.0*4.0));
+    if(as_wtStart[d]>0.0 && !as_wtLogged[d] && as_now>as_wtFast[d] && as_drHack[d]<1.0) {as_wtLogged[d]=true;AS_SoundUI(p,"UI_BnetError");}
+    AS_WireUpdate(p,d);
+    if(before<0.5 && as_drHack[d]>=0.5) {AS_AllMsg(AS_MarineNameS(p)+": halfway there");}
+    if(as_drHack[d]>=1.0) {AS_PanelHacked(d,p);}
+}
+void AS_PanelHacked (int d, int p) {
+    bool fast=as_wtStart[d]>0.0 && as_now<=as_wtFast[d];
+    as_drHack[d]=1.0;
+    AS_SoundUI(p,"UI_Achievement");
+    if(fast && p>=1) {as_fastHacks[p]+=1;AS_AchieveEvent(p,"fast_wire");}
+    AS_Log("panel hacked: "+as_drName[d]+" by p"+IntToString(p)+" fast "+IntToString(BoolToInt(fast)));
+    if(p>=1 && as_using[p]==d) {AS_WireDone(p);}
+    AS_MissionPanelHacked(d,p);
+}
+
+// ---- AI techs: ordered to hack by a squadmate who cannot ---------------------------------
+int as_aiHackKind;
+int as_aiHackRef;
+int as_aiHackTech;
+void AS_OrderTechHack (int p, int kind, int ref) {
+    int q;int best=0;fixed bd=15.0;fixed d;point at;
+    if(kind==AS_USE_PANEL) {at=Point(as_drPanelX[ref],as_drPanelY[ref]);}else {at=Point(as_tmX[ref],as_tmY[ref]);}
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(!AS_Person(q) || !as_alive[q] || !as_bot[q] || (as_auto && q==1) || !AS_IsTech(q)) {continue;}
+        d=DistanceBetweenPoints(UnitGetPosition(as_m[q]),at);
+        if(d<bd) {bd=d;best=q;}
+    }
+    if(best==0) {return;}
+    as_aiHackKind=kind;as_aiHackRef=ref;as_aiHackTech=best;
+    AS_AllMsg(AS_MarineNameS(best)+": on it.");
+}
+// The ordered tech walks to the spot and hacks it plainly: a panel in 10 s, a terminal (hack and download) in 20.
+void AS_TechAiPulse () {
+    int q=as_aiHackTech;int r=as_aiHackRef;point at;
+    if(q<=0) {return;}
+    if(!AS_Person(q) || !as_alive[q]) {as_aiHackTech=0;return;}
+    if(as_aiHackKind==AS_USE_PANEL) {at=Point(as_drPanelX[r],as_drPanelY[r]);}else {at=Point(as_tmX[r],as_tmY[r]);}
+    if(DistanceBetweenPoints(UnitGetPosition(as_m[q]),at)>1.4) {return;}
+    if(as_aiHackKind==AS_USE_PANEL) {
+        if(!as_drLocked[r]) {as_aiHackTech=0;return;}
+        as_drHack[r]=MinF(1.0,as_drHack[r]+AS_DT*0.1);
+        if(as_drHack[r]>=1.0) {AS_PanelHacked(r,q);as_aiHackTech=0;}
+        return;
+    }
+    if(!as_cpStarted[r]) {as_cpStarted[r]=true;as_cpHackTaken[r]=FixedToInt(as_dmgTaken[q]);as_cpHackKills[r]=AS_SquadKills();AS_MissionHackStarted(r,q);AS_DirectorHackStarted();}
+    as_cpAiHack[r]=MinF(1.0,as_cpAiHack[r]+AS_DT/IntToFixed(MaxI(1,as_cpTumblers[r]))*2.0*0.1);
+    if(as_cpAiHack[r]>=0.3 && !as_cpHacked[r]) {as_cpUser[r]=q;as_cpHacked[r]=true;as_cpLocked[r]=false;AS_MissionHackDone(r,q);as_cpUser[r]=0;}
+    if(as_cpAiHack[r]>=0.6 && as_cpHasData[r] && as_cpDone[r]<1.0) {as_cpDone[r]=1.0;AS_MissionDownloaded(r,q);as_aiHackTech=0;}
+    if(as_cpAiHack[r]>=0.6) {as_aiHackTech=0;}
+}
+point AS_TechAiGoal (int q) {
+    if(q!=as_aiHackTech || q<=0) {return null;}
+    if(as_aiHackKind==AS_USE_PANEL) {return Point(as_drPanelX[as_aiHackRef],as_drPanelY[as_aiHackRef]);}
+    return Point(as_tmX[as_aiHackRef],as_tmY[as_aiHackRef]);
+}
+// The use panel's line for what marine p is next to ("" nothing), its key and its progress (-1 none).
+string as_useLine;
+string as_useKey;
+fixed as_useBar;
+void AS_UseDescribe (int p) {
+    int i;fixed f;
+    as_useLine="";as_useKey="";as_useBar= -1.0;
+    if(!as_alive[p]) {return;}
+    if(as_using[p]>=0) {
+        as_useKey="E";
+        if(as_useWhat[p]==AS_USE_PANEL) {as_useLine="Exit Panel";as_useBar=as_drHack[as_using[p]];}
+        else {as_useLine="Log off";}
+        return;
+    }
+    if(AS_UseFind(p)) {
+        i=as_useRef;as_useKey="E";
+        if(as_useKind==AS_USE_PANEL) {
+            if(!as_drLocked[i]) {as_useLine="Panel unlocked";as_useKey="";}
+            else if(AS_IsTech(p)) {as_useLine="Hack Panel";as_useBar=as_drHack[i];}
+            else {as_useLine="<c val=\"FF8070\">Tech only</c>";as_useBar=as_drHack[i];}
+        }
+        else if(as_useKind==AS_USE_PDA) {as_useLine="Access PDA  -  "+as_cpOwner[i];}
+        else if(as_cpLocked[i]) {
+            if(AS_IsTech(p)) {as_useLine="Hack Computer";}else {as_useLine="<c val=\"FF8070\">Tech only</c>";}
+        }
+        else if(as_cpHasData[i] && as_cpDone[i]<1.0) {as_useLine="Access Terminal  -  download the data";as_useBar=as_cpDone[i];}
+        else {as_useLine="Access Terminal";}
+        return;
+    }
+    i=AS_DropNear(p);
+    if(i>=0) {
+        as_useKey="E";
+        if(!AS_CanCarry(p,as_dropItem[i])) {as_useLine="<c val=\"FF8070\">"+as_it[as_dropItem[i]].title+": "+AS_ClassOnly(as_dropItem[i])+"</c>";as_useKey="";}
+        else if((AS_IsExtra(as_dropItem[i]) && as_inv[p][2]>0) || (!AS_IsExtra(as_dropItem[i]) && as_inv[p][1]>0)) {as_useLine="Swap for "+as_it[as_dropItem[i]].title;}
+        else {as_useLine="Pick Up "+as_it[as_dropItem[i]].title;}
+        return;
+    }
+    i=AS_StashNear(p);
+    if(i>=0) {as_useKey="E";as_useLine="Take Ammo";as_useBar=IntToFixed(as_stashUnits[i])/100.0;return;}
+    f=AS_SentryProgress(p);
+    if(f>=0.0) {as_useKey="E";as_useLine="Hold to Build Sentry";as_useBar=f;return;}
+    i=AS_WeldTarget(p);
+    if(i>=0) {
+        as_useLine=AS_DoorUseText(p,i);
+        if(as_useLine!="") {
+            as_useBar=as_drSeal[i]/AS_SEAL_FULL;
+            if(as_inv[p][2]==AS_IT_WELDER) {as_useKey="1";}
+        }
+    }
+}

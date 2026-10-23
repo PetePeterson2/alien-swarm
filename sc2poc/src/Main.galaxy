@@ -1,13 +1,20 @@
 // =====================================================================
 // Entry point: players, lighting, UI, input triggers and the 16 Hz pulse;
-// then the campaign (src/Campaign.galaxy) picks and builds the first level.
+// then the campaign (src/Campaign.galaxy) opens the briefing.
+//
+// Keys, as Alien Swarm binds them: WASD move; LEFT fire; F or MIDDLE secondary
+// fire; RIGHT melee; R reload; Q or the wheel swap weapons; 1 the offhand item;
+// E use; SPACE roll; TAB the map; F1-F4 take control of another of your marines;
+// V and X tell the AI marines to follow or hold; G drop the weapon in hand.
+// Also C top-down / third person, N damage numbers, H help. Developer keys
+// (Ctrl+...) exist in QA builds only.
 // =====================================================================
 
 // Demo build only: player 1 fires each gun in turn in six directions at sleeping drones.
 int as_demoStep= -1;
 fixed as_demoNext;
 void AS_DemoPulse () {
-    int p=1;int[6] guns;fixed[6] dirs;fixed ang;int k;point here;
+    int p=1;int[6] guns;fixed[6] dirs;fixed ang;int k;point here;int w;
     if(!as_demo || !AS_Person(p) || !as_alive[p]) {return;}
     as_god[p]=true;as_director=false;
     if(as_now<as_demoNext) {
@@ -15,81 +22,86 @@ void AS_DemoPulse () {
         return;
     }
     as_demoStep+=1;as_demoNext=as_now+2.5;
-    guns[0]=1;guns[1]=2;guns[2]=5;guns[3]=7;guns[4]=3;guns[5]=1;
+    guns[0]=AS_IT_RIFLE;guns[1]=AS_IT_AUTOGUN;guns[2]=AS_IT_PISTOLS;guns[3]=AS_IT_MINIGUN;guns[4]=AS_IT_SHOTGUN;guns[5]=AS_IT_VINDICATOR;
     dirs[0]=0.0;dirs[1]=90.0;dirs[2]=45.0;dirs[3]=135.0;dirs[4]=270.0;dirs[5]=200.0;
     ang=dirs[as_demoStep%6];
-    as_slot[p]=guns[(as_demoStep/6)%6];as_mag[p][as_slot[p]]=as_gun[as_slot[p]].mag;as_reserve[p][as_slot[p]]=999;as_reloadEnd[p]=0.0;
+    w=guns[(as_demoStep/6)%6];as_inv[p][0]=w;as_hand[p]=0;as_slot[p]=w;as_mag[p][w]=as_it[w].mag;as_reserve[p][w]=999;as_reloadEnd[p]=0.0;
     here=UnitGetPosition(as_m[p]);
     as_mouseDX[p]=Cos(ang)*6.0;as_mouseDY[p]=Sin(ang)*6.0;as_mouseSeen[p]=true;as_trigger[p]=true;as_spin[p]=1.0;
     for(k=0;k<2;k+=1) {AS_SpawnNear(AS_DRONE,PointGetX(here)+Cos(ang)*IntToFixed(5+k*2),PointGetY(here)+Sin(ang)*IntToFixed(5+k*2),false);}
-    AS_Message(p,"DEMO  "+as_gun[as_slot[p]].name+"  at "+FixedToString(ang,0)+" degrees");
+    AS_Message(p,"DEMO  "+as_it[w].name+"  at "+FixedToString(ang,0)+" degrees");
 }
 bool AS_Pulse (bool testConds, bool runActions) {
     int p;
     as_now+=AS_DT;as_tick+=1;
-    // In the level menu, and for the moment between one level and the next, nothing else runs.
+    // In the briefing, and for the moment between one level and the next, nothing else runs.
     if(!as_levelReady) {AS_CampaignPulse();return true;}
     AS_AlienCache();
     AS_DemoPulse();
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(!AS_Person(p)) {continue;}
         AS_MarinePulse(p);AS_BotPulse(p);
-        if(as_alive[p]) {AS_AimUpdate(p);AS_Face(p);AS_Move(p);AS_Attachments(p);AS_Camera(p);AS_FirePulse(p);}
+        if(as_alive[p]) {AS_AimUpdate(p);AS_Face(p);AS_Move(p);AS_Attachments(p);AS_Camera(p);AS_FirePulse(p);AS_GearPulse(p);}
         if(as_dCenter[p]!=0) {AS_HurtPulse(p);}
         if(as_tick%2==0 && as_dCenter[p]!=0) {AS_HudUpdate(p);}
     }
     if(as_tick%2==1) {AS_NameTagsPulse();}
-    AS_BulletPulse();AS_AlienPulse();AS_LobPulse();AS_PuffPulse();AS_SentryPulse();AS_FlarePulse();AS_FxPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();AS_KitPulse();AS_MissionPulse();
+    if(as_tick%4==2) {AS_HintPulse();}
+    AS_WeaponsPulse();AS_AlienPulse();AS_PuffPulse();AS_FxPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();AS_KitPulse();AS_MissionPulse();
     return true;
 }
 void AS_KillAll () {
     int i;
-    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && as_aKind[i]!=AS_BIOMASS && as_aKind[i]!=AS_EGG) {AS_KillAlien(i,0,0);}}
+    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && !AS_IsThing(as_aKind[i])) {AS_KillAlien(i,0,0);}}
 }
 void AS_CycleLight (int p) {
     as_light=(as_light+1)%4;
     GameSetLighting(as_lightId[as_light],1.0);
     AS_Message(p,"Lighting: "+as_lightName[as_light]);
 }
+// Developer keys: QA builds only, and they mark the mission as cheated (no XP, no medals).
+bool AS_DevKey (int p, int k) {
+    int n= -1;
+    if(!as_qa) {return false;}
+    if(k>=c_key0 && k<=c_key9) {n=k-c_key0;}
+    if(n>=0) {AS_DevSpawn(p,n);as_cheated=true;return true;}
+    if(k==c_keyG) {as_god[p]=!as_god[p];as_cheated=true;AS_Message(p,"God mode toggled");return true;}
+    if(k==c_keyL) {AS_SkipAhead(p);as_cheated=true;return true;}
+    if(k==c_keyJ) {AS_DevSpawn(p,AS_RIPPER);as_cheated=true;return true;}
+    if(k==c_keyK) {AS_KillAll();as_cheated=true;return true;}
+    if(k==c_keyH) {AS_HurtMarine(p,25.0,PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p]))+1.0,0.0);return true;}
+    if(k==c_keyR) {as_reserve[p][as_slot[p]]=0;as_mag[p][as_slot[p]]=MinI(as_mag[p][as_slot[p]],5);return true;}
+    if(k==c_keyT) {as_onslaught=!as_onslaught;AS_DirectorInit();AS_Message(p,"Onslaught toggled");return true;}
+    if(k==c_keyB) {AS_CycleLight(p);return true;}
+    if(k==c_keyN) {AS_Tour(p);return true;}
+    if(k==c_keyP) {AS_ProbeRun();AS_Message(p,"Probe walking");return true;}
+    if(k==c_keyU) {AS_KitUnpath(p);return true;}
+    return false;
+}
 bool AS_KeyDownT (bool testConds, bool runActions) {
-    int p=EventPlayer();int k=EventKeyPressed();bool ctrl=EventKeyControl();int n= -1;
+    int p=EventPlayer();int k=EventKeyPressed();bool ctrl=EventKeyControl();
     if(!AS_Person(p) || !as_levelReady) {return true;}
     if(k==c_keyW) {AS_KeyMove(p,0,true);return true;}
     if(k==c_keyA) {AS_KeyMove(p,1,true);return true;}
     if(k==c_keyS) {AS_KeyMove(p,2,true);return true;}
     if(k==c_keyD) {AS_KeyMove(p,3,true);return true;}
-    if(k>=c_key0 && k<=c_key9) {n=k-c_key0;}
-    if(n>=0) {
-        if(ctrl) {AS_DevSpawn(p,n);}
-        else if(n==0) {AS_Select(p,10);}
-        else {AS_Select(p,n);}
-        return true;
-    }
-    if(ctrl && k==c_keyG) {as_god[p]=!as_god[p];return true;}
-    if(ctrl && k==c_keyL) {AS_SkipAhead(p);return true;}
-    if(ctrl && k==c_keyJ) {AS_DevSpawn(p,AS_RIPPER);return true;}
-    if(ctrl && k==c_keyK) {AS_KillAll();return true;}
-    // QA: 25 damage to yourself, to see the health ring lose it.
-    if(ctrl && k==c_keyH && as_qa) {AS_HurtMarine(p,25.0,PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p]))+1.0,0.0);return true;}
-    // QA: the current gun down to its last few rounds, to see the HUD's LOW AMMO / NO AMMO.
-    if(ctrl && k==c_keyR && as_qa) {as_reserve[p][as_slot[p]]=0;as_mag[p][as_slot[p]]=MinI(as_mag[p][as_slot[p]],5);return true;}
-    // Kit comparison (src/Kit.galaxy): room tour, pathing probe, prop turn, wall mirror.
-    if(ctrl && k==c_keyN) {AS_Tour(p);return true;}
-    if(ctrl && k==c_keyP) {AS_ProbeRun();AS_Message(p,"Probe walking");return true;}
-    if(ctrl && k==c_keyU) {AS_KitUnpath(p);return true;}
-    if(ctrl && k==c_keyB) {AS_KitPropsTurn(p);return true;}
-    if(ctrl && k==c_keyY) {AS_KitMirror(p);return true;}
+    if(ctrl && AS_DevKey(p,k)) {return true;}
+    if(k==c_keyF1 || k==c_keyF2 || k==c_keyF3 || k==c_keyF4) {AS_SwitchTo(p,k-c_keyF1+1);return true;}
+    if(k==c_keyTab) {AS_FullMapToggle(p);return true;}
+    if(k==c_keyH) {AS_HelpToggle(p);return true;}
+    if(k==c_keyN) {as_numbers[p]=!as_numbers[p];if(as_numbers[p]) {AS_Message(p,"Damage numbers on");}else {AS_Message(p,"Damage numbers off");}return true;}
+    if(k==c_keyC) {AS_CameraMode(p,1-as_view[p],0.4);return true;}
+    if(!as_alive[p]) {return true;}
+    if(k==c_keyE) {AS_UsePress(p);return true;}
+    if(as_using[p]>=0) {return true;}
     if(k==c_keyR) {AS_Reload(p);}
-    if(k==c_keyQ) {AS_DeploySentry(p);}
-    if(k==c_keyE) {AS_UseMedkit(p);}
-    if(k==c_keyX) {AS_ThrowFlare(p);}
-    if(k==c_keyF) {as_lightOn[p]=!as_lightOn[p];AS_TorchShow(p);}
-    if(k==c_keyV) {AS_CameraMode(p,1-as_view[p],0.4);}
-    if(k==c_keyL) {AS_CycleLight(p);}
-    if(k==c_keyT) {as_director=!as_director;AS_Message(p,"Director toggled");}
-    if(k==c_keyH) {AS_HelpToggle(p);}
-    if(k==c_keyN) {as_numbers[p]=!as_numbers[p];if(as_numbers[p]) {AS_Message(p,"Damage numbers on");}else {AS_Message(p,"Damage numbers off");}}
-    if(k==c_keyTab) {AS_ObjToggle(p);}
+    if(k==c_keyQ) {AS_SwapWeapon(p);}
+    if(k==c_key1) {as_extraHeld[p]=true;if(as_inv[p][2]==AS_IT_WELDER) {AS_WelderStart(p);}else {AS_UseExtra(p);}}
+    if(k==c_keyF) {as_trigger2[p]=true;AS_Secondary(p);}
+    if(k==c_keySpace) {AS_Roll(p);}
+    if(k==c_keyG) {AS_DropHand(p);}
+    if(k==c_keyV) {AS_SquadOrder(p,0);}
+    if(k==c_keyX) {AS_SquadOrder(p,1);}
     return true;
 }
 bool AS_KeyUpT (bool testConds, bool runActions) {
@@ -99,50 +111,90 @@ bool AS_KeyUpT (bool testConds, bool runActions) {
     if(k==c_keyA) {AS_KeyMove(p,1,false);}
     if(k==c_keyS) {AS_KeyMove(p,2,false);}
     if(k==c_keyD) {AS_KeyMove(p,3,false);}
+    if(k==c_keyE) {as_useHeld[p]=false;}
+    if(k==c_key1) {as_extraHeld[p]=false;}
+    if(k==c_keyF) {as_trigger2[p]=false;}
     return true;
 }
+// G: the weapon in hand to the deck, to give a squadmate.
+void AS_DropHand (int p) {
+    int h=as_hand[p];point here=UnitGetPosition(as_m[p]);
+    if(as_inv[p][h]<=0 || as_inv[p][1-h]<=0) {AS_Message(p,"Keep at least one weapon");return;}
+    AS_DropWeapon(p,h,PointGetX(here)+Cos(as_aim[p])*0.6,PointGetY(here)+Sin(as_aim[p])*0.6);
+    as_inv[p][h]=0;
+    AS_SelectHand(p,1-h);
+}
+// V / X: every AI marine a lone player commands follows, or holds where it stands.
+void AS_SquadOrder (int p, int ord) {
+    int q;
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(!AS_Owns(p,q) || q==p || !as_alive[q]) {continue;}
+        as_botOrder[q]=ord;as_botHoldAt[q]=UnitGetPosition(as_m[q]);
+    }
+    if(ord==0) {AS_Message(p,"Squad: follow me");AS_HintSuccess(p,AS_LS_FOLLOW);}
+    else {AS_Message(p,"Squad: hold position");AS_HintSuccess(p,AS_LS_HOLD);}
+}
 bool AS_MouseDownT (bool testConds, bool runActions) {
-    int p=EventPlayer();
+    int p=EventPlayer();int b=EventMouseClickedButton();
     if(!AS_Person(p) || !as_levelReady) {return true;}
-    if(as_bot[p]) {return true;}
+    if(as_bot[p] && !(as_auto && p==1)) {return true;}
+    if(as_using[p]>=0) {return true;}
+    // A dead marine's player watches the squad: a click moves on to the next living marine.
+    if(!as_alive[p]) {if(b==c_mouseButtonLeft) {AS_SpectateNext(p);}return true;}
     // The first round leaves on the click itself, not at the next 1/16 s step: a quick
     // click that was let go before that step used to fire nothing at all.
-    if(EventMouseClickedButton()==c_mouseButtonLeft) {as_trigger[p]=true;AS_FirePulse(p);}
-    else if(EventMouseClickedButton()==c_mouseButtonRight) {as_trigger2[p]=true;AS_Secondary(p);}
+    if(b==c_mouseButtonLeft) {as_trigger[p]=true;AS_TriggerPulled(p);AS_FirePulse(p);}
+    else if(b==c_mouseButtonRight) {AS_Melee(p);AS_HintEvent("melee",p);}
+    else if(b==c_mouseButtonMiddle) {as_trigger2[p]=true;AS_Secondary(p);}
     return true;
 }
 bool AS_MouseUpT (bool testConds, bool runActions) {
-    int p=EventPlayer();
+    int p=EventPlayer();int b=EventMouseClickedButton();
     if(!AS_Person(p)) {return true;}
-    if(EventMouseClickedButton()==c_mouseButtonLeft) {as_trigger[p]=false;}
-    else {as_trigger2[p]=false;}
+    if(b==c_mouseButtonLeft) {as_trigger[p]=false;}
+    else if(b==c_mouseButtonMiddle) {as_trigger2[p]=false;}
     return true;
 }
 bool AS_MouseMoveT (bool testConds, bool runActions) {
     AS_MouseMoved(EventPlayer(),EventMouseMovedPosXWorld(),EventMouseMovedPosYWorld());
     return true;
 }
+// The wheel swaps weapons, as AS's inventory next / previous.
+fixed[5] as_wheelAt;
 bool AS_WheelT (bool testConds, bool runActions) {
     int p=EventPlayer();
-    if(!AS_Person(p) || as_view[p]!=0 || !as_levelReady) {return true;}
-    as_zoom[p]=AS_Clamp(as_zoom[p]-EventMouseWheelSpin()*1.5,12.0,40.0);
-    CameraSetValue(p,c_cameraValueDistance,as_zoom[p],0.2,-1,0.0);
+    if(!AS_Person(p) || !as_levelReady || !as_alive[p] || as_now-as_wheelAt[p]<0.2) {return true;}
+    as_wheelAt[p]=as_now;
+    AS_SwapWeapon(p);
     return true;
 }
 void AS_KeyEvents (trigger t, bool down) {
     int k;
+    for(k=c_keyA;k<=c_keyZ;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
     for(k=c_key0;k<=c_key9;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
-    TriggerAddEventKeyPressed(t,c_playerAny,c_keyW,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
-    TriggerAddEventKeyPressed(t,c_playerAny,c_keyA,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
-    TriggerAddEventKeyPressed(t,c_playerAny,c_keyS,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
-    TriggerAddEventKeyPressed(t,c_playerAny,c_keyD,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
     if(!down) {return;}
-    for(k=c_keyA;k<=c_keyZ;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
     TriggerAddEventKeyPressed(t,c_playerAny,c_keyTab,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
+    TriggerAddEventKeyPressed(t,c_playerAny,c_keySpace,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
+    for(k=c_keyF1;k<=c_keyF4;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
+}
+// A player who leaves mid-mission hands their marine to the AI, as AS hands it to the players left.
+bool AS_PlayerLeftT (bool testConds, bool runActions) {
+    int p=EventPlayer();
+    if(p<1 || p>AS_PLAYERS || !as_on[p]) {return true;}
+    if(!as_levelReady) {as_on[p]=false;as_prof[p]= -1;if(as_briefOn) {AS_BrRefreshAll();}}
+    else {as_bot[p]=true;as_botCount+=1;}
+    if(p==as_brHost) {as_brHost=AS_BrFirstHuman();if(as_briefOn) {AS_BriefingOpen(as_briefMission);}}
+    AS_Log("p"+IntToString(p)+" left");
+    return true;
+}
+// QA builds play every sound id the script names, silently, once: the client logs each unknown one
+// (the sound catalog in reference/ carries mods this map does not load). build.py fills the body in.
+void AS_SoundProbe () {
 }
 void AS_Init () {
     int p;int q;trigger t;
-    AS_GunsInit();AS_KindsInit();
+    AS_ProfilesInit();AS_ItemsInit();AS_KindsInit();AS_XpInit();AS_HintsInit();
+    if(as_qa) {AS_SoundProbe();}
     as_lightId[0]="ASDerelict";as_lightName[0]="DERELICT";as_lightId[1]="ASBlackout";as_lightName[1]="BLACKOUT";
     as_lightId[2]="ASAlarm";as_lightName[2]="EMERGENCY";as_lightId[3]="ASPowered";as_lightName[3]="POWER RESTORED";
     GameSetSpeedValue(c_gameSpeedNormal);GameSetSpeedLocked(true);
@@ -151,7 +203,7 @@ void AS_Init () {
     // Hiding the game UI hides text tags too; the damage numbers are text tags (Doodad Royale does the same).
     UISetFrameVisible(PlayerGroupAll(),c_syncFrameTypeTextTag,true);
     UISetDragSelectEnabled(PlayerGroupAll(),false);
-    for(p=1;p<=AS_PLAYERS;p+=1) {as_on[p]=PlayerStatus(p)==c_playerStatusActive && PlayerType(p)==c_playerTypeUser;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_on[p]=PlayerStatus(p)==c_playerStatusActive && PlayerType(p)==c_playerTypeUser;as_prof[p]= -1;as_using[p]= -1;}
     // Squad colours as the HUD draws them (debrief graph): blue, red, green, yellow; the swarm an orange-brown
     // carapace nearer Alien Swarm's drones than SC2's purple.
     PlayerSetColorIndex(1,2,true);PlayerSetColorIndex(2,1,true);PlayerSetColorIndex(3,7,true);PlayerSetColorIndex(4,5,true);
@@ -159,20 +211,22 @@ void AS_Init () {
     AS_BotsInit();
     for(p=1;p<=AS_PLAYERS;p+=1) {
         for(q=1;q<=AS_PLAYERS;q+=1) {if(q!=p) {PlayerSetAlliance(p,c_allianceIdPassive,q,true);PlayerSetAlliance(p,c_allianceIdVision,q,true);PlayerSetAlliance(p,c_allianceIdChat,q,true);}}
-        if(!as_on[p]) {continue;}
         VisRevealArea(p,RegionEntireMap(),0.0,false);
         CameraUseHeightDisplacement(p,false);CameraUseHeightSmoothing(p,false);
         as_zoom[p]=AS_TOP_DIST;as_lightOn[p]=true;as_view[p]=0;as_numbers[p]=true;
-        AS_GiveLoadout(p);AS_BotLoadout(p);
-        if(!as_bot[p] || (as_auto && p==1)) {AS_HudCreate(p);}
+        if(!as_on[p]) {continue;}
+        if(!as_bot[p] || (as_auto && p==1)) {AS_HudCreate(p);AS_HudShow(p,false);}
         if(as_auto && p==1) {as_god[p]=true;}
     }
     t=TriggerCreate("AS_KeyDownT");AS_KeyEvents(t,true);
     t=TriggerCreate("AS_KeyUpT");AS_KeyEvents(t,false);
     t=TriggerCreate("AS_MouseDownT");TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonLeft,true);TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonRight,true);
+    TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonMiddle,true);
     t=TriggerCreate("AS_MouseUpT");TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonLeft,false);TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonRight,false);
+    TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonMiddle,false);
     t=TriggerCreate("AS_MouseMoveT");TriggerAddEventMouseMoved(t,c_playerAny);
     t=TriggerCreate("AS_WheelT");TriggerAddEventMouseWheel(t,c_playerAny);
+    t=TriggerCreate("AS_PlayerLeftT");TriggerAddEventPlayerLeft(t,c_playerAny,c_gameResultUndecided);
     AS_CampaignInit();
     t=TriggerCreate("AS_Pulse");TriggerAddEventTimePeriodic(t,AS_DT,c_timeGame);
 }

@@ -210,8 +210,38 @@ def tex_window(seed=301, size=(512, 640)):
     return _img(a), _img(emis)
 
 
+def tex_asdoor(w=256, h=320):
+    """Alien Swarm's heavy door (models/props/doors/heavy_doors): dark plating in two ribbed halves, yellow and
+    black hazard bands top and bottom, a status lamp strip down the middle seam."""
+    n = _noise(0, 40, 71, 4, (h, w))
+    a = np.array((84, 88, 92), float)[None, None] * (0.8 + 0.3 * n[..., None])
+    for x in range(16, w, 32):
+        a[:, x:x + 4] *= 0.62
+    for y in range(int(h * 0.2), int(h * 0.8), 40):
+        a[y:y + 3] *= 0.5
+    a[:, w // 2 - 3:w // 2 + 3] = (24, 24, 26)
+    _hazard(a, 0, int(h * 0.12), 5)
+    _hazard(a, int(h * 0.88), h, 6)
+    emis = np.zeros((h, w, 3))
+    for y in range(int(h * 0.3), int(h * 0.7), 24):
+        a[y:y + 10, w // 2 - 10:w // 2 + 10] = (60, 220, 120); emis[y:y + 10, w // 2 - 10:w // 2 + 10] = (40, 180, 90)
+    return _img(_grime(a, 73, 0.3)), _img(emis)
+
+
+def tex_seam(w=64, h=256):
+    """A weld seam: a jagged glowing orange bead down the door's middle."""
+    rng = np.random.default_rng(9)
+    a = np.zeros((h, w, 3))
+    xs = (w / 2 + np.cumsum(rng.normal(0, 2.0, h))).clip(10, w - 10)
+    for y in range(h):
+        x0 = int(xs[y]) - 5
+        a[y, x0:x0 + 10] = (255, 140, 40)
+        a[y, x0 + 3:x0 + 7] = (255, 230, 160)
+    return _img(a * 0.4), _img(a)
+
+
 def textures():
-    t = {'shaft_a': tex_shaft(81), 'shaft_b': tex_shaft(82, lights=True), 'shaft_c': tex_sign(), 'lintel': tex_lintel(), 'gate': tex_gate(),
+    t = {'asdoor': tex_asdoor(), 'doorseam': tex_seam(), 'shaft_a': tex_shaft(81), 'shaft_b': tex_shaft(82, lights=True), 'shaft_c': tex_sign(), 'lintel': tex_lintel(), 'gate': tex_gate(),
          'lift_deck': tex_deck(), 'bridge': tex_bridge(), 'door': tex_door(), 'wall_window': tex_window(),
          'void': (Image.new('RGB', (16, 16), (0, 0, 0)), None), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
     return t
@@ -235,6 +265,22 @@ def _panel(name, tex, width, z0=-DROP, z1=-DROP + PANEL_H, v0=1.0, v1=0.0):
     u1 = width / 4.0
     m.quad((tex, True, 0), (-hw, 0, z0), (hw, 0, z0), (hw, 0, z1), (-hw, 0, z1), [(0, v0), (u1, v0), (u1, v1), (0, v1)])
     return m
+
+
+def door_meshes():
+    """EDoorAS: an Alien Swarm heavy door leaf, 2 wide (scaled by the script to the doorway), wall height,
+    0.3 thick, origin at its middle on the floor. EDoorSeam: its weld bead, just proud of both faces."""
+    out = {}
+    m = out['EDoorAS'] = ShipModel('EDoorAS', (0, 0, 0))
+    key = ('asdoor', False, 0)
+    m.quad(key, (-1, -0.15, 0), (1, -0.15, 0), (1, -0.15, 2.5), (-1, -0.15, 2.5), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    m.quad(key, (1, 0.15, 0), (-1, 0.15, 0), (-1, 0.15, 2.5), (1, 0.15, 2.5), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    m.quad(key, (-1, -0.15, 2.5), (1, -0.15, 2.5), (1, 0.15, 2.5), (-1, 0.15, 2.5), [(0, 0), (1, 0), (1, 0.05), (0, 0.05)])
+    m = out['EDoorSeam'] = ShipModel('EDoorSeam', (0, 0, 0))
+    key = ('doorseam', True, NO_SHADOW_CAST)
+    m.quad(key, (-0.12, -0.17, 0.05), (0.12, -0.17, 0.05), (0.12, -0.17, 2.45), (-0.12, -0.17, 2.45), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    m.quad(key, (0.12, 0.17, 0.05), (-0.12, 0.17, 0.05), (-0.12, 0.17, 2.45), (0.12, 0.17, 2.45), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    return out
 
 
 def meshes(lift, bridge_in, bridge_out, void, door):

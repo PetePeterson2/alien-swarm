@@ -1,5 +1,5 @@
 // =====================================================================
-// HALCYON DRIFT -- an Alien Swarm combat proof of concept for SC2.
+// HALCYON DRIFT -- Alien Swarm for SC2.
 // Shared state. Every module is concatenated after this one by build.py,
 // with forward declarations for every AS_ function in between.
 // =====================================================================
@@ -10,43 +10,45 @@ const fixed AS_DT = 0.0625;
 const int AS_PLAYERS = 4;
 const int AS_HOSTILE = 15;
 const int AS_MAXALIEN = 96;
-const int AS_WEAPONS = 10;
 
 // Build switches (build.py rewrites these lines).
 bool as_qa = false;
 bool as_demo = false;                  // scripted firing range for screenshots (build.py --demo)
 string as_runId = "unset";
-bool as_mission = true;                // every level is a mission now: src/Mission.galaxy runs it
+bool as_mission = true;                // every level is a mission (src/Mission.galaxy runs it)
 bool as_lowerLevel;                    // the squad has ridden down: the director uses the lower level's vents
 
 // ---- the campaign (src/Campaign.galaxy) -------------------------------
 // Every level is in the map; one is built at a time from its strings (build.py LEVELS).
 const int AS_LEVELS = @LEVELS@;
-const int AS_LV_DECK = 0;              // mission 1, DISTRESS BEACON (tools/level.py)
+const int AS_LV_BAY = 0;               // mission 1, LANDING BAY (tools/landingbay.py)
 const int AS_LV_CARGO = 1;             // mission 2, CARGO ELEVATOR (tools/cargo.py)
-int as_level = -1;                     // the level being played, -1 in the level menu
-bool as_levelReady;                    // a level is built and running (false in the menu and between levels)
-int as_startLevel = -1;                // QA builds start here without the menu (build.py --start, --auto)
-string as_bankName = "HalcyonDrift";   // each marine's progress (build.py rewrites this line for QA builds)
+int as_level = -1;                     // the level being played, -1 in the briefing
+bool as_levelReady;                    // a level is built and running (false in the briefing and between levels)
+int as_startLevel = -1;                // QA builds start here without the briefing (build.py --start, --auto)
+string as_bankName = "HalcyonDrift";   // each player's progress (build.py rewrites this line for QA builds)
 string[8] as_levelTitle;
 string[8] as_levelPlace;
 string[8] as_levelBrief;
+int[8] as_levelPar;                    // the speed-run time, seconds (the map's speedruntime: Landing Bay 85)
 fixed as_spawnX;                       // where the level's squad deploys
 fixed as_spawnY;
 fixed as_spawnFacing;
-const fixed AS_RESPAWN = 10.0;         // a downed marine's wait in a mission
 int[5] as_deaths;
 bool[5] as_bot;                        // an AI marine (src/Bots.galaxy)
 bool as_auto = false;                  // autopilot QA run (build.py --auto rewrites this line)
+bool as_autoWipe = false;              // with it, Landing Bay's death rules first (build.py --wipe rewrites this line)
 fixed[5] as_botVX;                     // a bot's wanted walk, unit vector
 fixed[5] as_botVY;
 // AI marines and the QA log (src/Bots.galaxy): declared here, the mission reads them.
 int as_botCount;
 fixed[5] as_botNextLook;
-fixed[5] as_botStuckAt;                 // when a bot last made progress toward the squad
+fixed[5] as_botStuckAt;                // when a bot last made progress toward the squad
 point[5] as_botLast;
 point[5] as_botGoalPt;                 // where a bot is walking, refreshed every fourth step
 int[5] as_botFoe;
+int[5] as_botOrder;                    // 0 follow, 1 hold (V and X, as AS's single player)
+point[5] as_botHoldAt;
 point[48] as_crumb;                    // the leader's trail, newest at as_crumbHead
 int as_crumbHead = -1;
 int as_crumbN;
@@ -54,24 +56,370 @@ int as_leader;
 int as_routeN;
 fixed[48] as_routeX;
 fixed[48] as_routeY;
-int[48] as_routeWait;                  // 0 walk on, 1 until the door is open, 2 until the ride is over
+int[48] as_routeWait;                  // 0 walk on, 1 the gate hacked, 2 the ride over, 3 the tank doors cut, 4 the download done
 int as_routeAt;
 int as_logN;
 fixed[5] as_dmgTaken;
-fixed[5] as_ffDealt;                   // blast damage a marine has done to the rest of the squad
+fixed[5] as_ffDealt;                   // damage a marine has done to the rest of the squad
+fixed[5] as_healed;                    // health a marine has given back to the squad
+int[5] as_fastHacks;
 sound as_amb;                          // the ambience bed (Main starts it, the mission swaps it below the lift)
 sound as_rideSnd;                      // the lift's running rumble
 
 fixed as_now;
 int as_tick;
+int as_brHost;                         // the host: the first human, who runs the briefing (src/Briefing.galaxy)
+int as_open = 1;                       // missions open to this squad: the most any player here has unlocked
+bool as_lastWon;                       // the mission just ended was won (src/Campaign.galaxy)
+bank[5] as_bank;                       // each player's progress (src/Progress.galaxy)
+bool[5] as_bankOn;
+bool[5] as_bankDirty;                  // changed since it was last saved
+
+// ---- difficulty (asw_skill; difficulty.cfg and CAlienSwarm::OnSkillLevelChanged) ----
+// 1 Easy, 2 Normal, 3 Hard, 4 Insane, 5 Brutal. The mission difficulty is 3/5/7/10/13, one less with three
+// marines in the squad and two less with fewer (never below 2); alien health, alien damage and friendly
+// fire scale by 1 + 0.2 a step away from 5. Drones, jumpers and parasites also run faster, and marines a
+// touch faster. Marine damage to aliens never changes.
+int as_skill = 2;
+bool as_onslaught;                     // the director's hordes and wanderers (AS's Onslaught option)
+int as_md = 5;
+int as_squadSize = 4;
+string AS_SkillName (int s) {
+    if(s==1) {return "Easy";}if(s==2) {return "Normal";}if(s==3) {return "Hard";}if(s==4) {return "Insane";}
+    return "Brutal";
+}
+void AS_DifficultySet (int skill, int squad) {
+    int md=5;
+    as_skill=MaxI(1,MinI(5,skill));as_squadSize=squad;
+    if(as_skill==1) {md=3;}else if(as_skill==3) {md=7;}else if(as_skill==4) {md=10;}else if(as_skill==5) {md=13;}
+    if(squad==3) {md-=1;}
+    else if(squad<=2) {md-=2;}
+    as_md=MaxI(2,md);
+}
+fixed AS_AlienHealthScale () {return 1.0+0.2*IntToFixed(as_md-5);}
+fixed AS_AlienDamageScale () {return 1.0+0.2*IntToFixed(as_md-5);}
+fixed AS_FFScale () {return 1.0+0.2*IntToFixed(as_md-5);}
+fixed AS_AlienSpeedScale () {
+    if(as_skill==1) {return 0.7;}if(as_skill==2) {return 1.0;}if(as_skill==3) {return 1.1;}
+    return 1.2;
+}
+fixed AS_MarineSpeedScale () {
+    if(as_skill==1) {return 0.96;}if(as_skill==2) {return 1.0;}if(as_skill==3) {return 1.024;}
+    return 1.048;
+}
+// Parasite infestation in all, over 20 s (TotalInfestDamage).
+fixed AS_InfestTotal () {
+    if(as_skill==1) {return 175.0;}if(as_skill==2) {return 225.0;}if(as_skill==3) {return 270.0;}
+    return 280.0;
+}
 
 // ---- the deck ---------------------------------------------------------
 bool[@W@][@H@] as_wall;          // collision cells, from tools/level.py
 fixed as_floorZ = 8.0;
 
+// ---- marines: the eight profiles (profiles.res) -----------------------
+const int AS_CL_OFFICER = 0;
+const int AS_CL_SW = 1;
+const int AS_CL_MEDIC = 2;
+const int AS_CL_TECH = 3;
+const int AS_SK_LEADERSHIP = 0;
+const int AS_SK_VINDICATOR = 1;
+const int AS_SK_AUTOGUN = 2;
+const int AS_SK_PIERCING = 3;
+const int AS_SK_HEALING = 4;
+const int AS_SK_XENOWOUNDS = 5;
+const int AS_SK_DRUGS = 6;
+const int AS_SK_SCANNER = 7;
+const int AS_SK_ENGINEERING = 8;
+const int AS_SK_ACCURACY = 9;
+const int AS_SK_GRENADES = 10;
+const int AS_SK_HEALTH = 11;
+const int AS_SK_MELEE = 12;
+const int AS_SK_RELOADING = 13;
+const int AS_SK_AGILITY = 14;
+const int AS_SKILLS = 15;
+const int AS_PROFILES = 8;
+string[8] as_pfName;
+string[8] as_pfFull;
+string[8] as_pfBio;
+string[8] as_pfFace;
+int[8] as_pfClass;
+int[8][15] as_pfSkill;
+int[8][5] as_pfSlot;                   // the five skill slots the profile screen lists, in order
+int[8][3] as_pfDefault;                // default primary, secondary and extra (items below)
+string[15] as_skName;
+int[15] as_skMax;
+string[4] as_clName;
+string[4] as_clKey;                    // HUD medallion art
+
+void AS_ProfileSet (int i, string name, string full, int cls, string face, int s0, int p0, int s1, int p1, int s2, int p2, int s3, int p3, int s4, int p4) {
+    int k;
+    as_pfName[i]=name;as_pfFull[i]=full;as_pfClass[i]=cls;as_pfFace[i]=face;
+    for(k=0;k<AS_SKILLS;k+=1) {as_pfSkill[i][k]=0;}
+    as_pfSkill[i][s0]=p0;as_pfSkill[i][s1]=p1;as_pfSkill[i][s2]=p2;as_pfSkill[i][s3]=p3;as_pfSkill[i][s4]=p4;
+    as_pfSlot[i][0]=s0;as_pfSlot[i][1]=s1;as_pfSlot[i][2]=s2;as_pfSlot[i][3]=s3;as_pfSlot[i][4]=s4;
+}
+void AS_ProfilesInit () {
+    as_clName[0]="Officer";as_clName[1]="Special Weapons";as_clName[2]="Medic";as_clName[3]="Tech";
+    as_clKey[0]="officer";as_clKey[1]="sw";as_clKey[2]="medic";as_clKey[3]="tech";
+    as_skName[0]="Leadership";as_skName[1]="Vindicator Damage";as_skName[2]="Autogun Damage";as_skName[3]="Piercing Bullets";
+    as_skName[4]="Healing";as_skName[5]="Infestation Curing";as_skName[6]="Combat Drugs";as_skName[7]="Scanner";as_skName[8]="Engineering";
+    as_skName[9]="Damage Bonus";as_skName[10]="Explosives Bonus";as_skName[11]="Health Bonus";as_skName[12]="Melee Damage Bonus";
+    as_skName[13]="Reload Speed Bonus";as_skName[14]="Speed Bonus";
+    as_skMax[0]=5;as_skMax[1]=5;as_skMax[2]=5;as_skMax[3]=5;as_skMax[4]=5;as_skMax[5]=3;as_skMax[6]=5;as_skMax[7]=3;as_skMax[8]=3;
+    as_skMax[9]=5;as_skMax[10]=5;as_skMax[11]=5;as_skMax[12]=5;as_skMax[13]=5;as_skMax[14]=5;
+    // In profile order: Sarge, Wildcat, Faith, Crash, Jaeger, Wolfe, Bastille, Vegas.
+    AS_ProfileSet(0,"Sarge","Master Sergeant Joseph Conrad",AS_CL_OFFICER,"sarge",AS_SK_LEADERSHIP,5,AS_SK_VINDICATOR,2,AS_SK_GRENADES,2,AS_SK_HEALTH,4,AS_SK_ACCURACY,3);
+    AS_ProfileSet(1,"Wildcat","Private First Class Adele Lyon",AS_CL_SW,"wildcat",AS_SK_AUTOGUN,4,AS_SK_PIERCING,2,AS_SK_ACCURACY,4,AS_SK_RELOADING,3,AS_SK_AGILITY,4);
+    AS_ProfileSet(2,"Faith","Corporal Eva Jensen",AS_CL_MEDIC,"faith",AS_SK_HEALING,5,AS_SK_XENOWOUNDS,3,AS_SK_ACCURACY,1,AS_SK_RELOADING,2,AS_SK_AGILITY,3);
+    AS_ProfileSet(3,"Crash","Private David Murphy",AS_CL_TECH,"crash",AS_SK_SCANNER,3,AS_SK_ENGINEERING,1,AS_SK_ACCURACY,3,AS_SK_RELOADING,4,AS_SK_GRENADES,2);
+    AS_ProfileSet(4,"Jaeger","Corporal Karl Jaeger",AS_CL_OFFICER,"jaeger",AS_SK_LEADERSHIP,3,AS_SK_VINDICATOR,5,AS_SK_GRENADES,4,AS_SK_HEALTH,3,AS_SK_MELEE,2);
+    AS_ProfileSet(5,"Wolfe","Private Thomas Wolfe",AS_CL_SW,"wolfe",AS_SK_AUTOGUN,5,AS_SK_PIERCING,3,AS_SK_ACCURACY,2,AS_SK_RELOADING,2,AS_SK_HEALTH,3);
+    AS_ProfileSet(6,"Bastille","Private Leon Bastille",AS_CL_MEDIC,"bastille",AS_SK_HEALING,4,AS_SK_XENOWOUNDS,1,AS_SK_ACCURACY,3,AS_SK_RELOADING,3,AS_SK_DRUGS,3);
+    AS_ProfileSet(7,"Vegas","Private Argento Guerra",AS_CL_TECH,"vegas",AS_SK_SCANNER,3,AS_SK_ENGINEERING,3,AS_SK_HEALTH,3,AS_SK_RELOADING,2,AS_SK_MELEE,4);
+    as_pfBio[0]="A veteran who lived through one of the worst Swarm invasions on record. He drives his squad hard because he knows exactly what they are up against.";
+    as_pfBio[1]="She was headed for a corporate career until the Swarm wiped out her home colony and her family with it. She volunteered for an elite unit the same year.";
+    as_pfBio[2]="A devoted field medic who treats every marine in her care as family, and carries every one she loses.";
+    as_pfBio[3]="A teenage hacker whose prank took down a starbase's systems. He is working off the sentence in the IAF, and he is very good with a door panel.";
+    as_pfBio[4]="Born into a long line of soldiers, he is loud, fearless and fully expects to go down fighting.";
+    as_pfBio[5]="Given the choice between a cell and the army, he took the army, excelled, and was moved up to special operations.";
+    as_pfBio[6]="Raised on a prison world, where he taught himself medicine and philosophy. Wary of everyone, and an outstanding combat medic.";
+    as_pfBio[7]="A card player with a memory like a vault who joined the IAF a step ahead of some very large debts.";
+}
+int AS_ProfileClass (int prof) {
+    if(prof<0) {return -1;}
+    return as_pfClass[prof];
+}
+
+// ---- the equipment list (equipment.res, the asw_weapon_*.txt scripts, skill.cfg) ----
+// Items 1-21 go in either weapon slot, 22-38 in the extra (offhand) slot, in the loadout screen's order.
+const int AS_IT_RIFLE = 1;
+const int AS_IT_PRIFLE = 2;
+const int AS_IT_AUTOGUN = 3;
+const int AS_IT_VINDICATOR = 4;
+const int AS_IT_PISTOLS = 5;
+const int AS_IT_SENTRY = 6;
+const int AS_IT_HEALBEACON = 7;
+const int AS_IT_AMMOBAG = 8;
+const int AS_IT_SHOTGUN = 9;
+const int AS_IT_TESLA = 10;
+const int AS_IT_RAILGUN = 11;
+const int AS_IT_HEALGUN = 12;
+const int AS_IT_PDW = 13;
+const int AS_IT_FLAMER = 14;
+const int AS_IT_SENTRYFREEZE = 15;
+const int AS_IT_MINIGUN = 16;
+const int AS_IT_SNIPER = 17;
+const int AS_IT_SENTRYFLAME = 18;
+const int AS_IT_CHAINSAW = 19;
+const int AS_IT_SENTRYCANNON = 20;
+const int AS_IT_LAUNCHER = 21;
+const int AS_IT_MEDKIT = 22;
+const int AS_IT_WELDER = 23;
+const int AS_IT_FLARES = 24;
+const int AS_IT_LASERMINES = 25;
+const int AS_IT_ARMOR = 26;
+const int AS_IT_DAMAGEAMP = 27;
+const int AS_IT_HORNET = 28;
+const int AS_IT_FREEZEGREN = 29;
+const int AS_IT_STIM = 30;
+const int AS_IT_TESLATRAP = 31;
+const int AS_IT_ELECARMOR = 32;
+const int AS_IT_INCMINES = 33;
+const int AS_IT_FLASHLIGHT = 34;
+const int AS_IT_FIST = 35;
+const int AS_IT_GRENADES = 36;
+const int AS_IT_NIGHTVISION = 37;
+const int AS_IT_SMARTBOMB = 38;
+const int AS_ITEMS = 38;
+const int AS_FIRST_EXTRA = 22;
+// Secondary fire.
+const int AS_ALT_NONE = 0;
+const int AS_ALT_FRAG = 1;             // rifle: a frag grenade that bursts on contact
+const int AS_ALT_STUN = 2;             // prototype rifle: a stun grenade
+const int AS_ALT_FIRE = 3;             // vindicator: an incendiary grenade on a 3 s fuse
+const int AS_ALT_EXTINGUISH = 4;       // flamer: extinguisher spray
+const int AS_ALT_SPIN = 5;             // minigun: spin the barrels without firing
+const int AS_ALT_ZOOM = 6;             // marksman rifle: the scope
+const int AS_ALT_SELFHEAL = 7;         // medical gun: heal yourself
+int as_dmgItem;                     // the item dealing the damage applied now, when not the gun in hand (a sentry)
+struct AS_Item {
+    string name;       // the loadout's name
+    string title;      // the HUD's
+    string notes;      // the loadout's "Notes" line
+    string desc;
+    int slot;          // 0 weapon (either of the first two slots), 1 extra
+    int cls;           // -1 any class, else the only class that may carry it
+    int unlock;        // the player level it unlocks at (1 from the start)
+    bool unique;       // one per marine
+    // Guns and deployables.
+    int mag;           // clip, or uses for a deployable or an extra
+    int reserve;       // carried beyond the clip (skill.cfg sk_max_*)
+    fixed damage;      // per bullet or pellet, before the skill bonus
+    fixed rate;        // seconds between shots, in whole 1/16 s steps
+    fixed rateAS;      // Alien Swarm's own; damage is scaled by rate/rateAS so the damage a second is AS's
+    fixed reload;      // the script's reload_time (x 1.4 - 0.14 a Reloading point)
+    int pellets;
+    fixed spread;      // degrees, full cone
+    fixed range;       // cells
+    bool semi;
+    int pierce;        // extra aliens a shot passes through
+    string tint;
+    string snd;
+    fixed slowFire;    // movement while firing or reloading
+    fixed slowCarry;   // movement while it is in hand
+    int dmgSkill;      // the skill that adds to its damage, -1 none
+    fixed dmgStep;
+    fixed autoaim;     // degrees of aim assist
+    int alt;
+    int altAmmo;       // secondary rounds carried (5 loaded + 8 spare)
+};
+AS_Item[39] as_it;
+void AS_ItemSet (int i, string name, string title, string notes, int slot, int cls, int unlock) {
+    as_it[i].name=name;as_it[i].title=title;as_it[i].notes=notes;as_it[i].slot=slot;as_it[i].cls=cls;as_it[i].unlock=unlock;
+    as_it[i].unique=false;as_it[i].mag=1;as_it[i].reserve=0;as_it[i].damage=0.0;as_it[i].rate=0.5;as_it[i].rateAS=0.5;as_it[i].reload=2.0;
+    as_it[i].pellets=1;as_it[i].spread=0.0;as_it[i].range=20.0;as_it[i].semi=false;as_it[i].pierce=0;as_it[i].tint="255,214,140";as_it[i].snd="Marine_AttackLaunch";
+    as_it[i].slowFire=0.5;as_it[i].slowCarry=1.0;as_it[i].dmgSkill= -1;as_it[i].dmgStep=0.0;as_it[i].autoaim=4.0;as_it[i].alt=AS_ALT_NONE;as_it[i].altAmmo=0;
+    as_it[i].desc="";
+}
+void AS_GunSet (int i, int mag, int reserve, fixed damage, fixed rate, fixed rateAS, fixed reload, int pellets, fixed spread, fixed range) {
+    as_it[i].mag=mag;as_it[i].reserve=reserve;as_it[i].damage=damage;as_it[i].rate=rate;as_it[i].rateAS=rateAS;as_it[i].reload=reload;
+    as_it[i].pellets=pellets;as_it[i].spread=spread;as_it[i].range=range;
+}
+void AS_ItemsInit () {
+    int i;
+    i=AS_IT_RIFLE;AS_ItemSet(i,"22A3-1 Assault Rifle","Assault Rifle","",0,-1,1);
+    AS_GunSet(i,98,490,5.0,0.0625,0.07,2.0,1,3.0,22.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=1.0;as_it[i].alt=AS_ALT_FRAG;as_it[i].altAmmo=13;
+    as_it[i].desc="The marines' standard rifle: a fast stream of explosive-tipped rounds, a 98-round clip and an underslung grenade launcher.";
+    i=AS_IT_PRIFLE;AS_ItemSet(i,"22A7-Z Prototype Assault Rifle","Prototype Rifle","Auto-Aim",0,AS_CL_TECH,1);
+    AS_GunSet(i,98,490,5.0,0.0625,0.07,2.0,1,3.0,22.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=1.0;as_it[i].alt=AS_ALT_STUN;as_it[i].altAmmo=13;as_it[i].autoaim=8.0;
+    as_it[i].tint="170,230,255";
+    as_it[i].desc="A field-test rifle with assisted targeting and an underslung stun grenade. Only a tech can keep its calibration in line.";
+    i=AS_IT_AUTOGUN;AS_ItemSet(i,"S23A SynTek Autogun","Autogun","Auto-Aim, Slow Movement",0,AS_CL_SW,1);
+    AS_GunSet(i,250,250,7.0,0.125,0.1,2.0,1,7.0,22.0);as_it[i].dmgSkill=AS_SK_AUTOGUN;as_it[i].dmgStep=1.0;as_it[i].unique=true;as_it[i].slowCarry=0.8;as_it[i].autoaim=9.0;
+    as_it[i].tint="255,190,110";as_it[i].snd="RaynorGatlingGunAttackLaunch";
+    as_it[i].desc="A squad support gun whose rounds steer themselves onto targets, with heavy stopping power. Special weapons training required.";
+    i=AS_IT_VINDICATOR;AS_ItemSet(i,"M42 Vindicator","Vindicator","High Damage, Close Range",0,AS_CL_OFFICER,1);
+    AS_GunSet(i,14,70,15.0,0.625,0.65,2.0,7,22.0,11.0);as_it[i].dmgSkill=AS_SK_VINDICATOR;as_it[i].dmgStep=2.0;as_it[i].alt=AS_ALT_FIRE;as_it[i].altAmmo=13;
+    as_it[i].tint="255,220,160";as_it[i].snd="Marauder_AttackLaunch";
+    as_it[i].desc="A pneumatic pump shotgun with a second magazine of timed incendiary grenades. Issued to officers.";
+    i=AS_IT_PISTOLS;AS_ItemSet(i,"M73 Twin Pistols","Twin Pistols","Ammo Efficient",0,-1,1);
+    AS_GunSet(i,24,240,14.0,0.5,0.5,1.0,1,0.0,20.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=2.0;as_it[i].semi=true;as_it[i].slowFire=0.9;
+    as_it[i].tint="255,230,170";as_it[i].snd="Reaper_AttackLaunch";
+    as_it[i].desc="A pair of reliable semi-automatic sidearms. They fire as fast as you can pull the trigger.";
+    i=AS_IT_SENTRY;AS_ItemSet(i,"IAF Advanced Sentry Gun","Sentry Gun","",0,-1,1);
+    as_it[i].mag=1;as_it[i].damage=10.0;as_it[i].range=6.6;
+    as_it[i].desc="An automated autocannon on a turning stand that tells friend from foe. Set it down, then hold E beside it to assemble it.";
+    i=AS_IT_HEALBEACON;AS_ItemSet(i,"IAF Heal Beacon","Heal Beacon","Group Healing",0,AS_CL_MEDIC,1);
+    as_it[i].mag=4;
+    as_it[i].desc="A beacon that heals wounds and burns out infestation for everyone inside its field for twenty seconds. A medic with more Healing carries more.";
+    i=AS_IT_AMMOBAG;AS_ItemSet(i,"IAF Ammo Satchel","Ammo Satchel","",0,-1,1);
+    as_it[i].mag=3;
+    as_it[i].desc="Three stashes of ammunition for every kind of weapon. Drop one where the squad can reach it.";
+    i=AS_IT_SHOTGUN;AS_ItemSet(i,"Model 35 Pump-action Shotgun","Shotgun","High Damage, Close Range",0,-1,3);
+    AS_GunSet(i,4,32,25.0,1.0,1.0,1.3,7,22.0,11.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=2.0;
+    as_it[i].tint="255,220,160";as_it[i].snd="Marauder_AttackLaunch";
+    as_it[i].desc="A pump shotgun: a wide, punishing blast at close range, four shells to a load.";
+    i=AS_IT_TESLA;AS_ItemSet(i,"IAF Tesla Cannon","Tesla Cannon","Stuns, No Friendly Fire",0,-1,5);
+    AS_GunSet(i,20,260,1.0,0.25,0.25,2.2,1,0.0,3.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=0.25;as_it[i].slowFire=0.6;
+    as_it[i].tint="140,200,255";as_it[i].snd="Archon_AttackLaunch";
+    as_it[i].desc="An electric beam that latches onto an alien and arcs to the ones beside it, stunning them. It will not touch a marine.";
+    i=AS_IT_RAILGUN;AS_ItemSet(i,"Precision Rail Rifle","Rail Rifle","Piercing Rounds",0,-1,7);
+    AS_GunSet(i,1,72,75.0,0.375,0.0,1.3,1,0.0,40.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=10.0;as_it[i].pierce=10;as_it[i].slowFire=0.75;
+    as_it[i].tint="110,200,255";as_it[i].snd="Ghost_SnipeLaunch";
+    as_it[i].desc="An armour-piercing rail rifle: one shot at a time, through everything in line.";
+    i=AS_IT_HEALGUN;AS_ItemSet(i,"IAF Medical Gun","Medical Gun","Mobile Healing",0,AS_CL_MEDIC,9);
+    AS_GunSet(i,40,0,5.0,0.3125,0.33,2.2,1,0.0,3.0);as_it[i].unique=true;as_it[i].alt=AS_ALT_SELFHEAL;as_it[i].slowFire=1.0;
+    as_it[i].desc="A hand-held healing beam for one patient at a time. Secondary fire turns it on yourself.";
+    i=AS_IT_PDW;AS_ItemSet(i,"K80 Personal Defense Weapon","PDW","Uses Ammo Quickly",0,-1,11);
+    AS_GunSet(i,80,400,7.0,0.03125,0.035,1.0,1,3.0,20.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=1.0;
+    as_it[i].tint="255,225,160";as_it[i].snd="Reaper_AttackLaunch";
+    as_it[i].desc="Twin submachine guns: a ferocious burst that empties the clips in moments. Best kept as a second weapon.";
+    i=AS_IT_FLAMER;AS_ItemSet(i,"M868 Flamer Unit","Flamer","Ignites, Use with Caution",0,-1,13);
+    AS_GunSet(i,40,200,2.0,0.125,0.1,2.2,1,9.0,7.5);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=0.5;as_it[i].alt=AS_ALT_EXTINGUISH;
+    as_it[i].tint="255,150,60";as_it[i].snd="Firebat_Attack";
+    as_it[i].desc="Sprays burning gel that sets everything it touches alight. Mind your squadmates.";
+    i=AS_IT_SENTRYFREEZE;AS_ItemSet(i,"IAF Freeze Sentry Gun","Freeze Sentry","Freezes, Fast Targeting",0,-1,15);
+    as_it[i].mag=1;as_it[i].range=3.75;
+    as_it[i].desc="A sentry that sprays liquid nitrogen, freezing the swarm in place.";
+    i=AS_IT_MINIGUN;AS_ItemSet(i,"IAF Minigun","Minigun","Wide Spread, Slow Movement",0,AS_CL_SW,17);
+    AS_GunSet(i,250,250,7.0,0.04,0.04,2.0,1,15.0,22.0);as_it[i].dmgSkill=AS_SK_AUTOGUN;as_it[i].dmgStep=1.0;as_it[i].unique=true;as_it[i].slowFire=0.4;as_it[i].slowCarry=0.95;
+    as_it[i].alt=AS_ALT_SPIN;as_it[i].tint="255,200,120";as_it[i].snd="RaynorGatlingGunAttackLaunch";
+    as_it[i].desc="An enormous rate of fire and a wide spread once the barrels are spinning. Secondary fire spins them without firing.";
+    i=AS_IT_SNIPER;AS_ItemSet(i,"AVK-36 Marksman Rifle","Marksman Rifle","Piercing Bullets",0,-1,19);
+    AS_GunSet(i,12,60,65.0,1.1875,1.2,2.0,1,0.0,40.0);as_it[i].dmgSkill=AS_SK_ACCURACY;as_it[i].dmgStep=10.0;as_it[i].pierce=1;as_it[i].alt=AS_ALT_ZOOM;
+    as_it[i].tint="255,255,230";as_it[i].snd="RaynorSnipeSound";
+    as_it[i].desc="Drops a drone with one round and can be fired on the move. Secondary fire works the scope.";
+    i=AS_IT_SENTRYFLAME;AS_ItemSet(i,"IAF Incendiary Sentry Gun","Incendiary Sentry","Ignites, Fast Targeting",0,-1,21);
+    as_it[i].mag=1;as_it[i].range=4.7;
+    as_it[i].desc="A fast-tracking sentry that sets the swarm alight.";
+    i=AS_IT_CHAINSAW;AS_ItemSet(i,"Chainsaw","Chainsaw","Unlimited Ammo",0,-1,23);
+    AS_GunSet(i,1,0,15.0,0.125,0.1,2.2,1,0.0,1.1);as_it[i].slowFire=0.8;as_it[i].tint="255,255,255";as_it[i].snd="Ultralisk_Attack";
+    as_it[i].desc="A colonist's tree saw. It never needs reloading.";
+    i=AS_IT_SENTRYCANNON;AS_ItemSet(i,"IAF High Velocity Sentry Cannon","Sentry Cannon","Long-Range, Splash Damage",0,-1,25);
+    as_it[i].mag=1;as_it[i].range=12.5;
+    as_it[i].desc="Long-range explosive slugs, aimed at the biggest thing in sight.";
+    i=AS_IT_LAUNCHER;AS_ItemSet(i,"Grenade Launcher","Grenade Launcher","Splash Damage",0,-1,27);
+    AS_GunSet(i,6,18,80.0,0.375,0.4,3.2,1,2.0,16.0);as_it[i].dmgSkill=AS_SK_GRENADES;as_it[i].dmgStep=10.0;as_it[i].slowFire=1.0;
+    as_it[i].tint="255,170,80";as_it[i].snd="Raynor_TossGrenadeLaunch";
+    as_it[i].desc="A hand-held mortar that lobs high-explosive rounds. Keep your distance from the impact.";
+    // Extras.
+    i=AS_IT_MEDKIT;AS_ItemSet(i,"IAF Personal Healing Kit","Medkit","Single Use",1,-1,1);as_it[i].mag=1;
+    as_it[i].desc="A small kit for treating your own wounds. In a medic's hands it also burns out infestation.";
+    i=AS_IT_WELDER;AS_ItemSet(i,"Hand Welder","Welder","Seals and Unseals Doors",1,-1,1);as_it[i].mag=1;
+    as_it[i].desc="A plasma torch. Hold 1 at a door to weld it shut against the swarm. Hold 1 at a door welded from the other side, or fully sealed, to cut it open.";
+    i=AS_IT_FLARES;AS_ItemSet(i,"SM75 Combat Flares","Flares","Provides Auto-Aim Bonus",1,-1,1);as_it[i].mag=15;
+    as_it[i].desc="Magnesium flares that light up the area round them for thirty seconds. Most weapons lock on to aliens in their glow.";
+    i=AS_IT_LASERMINES;AS_ItemSet(i,"ML30 Laser Trip Mine","Laser Mines","Wall Mountable",1,-1,1);as_it[i].mag=12;
+    as_it[i].desc="Mines that fix to a wall and fire when an alien crosses their beam. Explosives training lays more with each throw.";
+    i=AS_IT_ARMOR;AS_ItemSet(i,"l3a Tactical Heavy Armor","Heavy Armor","20% Less Damage, Passive",1,-1,2);as_it[i].mag=0;
+    as_it[i].desc="Extra plating under the suit that soaks up a fifth of all damage.";
+    i=AS_IT_DAMAGEAMP;AS_ItemSet(i,"X33 Damage Amplifier","Damage Amp","x2 Damage Aura",1,-1,4);as_it[i].mag=5;
+    as_it[i].desc="A beacon that doubles the damage of every marine's weapon inside its field for thirty seconds.";
+    i=AS_IT_HORNET;AS_ItemSet(i,"Hornet Barrage","Hornet Barrage","Homing Missile Attacks",1,-1,6);as_it[i].mag=3;
+    as_it[i].desc="A salvo of eight small rockets that find their own targets.";
+    i=AS_IT_FREEZEGREN;AS_ItemSet(i,"Freeze Grenades","Freeze Grenades","Large Radius",1,-1,8);as_it[i].mag=5;
+    as_it[i].desc="Liquid-nitrogen canisters that freeze every alien in a wide blast.";
+    i=AS_IT_STIM;AS_ItemSet(i,"Adrenaline","Adrenaline","Temporary Slow Motion",1,-1,10);as_it[i].mag=3;
+    as_it[i].desc="An injection that sharpens the squad's reactions until the swarm seems to crawl. The best Combat Drugs skill in the squad sets how long it lasts.";
+    i=AS_IT_TESLATRAP;AS_ItemSet(i,"IAF Tesla Sentry Coil","Tesla Coil","Stuns In Radius",1,-1,12);as_it[i].mag=3;
+    as_it[i].desc="A coil that sets itself up and stuns every alien that comes near until its charge runs out.";
+    i=AS_IT_ELECARMOR;AS_ItemSet(i,"v45 Electric Charged Armor","Electric Armor","Stops Infestation, Stuns",1,-1,14);as_it[i].mag=3;
+    as_it[i].desc="Charges the suit for twelve seconds: claws do a quarter of the damage, attackers are shocked and parasites cannot latch on.";
+    i=AS_IT_INCMINES;AS_ItemSet(i,"M478 Proximity Incendiary Mines","Incendiary Mines","Fire Wall",1,AS_CL_OFFICER,16);as_it[i].mag=5;
+    as_it[i].desc="Proximity mines that lay a wall of fire across a passage. Issued to officers.";
+    i=AS_IT_FLASHLIGHT;AS_ItemSet(i,"Flashlight Attachment","Flashlight","Passive",1,-1,18);as_it[i].mag=0;
+    as_it[i].desc="A bright beam on the gun barrel that never runs flat.";
+    i=AS_IT_FIST;AS_ItemSet(i,"IAF Power Fist Attachment","Power Fist","x2 Melee Damage, Passive",1,-1,20);as_it[i].mag=0;
+    as_it[i].desc="A suit attachment that doubles the force of every melee blow.";
+    i=AS_IT_GRENADES;AS_ItemSet(i,"Hand Grenades","Hand Grenades","Splash Damage",1,-1,22);as_it[i].mag=5;
+    as_it[i].desc="High-explosive grenades that split into more bomblets the better your explosives training.";
+    i=AS_IT_NIGHTVISION;AS_ItemSet(i,"MNV34 Nightvision Goggles","Nightvision","Rechargeable",1,-1,24);as_it[i].mag=0;
+    as_it[i].desc="Thermal goggles good for twenty seconds of sight in the dark, recharging when switched off.";
+    i=AS_IT_SMARTBOMB;AS_ItemSet(i,"MTD6 Smart Bomb","Smart Bomb","Missile Storm, Single Use",1,-1,26);as_it[i].mag=1;
+    as_it[i].desc="A backpack launcher that empties thirty-two homing rockets into the swarm.";
+    // Default loadouts (profiles.res DefaultWeapon0-2).
+    as_pfDefault[0][0]=AS_IT_RIFLE;as_pfDefault[0][1]=AS_IT_VINDICATOR;as_pfDefault[0][2]=AS_IT_FLARES;
+    as_pfDefault[1][0]=AS_IT_AUTOGUN;as_pfDefault[1][1]=AS_IT_RIFLE;as_pfDefault[1][2]=AS_IT_FLARES;
+    as_pfDefault[2][0]=AS_IT_RIFLE;as_pfDefault[2][1]=AS_IT_HEALBEACON;as_pfDefault[2][2]=AS_IT_FLARES;
+    as_pfDefault[3][0]=AS_IT_PRIFLE;as_pfDefault[3][1]=AS_IT_AMMOBAG;as_pfDefault[3][2]=AS_IT_WELDER;
+    as_pfDefault[4][0]=AS_IT_VINDICATOR;as_pfDefault[4][1]=AS_IT_SENTRY;as_pfDefault[4][2]=AS_IT_MEDKIT;
+    as_pfDefault[5][0]=AS_IT_AUTOGUN;as_pfDefault[5][1]=AS_IT_SENTRY;as_pfDefault[5][2]=AS_IT_MEDKIT;
+    as_pfDefault[6][0]=AS_IT_RIFLE;as_pfDefault[6][1]=AS_IT_HEALBEACON;as_pfDefault[6][2]=AS_IT_FLARES;
+    as_pfDefault[7][0]=AS_IT_PRIFLE;as_pfDefault[7][1]=AS_IT_PISTOLS;as_pfDefault[7][2]=AS_IT_MEDKIT;
+}
+bool AS_IsExtra (int it) {return it>=AS_FIRST_EXTRA;}
+bool AS_IsSentry (int it) {return it==AS_IT_SENTRY || it==AS_IT_SENTRYFREEZE || it==AS_IT_SENTRYFLAME || it==AS_IT_SENTRYCANNON;}
+// Things you put down rather than fire: their clip is a count of uses.
+bool AS_IsDeployable (int it) {return AS_IsSentry(it) || it==AS_IT_HEALBEACON || it==AS_IT_AMMOBAG;}
+
 // ---- marines ----------------------------------------------------------
 bool[5] as_on;              // a person is in this slot
 unit[5] as_m;               // the marine
+int[5] as_prof;             // the profile the marine is (-1 none)
+int[5][3] as_inv;           // weapon one, weapon two, extra item
+int[5] as_hand;             // which weapon slot is in hand, 0 or 1
+int[5] as_charges;          // uses of the extra item left
 fixed[5] as_hp;
 fixed[5] as_hpMax;
 bool[5] as_alive;
@@ -88,27 +436,32 @@ bool[5] as_mouseSeen;
 int[5] as_view;             // 0 top-down, 1 third person
 fixed[5] as_zoom;           // top-down camera distance
 bool[5] as_trigger;         // left mouse held
-bool[5] as_trigger2;        // right mouse held
+bool[5] as_trigger2;        // secondary fire held (F, middle mouse)
+bool[5] as_useHeld;         // E held
+bool[5] as_extraHeld;       // 1 held (the offhand item)
 bool[5] as_semiReady;       // a semi-automatic weapon wants the trigger let go first
-int[5] as_slot;             // weapon in hand, 1..10
-int[5][11] as_mag;
-int[5][11] as_reserve;
+int[5] as_slot;             // the item in hand
+int[5][39] as_mag;
+int[5][39] as_reserve;
+int[5][39] as_alt;          // secondary rounds carried, per weapon
 fixed[5] as_nextShot;
+fixed[5] as_nextAlt;
 fixed[5] as_reloadEnd;      // 0 when not reloading
 fixed[5] as_reloadStart;
+fixed[5] as_fastFrom;       // the active reload window
+fixed[5] as_fastTo;
+bool[5] as_fastTried;
 fixed[5] as_spin;           // minigun barrel spin 0..1
 fixed[5] as_lastShot;
 int[5] as_pistolSide;
-int[5] as_grenades;         // rifle under-barrel grenades
-int[5] as_sentries;
-int[5] as_medkits;
-int[5] as_flares;
+fixed[5] as_slowHeal;       // health still to come back, 4 every 0.33 s
+fixed[5] as_slowHealNext;
 bool[5] as_lightOn;
 unit[5] as_torch;           // flashlight unit
 unit[5] as_glow;            // soft personal light
 unit[5] as_muzzle;          // muzzle-flash light
 unit[5] as_laser;           // laser sight
-fixed[5] as_infestUntil;    // parasite infestation damage over time
+fixed[5] as_infestUntil;    // parasite infestation: 20 s of damage
 fixed[5] as_hurtFlash;
 fixed[5] as_knockX;
 fixed[5] as_knockY;
@@ -119,45 +472,30 @@ bool[5] as_god;
 bool[5] as_help;
 fixed[5] as_ammoMsgAt;
 unit[5] as_camUnit;         // what the camera is following
+fixed[5] as_meleeNext;
+fixed[5] as_rollUntil;      // rolling (SPACE): faster, and projectiles pass by
+fixed[5] as_rollX;
+fixed[5] as_rollY;
+fixed[5] as_rollNext;
+int[5] as_spectate;         // a dead player's camera follows this marine (0 none)
+int[5] as_using;            // the use spot a marine is working (a panel, a terminal), -1 none
+fixed[5] as_elecUntil;      // electric charged armour
+fixed[5] as_ampUntil;       // standing in a damage amp field
+fixed[5] as_nvPower;        // night vision seconds left
+bool[5] as_nvOn;
+fixed[5] as_zoomScope;      // the marksman rifle's scope
+int[5] as_meleeKills;
+int[5] as_barrelKills;
 
-// ---- weapons ----------------------------------------------------------
-// Numbers from Alien Swarm's scripts/asw_weapon_*.txt (clip, base_damage,
-// fire_rate, reload_time, num_pellets) and cfg/skill.cfg (sk_max_* reserves).
-// Fire intervals are whole 1/16 s steps (the rifle 0.07 -> 0.0625, the autogun
-// 0.1 -> 0.125 with 9 damage for the same 70 a second): an interval between
-// steps fires on one step, then two, then one, and the gun limps audibly.
-// The minigun fires several rounds a step and needs none of this.
-struct AS_Gun {
-    string name;
-    int mag;
-    int reserve;
-    fixed damage;
-    fixed rate;        // seconds between shots
-    fixed reload;
-    int pellets;
-    fixed spread;      // degrees, full cone
-    fixed range;
-    int kind;          // 0 hitscan, 1 flamer, 2 railgun, 3 grenade launcher, 4 tesla, 5 minigun
-    bool semi;
-    int pierce;        // extra aliens a shot passes through
-    string tint;
-    string snd;
-    fixed recoilSlow;  // movement multiplier while firing
-};
-AS_Gun[11] as_gun;
-
-void AS_GunsInit () {
-    int i;
-    i=1; as_gun[i].name="22A3-1 ASSAULT RIFLE"; as_gun[i].mag=98; as_gun[i].reserve=490; as_gun[i].damage=5.0; as_gun[i].rate=0.0625; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=3.5; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,214,140"; as_gun[i].snd="Marine_AttackLaunch"; as_gun[i].recoilSlow=0.9;
-    i=2; as_gun[i].name="AUTOGUN"; as_gun[i].mag=250; as_gun[i].reserve=250; as_gun[i].damage=9.0; as_gun[i].rate=0.125; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=4.0; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,190,110"; as_gun[i].snd="RaynorGatlingGunAttackLaunch"; as_gun[i].recoilSlow=0.8;
-    i=3; as_gun[i].name="SHOTGUN"; as_gun[i].mag=4; as_gun[i].reserve=32; as_gun[i].damage=25.0; as_gun[i].rate=1.0; as_gun[i].reload=1.3; as_gun[i].pellets=7; as_gun[i].spread=20.0; as_gun[i].range=11.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,220,160"; as_gun[i].snd="Marauder_AttackLaunch"; as_gun[i].recoilSlow=0.9;
-    i=4; as_gun[i].name="FLAMER"; as_gun[i].mag=40; as_gun[i].reserve=200; as_gun[i].damage=4.0; as_gun[i].rate=0.125; as_gun[i].reload=2.2; as_gun[i].pellets=1; as_gun[i].spread=9.0; as_gun[i].range=6.0; as_gun[i].kind=1; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,150,60"; as_gun[i].snd="Firebat_Attack"; as_gun[i].recoilSlow=0.85;
-    i=5; as_gun[i].name="TWIN PISTOLS"; as_gun[i].mag=24; as_gun[i].reserve=240; as_gun[i].damage=14.0; as_gun[i].rate=0.125; as_gun[i].reload=1.0; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=20.0; as_gun[i].kind=0; as_gun[i].semi=true; as_gun[i].pierce=0; as_gun[i].tint="255,230,170"; as_gun[i].snd="Reaper_AttackLaunch"; as_gun[i].recoilSlow=1.0;
-    i=6; as_gun[i].name="RAILGUN"; as_gun[i].mag=1; as_gun[i].reserve=72; as_gun[i].damage=75.0; as_gun[i].rate=0.375; as_gun[i].reload=1.3; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=2; as_gun[i].semi=false; as_gun[i].pierce=20; as_gun[i].tint="110,200,255"; as_gun[i].snd="Ghost_SnipeLaunch"; as_gun[i].recoilSlow=1.0;
-    i=7; as_gun[i].name="MINIGUN"; as_gun[i].mag=250; as_gun[i].reserve=250; as_gun[i].damage=7.0; as_gun[i].rate=0.04; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=6.0; as_gun[i].range=22.0; as_gun[i].kind=5; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,200,120"; as_gun[i].snd="RaynorGatlingGunAttackLaunch"; as_gun[i].recoilSlow=0.55;
-    i=8; as_gun[i].name="GRENADE LAUNCHER"; as_gun[i].mag=6; as_gun[i].reserve=18; as_gun[i].damage=80.0; as_gun[i].rate=0.875; as_gun[i].reload=3.2; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=16.0; as_gun[i].kind=3; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,170,80"; as_gun[i].snd="Raynor_TossGrenadeLaunch"; as_gun[i].recoilSlow=1.0;
-    i=9; as_gun[i].name="TESLA CANNON"; as_gun[i].mag=20; as_gun[i].reserve=260; as_gun[i].damage=6.0; as_gun[i].rate=0.25; as_gun[i].reload=2.2; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=9.0; as_gun[i].kind=4; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="140,200,255"; as_gun[i].snd="Archon_AttackLaunch"; as_gun[i].recoilSlow=0.9;
-    i=10; as_gun[i].name="SNIPER RIFLE"; as_gun[i].mag=12; as_gun[i].reserve=60; as_gun[i].damage=65.0; as_gun[i].rate=1.25; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=2; as_gun[i].tint="255,255,230"; as_gun[i].snd="RaynorSnipeSound"; as_gun[i].recoilSlow=1.0;
+int AS_Class (int p) {return AS_ProfileClass(as_prof[p]);}
+int AS_Skill (int p, int sk) {
+    if(p<1 || p>AS_PLAYERS || as_prof[p]<0) {return 0;}
+    return as_pfSkill[as_prof[p]][sk];
+}
+bool AS_HasItem (int p, int it) {return as_inv[p][0]==it || as_inv[p][1]==it || as_inv[p][2]==it;}
+string AS_MarineNameS (int p) {
+    if(as_prof[p]<0) {return "Marine "+IntToString(p);}
+    return as_pfName[as_prof[p]];
 }
 
 // ---- aliens -----------------------------------------------------------
@@ -173,7 +511,13 @@ const int AS_UBER = 9;
 const int AS_EGG = 10;
 const int AS_BIOMASS = 11;
 const int AS_RIPPER = 12;
-const int AS_KINDS = 12;
+const int AS_JUMPER = 13;              // asw_drone_jumper: a drone that leaps the last few metres
+const int AS_XENOMITE = 14;            // asw_parasite_defanged: the harvester's brood, weak
+const int AS_BARREL = 15;              // asw_barrel_explosive: not an alien, but shot like one
+const int AS_GRUB = 16;
+const int AS_SHAMAN = 17;
+const int AS_QUEEN = 18;
+const int AS_KINDS = 18;
 
 unit[96] as_a;               // the alien, null when the slot is free
 int[96] as_aKind;
@@ -184,10 +528,12 @@ int[96] as_aTarget;          // player hunted, 0 none, -1 a sentry
 fixed[96] as_aNextOrder;
 fixed[96] as_aNextAttack;
 fixed[96] as_aHitAt;         // a swing lands at this time (0 none)
+int[96] as_aHitDoor;         // the swing is at a door, -1 a marine
 fixed[96] as_aBurnUntil;
 int[96] as_aBurnBy;
-fixed[96] as_aStunUntil;
-fixed[96] as_aLeapUntil;     // parasite leap in the air, ripper lunge
+fixed[96] as_aStunUntil;     // shocked: slowed to 0.3
+fixed[96] as_aFreezeUntil;   // frozen solid
+fixed[96] as_aLeapUntil;     // parasite and jumper leap in the air, ripper lunge
 fixed[96] as_aLeapX;
 fixed[96] as_aLeapY;
 fixed[96] as_aSpawnAt;       // harvester's next parasite / egg's hatch time
@@ -199,7 +545,7 @@ fixed[96] as_aStuckY;
 fixed[96] as_aStuckAt;
 fixed[96] as_aHitAng;                 // direction the last hit travelled (gore sprays that way)
 fixed[96] as_aLastDmg;                // size of the last hit (big ones blow aliens apart)
-int as_alive2;                         // aliens alive (eggs and biomass not counted)
+int as_alive2;                         // aliens alive (eggs, biomass and barrels not counted)
 // Where each alien stands, read once per step (AS_AlienCache): traces, aim assist,
 // flame and the marines' collision read these instead of asking the engine per test.
 fixed[96] as_aX;
@@ -215,39 +561,66 @@ int[96] as_aTagBy;                     // the marine it is shown to
 int[96] as_aTagKind;                   // 0 bullet, 1 fire, 2 blast, 3 shock, 4 armour turned it
 bool[5] as_numbers;                    // damage numbers on (N toggles)
 fixed as_shotLead;                     // how long ago, within this step, the shot being fired was due
+fixed as_slowMo;                       // adrenaline: the swarm moves at a third of its speed until then
+int[96] as_aSpawner;                   // the spawner an alien came from, -1 none (src/Objects.galaxy)
 
-string[13] as_kindUnit;
-string[13] as_kindDie;
-string[13] as_kindName;
-fixed[13] as_kindHp;
-fixed[13] as_kindRadius;
-fixed[13] as_kindDamage;
-fixed[13] as_kindCooldown;
-fixed[13] as_kindReach;
+string[19] as_kindUnit;
+string[19] as_kindDie;
+string[19] as_kindName;
+fixed[19] as_kindHp;
+fixed[19] as_kindRadius;
+fixed[19] as_kindDamage;
+fixed[19] as_kindCooldown;
+fixed[19] as_kindReach;
+fixed[19] as_kindSpeed;
 
-void AS_KindsInit () {
-    int k;
-    k=AS_DRONE; as_kindUnit[k]="ASDrone"; as_kindDie[k]="ASDieDrone"; as_kindName[k]="DRONE"; as_kindHp[k]=40.0; as_kindRadius[k]=0.40; as_kindDamage[k]=8.0; as_kindCooldown[k]=0.9; as_kindReach[k]=0.55;
-    k=AS_PARASITE; as_kindUnit[k]="ASParasite"; as_kindDie[k]="ASDieParasite"; as_kindName[k]="PARASITE"; as_kindHp[k]=25.0; as_kindRadius[k]=0.22; as_kindDamage[k]=5.0; as_kindCooldown[k]=2.0; as_kindReach[k]=0.4;
-    k=AS_SHIELDBUG; as_kindUnit[k]="ASShieldbug"; as_kindDie[k]="ASDieShieldbug"; as_kindName[k]="SHIELDBUG"; as_kindHp[k]=1000.0; as_kindRadius[k]=0.95; as_kindDamage[k]=22.0; as_kindCooldown[k]=1.6; as_kindReach[k]=0.75;
-    k=AS_BOOMER; as_kindUnit[k]="ASBoomer"; as_kindDie[k]="ASDieBoomer"; as_kindName[k]="BOOMER"; as_kindHp[k]=400.0; as_kindRadius[k]=0.75; as_kindDamage[k]=30.0; as_kindCooldown[k]=1.0; as_kindReach[k]=1.2;
-    k=AS_BUZZER; as_kindUnit[k]="ASBuzzer"; as_kindDie[k]="ASDieBuzzer"; as_kindName[k]="BUZZER"; as_kindHp[k]=30.0; as_kindRadius[k]=0.30; as_kindDamage[k]=5.0; as_kindCooldown[k]=0.8; as_kindReach[k]=0.5;
-    k=AS_RANGER; as_kindUnit[k]="ASRanger"; as_kindDie[k]="ASDieRanger"; as_kindName[k]="RANGER"; as_kindHp[k]=101.0; as_kindRadius[k]=0.40; as_kindDamage[k]=10.0; as_kindCooldown[k]=2.0; as_kindReach[k]=6.5;
-    k=AS_MORTAR; as_kindUnit[k]="ASMortarbug"; as_kindDie[k]="ASDieMortar"; as_kindName[k]="MORTARBUG"; as_kindHp[k]=350.0; as_kindRadius[k]=0.55; as_kindDamage[k]=20.0; as_kindCooldown[k]=3.5; as_kindReach[k]=10.0;
-    k=AS_HARVESTER; as_kindUnit[k]="ASHarvester"; as_kindDie[k]="ASDieHarvester"; as_kindName[k]="HARVESTER"; as_kindHp[k]=200.0; as_kindRadius[k]=0.70; as_kindDamage[k]=5.0; as_kindCooldown[k]=4.0; as_kindReach[k]=7.0;
-    k=AS_UBER; as_kindUnit[k]="ASUberDrone"; as_kindDie[k]="ASDieUber"; as_kindName[k]="UBER DRONE"; as_kindHp[k]=500.0; as_kindRadius[k]=0.55; as_kindDamage[k]=18.0; as_kindCooldown[k]=1.1; as_kindReach[k]=0.7;
-    k=AS_RIPPER; as_kindUnit[k]="ASRipper"; as_kindDie[k]="ASDieRipper"; as_kindName[k]="RIPPER"; as_kindHp[k]=160.0; as_kindRadius[k]=0.50; as_kindDamage[k]=15.0; as_kindCooldown[k]=1.2; as_kindReach[k]=0.75;
-    k=AS_EGG; as_kindUnit[k]="ASEgg"; as_kindDie[k]="ASDieEgg"; as_kindName[k]="EGG"; as_kindHp[k]=30.0; as_kindRadius[k]=0.45; as_kindDamage[k]=0.0; as_kindCooldown[k]=0.0; as_kindReach[k]=4.0;
-    k=AS_BIOMASS; as_kindUnit[k]="ASBiomass"; as_kindDie[k]="ASDieBiomass"; as_kindName[k]="BIOMASS"; as_kindHp[k]=600.0; as_kindRadius[k]=1.2; as_kindDamage[k]=0.0; as_kindCooldown[k]=0.0; as_kindReach[k]=0.0;
+void AS_KindSet (int k, string unitId, string die, string name, fixed hp, fixed radius, fixed dmg, fixed cooldown, fixed reach, fixed speed) {
+    as_kindUnit[k]=unitId;as_kindDie[k]=die;as_kindName[k]=name;as_kindHp[k]=hp;as_kindRadius[k]=radius;as_kindDamage[k]=dmg;
+    as_kindCooldown[k]=cooldown;as_kindReach[k]=reach;as_kindSpeed[k]=speed;
 }
+// Normal-difficulty numbers: asw_*_health and sk_asw_*_damage (the director report's table).
+void AS_KindsInit () {
+    AS_KindSet(AS_DRONE,"ASDrone","ASDieDrone","DRONE",40.0,0.40,15.0,0.9,0.55,3.4);
+    AS_KindSet(AS_JUMPER,"ASDrone","ASDieDrone","DRONE",40.0,0.40,15.0,0.9,0.55,3.4);
+    AS_KindSet(AS_PARASITE,"ASParasite","ASDieParasite","PARASITE",25.0,0.22,10.0,2.0,0.4,4.2);
+    AS_KindSet(AS_XENOMITE,"ASParasite","ASDieParasite","XENOMITE",10.0,0.20,5.0,1.5,0.4,4.4);
+    AS_KindSet(AS_SHIELDBUG,"ASShieldbug","ASDieShieldbug","SHIELDBUG",1000.0,0.95,25.0,1.6,0.75,1.7);
+    AS_KindSet(AS_BOOMER,"ASBoomer","ASDieBoomer","BOOMER",800.0,0.75,30.0,1.0,1.2,1.3);
+    AS_KindSet(AS_BUZZER,"ASBuzzer","ASDieBuzzer","BUZZER",30.0,0.30,8.0,0.8,0.5,3.2);
+    AS_KindSet(AS_RANGER,"ASRanger","ASDieRanger","RANGER",101.0,0.40,10.0,2.0,6.5,2.5);
+    AS_KindSet(AS_MORTAR,"ASMortarbug","ASDieMortar","MORTARBUG",350.0,0.55,20.0,3.5,10.0,1.6);
+    AS_KindSet(AS_HARVESTER,"ASHarvester","ASDieHarvester","HARVESTER",200.0,0.70,5.0,4.0,7.0,1.0);
+    AS_KindSet(AS_UBER,"ASUberDrone","ASDieUber","UBER DRONE",500.0,0.55,18.0,1.1,0.7,2.9);
+    AS_KindSet(AS_RIPPER,"ASRipper","ASDieRipper","RIPPER",160.0,0.50,15.0,1.2,0.75,3.6);
+    AS_KindSet(AS_EGG,"ASEgg","ASDieEgg","EGG",30.0,0.45,0.0,0.0,4.0,0.0);
+    AS_KindSet(AS_BIOMASS,"ASBiomass","ASDieBiomass","BIOMASS",600.0,1.2,0.0,0.0,0.0,0.0);
+    AS_KindSet(AS_BARREL,"ASBarrel","ASFxBoom","BARREL",30.0,0.35,0.0,0.0,0.0,0.0);
+    AS_KindSet(AS_GRUB,"ASParasite","ASDieParasite","GRUB",5.0,0.18,0.0,9.0,0.0,1.5);
+    AS_KindSet(AS_SHAMAN,"ASRanger","ASDieRanger","SHAMAN",59.0,0.40,0.0,2.0,4.0,2.4);
+    AS_KindSet(AS_QUEEN,"ASShieldbug","ASDieShieldbug","QUEEN",3500.0,1.4,40.0,2.0,1.4,0.8);
+}
+// What a kind is born with on this difficulty (drones and rangers never below 25).
+fixed AS_KindHealth (int k) {
+    fixed h=as_kindHp[k];
+    if(k==AS_EGG || k==AS_BIOMASS || k==AS_BARREL) {return h;}
+    h*=AS_AlienHealthScale();
+    if(k==AS_DRONE || k==AS_JUMPER || k==AS_RANGER || k==AS_BOOMER || k==AS_SHAMAN) {h=MaxF(25.0,h);}
+    return h;
+}
+fixed AS_KindDamage (int k) {
+    fixed d=MaxF(1.0,as_kindDamage[k]*AS_AlienDamageScale());
+    if(k==AS_DRONE || k==AS_JUMPER) {d=MaxF(3.0,d);}
+    return d;
+}
+// Drones, jumpers and parasites run faster on harder difficulties.
+fixed AS_KindSpeed (int k) {
+    if(k==AS_DRONE || k==AS_JUMPER || k==AS_PARASITE || k==AS_XENOMITE) {return as_kindSpeed[k]*AS_AlienSpeedScale();}
+    return as_kindSpeed[k];
+}
+bool AS_IsThing (int k) {return k==AS_EGG || k==AS_BIOMASS || k==AS_BARREL;}
 
 // ---- director ---------------------------------------------------------
 bool as_director = true;
-fixed as_nextHorde;
-fixed as_hordeUntil;
-int as_hordeLeft;
-fixed as_hordeNextSpawn;
-int as_wave;
 int as_light;                          // lighting preset index
 string[5] as_lightName;
 string[5] as_lightId;
@@ -257,13 +630,18 @@ point[32] as_vent;
 int as_ventCount;
 point[16] as_ammoAt;
 int as_ammoCount;
-fixed[24] as_roomX0;
-fixed[24] as_roomY0;
-fixed[24] as_roomX1;
-fixed[24] as_roomY1;
-string[24] as_roomKind;
-string[24] as_roomName;
+fixed[40] as_roomX0;
+fixed[40] as_roomY0;
+fixed[40] as_roomX1;
+fixed[40] as_roomY1;
+string[40] as_roomKind;
+string[40] as_roomName;
 int as_roomCount;
+
+// The HUD's art (tools/hudart.py, tools/uiart.py).
+const string AS_WHITE = "Derelict\\UI\\white.dds";
+const string AS_VIGNETTE = "Derelict\\UI\\vignette.dds";
+const string AS_UI = "Derelict\\UI\\";
 
 // ---- small helpers ----------------------------------------------------
 fixed AS_Clamp (fixed v, fixed lo, fixed hi) {

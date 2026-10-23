@@ -1,0 +1,319 @@
+// =====================================================================
+// Doors, after Alien Swarm's asw_door.cpp:
+//   auto     slides open when a marine comes near, shuts behind the squad;
+//            aliens cannot open doors, drones bash shut ones down
+//   panel    locked until a tech hacks its door panel (src/Use.galaxy)
+//   bash     locked for good: it only opens when the swarm breaks it down
+//   jammed   never opens
+// Welds: a door's seal is seconds of welding out of 10 (totalsealtime). Any seal
+// at all locks it shut; the welder adds seal with its primary fire and cuts it
+// with its secondary, at 0.6 s a second, or the best Engineering aura of a marine
+// within 300 units (0.8 + 0.5 a point: Crash 1.3, Vegas 2.3). A normal door has
+// 1800 health (2400 reinforced); a drone's swipe does 30, cut by up to 60% as the
+// seal grows. Below a third of its health a door is dented shut; at none it falls.
+// =====================================================================
+
+const int AS_DOORS = 24;
+const fixed AS_SEAL_FULL = 10.0;
+const fixed AS_DOOR_HP = 1800.0;
+int as_drN;
+string[24] as_drName;
+int[24] as_drX0;
+int[24] as_drY0;
+int[24] as_drX1;
+int[24] as_drY1;
+int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed
+bool[24] as_drLocked;
+fixed[24] as_drSeal;
+fixed[24] as_drHp;
+fixed[24] as_drOpen;               // 0 shut .. 1 open
+bool[24] as_drBroken;
+fixed[24] as_drHold;               // stays open until then
+fixed[24] as_drNoOpen;             // a weld just shut it: it will not open before this
+unit[24] as_drLeaf;
+unit[24] as_drSeam;                // the glowing weld seam
+unit[24][4] as_drBlk;
+bool[24] as_drShut;
+bool[24] as_drAcross;              // the door runs east-west (the passage runs north-south)
+fixed[24] as_drPanelX;
+fixed[24] as_drPanelY;
+bool[24] as_drHasPanel;
+fixed[24] as_drHack;               // the wire panel's charge 0..1
+bool[24] as_drRecommend;           // the game has suggested welding it
+fixed[24] as_drWeldAt;             // last weld or cut
+int[24] as_drWeldBy;               // who welded it last
+int[24] as_drWeldDir;              // 1 sealing, -1 cutting
+int[24] as_drTag;
+fixed[24] as_drTagShown;
+
+fixed AS_DoorCX (int i) {return (IntToFixed(as_drX0[i])+IntToFixed(as_drX1[i]))*0.5;}
+fixed AS_DoorCY (int i) {return (IntToFixed(as_drY0[i])+IntToFixed(as_drY1[i]))*0.5;}
+fixed AS_DoorWidth (int i) {
+    if(as_drAcross[i]) {return IntToFixed(as_drX1[i]-as_drX0[i]);}
+    return IntToFixed(as_drY1[i]-as_drY0[i]);
+}
+void AS_Door (string name, int x0, int y0, int x1, int y1, int kind, fixed seal, fixed px, fixed py) {
+    int i=as_drN;int x;int y;fixed face=270.0;
+    if(i>=AS_DOORS) {return;}
+    as_drN+=1;
+    as_drName[i]=name;as_drX0[i]=x0;as_drY0[i]=y0;as_drX1[i]=x1;as_drY1[i]=y1;as_drKind[i]=kind;
+    as_drLocked[i]=kind==1 || kind==2 || kind==3;
+    as_drSeal[i]=seal*AS_SEAL_FULL;as_drHp[i]=AS_DOOR_HP;as_drOpen[i]=0.0;as_drBroken[i]=false;as_drHold[i]=0.0;as_drNoOpen[i]=0.0;
+    as_drAcross[i]=(x1-x0)>=(y1-y0);
+    as_drHasPanel[i]=px>0.0;as_drPanelX[i]=px;as_drPanelY[i]=py;as_drHack[i]=0.0;as_drRecommend[i]=false;as_drWeldAt[i]= -10.0;as_drWeldBy[i]=0;as_drWeldDir[i]=0;
+    as_drTag[i]=c_textTagNone;as_drTagShown[i]= -1.0;
+    for(x=x0;x<x1;x+=1) {for(y=y0;y<y1;y+=1) {as_doorCell[x][y]=true;}}
+    if(!as_drAcross[i]) {face=0.0;}
+    as_drLeaf[i]=AS_Piece("ASEDoorAS",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
+    UnitSetScale(as_drLeaf[i],AS_DoorWidth(i)*50.0,100.0,100.0);
+    as_drSeam[i]=AS_Piece("ASEDoorSeam",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
+    UnitSetScale(as_drSeam[i],AS_DoorWidth(i)*50.0,100.0,100.0);
+    as_drShut[i]=false;
+    AS_DoorShut(i,true);
+    AS_DoorSeamShow(i);
+}
+// Collision and alien pathing follow the door: shut is wall and a blocker on each cell.
+void AS_DoorShut (int i, bool shut) {
+    int x;int y;int k=0;
+    if(as_drShut[i]==shut) {return;}
+    as_drShut[i]=shut;
+    for(x=as_drX0[i];x<as_drX1[i];x+=1) {
+        for(y=as_drY0[i];y<as_drY1[i];y+=1) {
+            as_wall[x][y]=shut;
+            if(k<4) {
+                if(shut) {UnitCreate(1,"PathingBlocker1x1",c_unitCreateIgnorePlacement,0,Point(IntToFixed(x)+0.5,IntToFixed(y)+0.5),0.0);as_drBlk[i][k]=UnitLastCreated();}
+                else if(as_drBlk[i][k]!=null) {UnitRemove(as_drBlk[i][k]);as_drBlk[i][k]=null;}
+            }
+            k+=1;
+        }
+    }
+}
+// Seal 0: no seam; otherwise the seam glows brighter the more it is welded.
+void AS_DoorSeamShow (int i) {
+    fixed f=as_drSeal[i]/AS_SEAL_FULL;
+    if(as_drSeam[i]==null) {return;}
+    libNtve_gf_ShowHideUnit(as_drSeam[i],f>0.0 && !as_drBroken[i]);
+    if(f>0.0) {ActorSend(libNtve_gf_MainActorofUnit(as_drSeam[i]),"SetOpacity "+FixedToString(0.35+0.65*f,2));}
+}
+bool AS_DoorCanOpen (int i) {
+    if(as_drBroken[i]) {return true;}
+    if(as_drLocked[i] || as_drKind[i]==3 || as_drSeal[i]>0.0) {return false;}
+    // Dented shut below a third of its health.
+    if(as_drHp[i]<AS_DOOR_HP/3.0) {return false;}
+    return true;
+}
+// Something standing in the doorway keeps it from shutting.
+bool AS_DoorBusy (int i) {
+    int p;int j;point q;fixed x0=IntToFixed(as_drX0[i])-0.35;fixed x1=IntToFixed(as_drX1[i])+0.35;fixed y0=IntToFixed(as_drY0[i])-0.35;fixed y1=IntToFixed(as_drY1[i])+0.35;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        q=UnitGetPosition(as_m[p]);
+        if(PointGetX(q)>x0 && PointGetX(q)<x1 && PointGetY(q)>y0 && PointGetY(q)<y1) {return true;}
+    }
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null) {continue;}
+        if(as_aX[j]>x0 && as_aX[j]<x1 && as_aY[j]>y0 && as_aY[j]<y1) {return true;}
+    }
+    return false;
+}
+bool AS_MarineNearDoor (int i, fixed r) {
+    int p;point q;fixed cx=AS_DoorCX(i);fixed cy=AS_DoorCY(i);fixed hw=AS_DoorWidth(i)*0.5;fixed dx;fixed dy;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        q=UnitGetPosition(as_m[p]);dx=AbsF(PointGetX(q)-cx);dy=AbsF(PointGetY(q)-cy);
+        if(as_drAcross[i]) {dx=MaxF(0.0,dx-hw);}else {dy=MaxF(0.0,dy-hw);}
+        if(dx*dx+dy*dy<r*r) {return true;}
+    }
+    return false;
+}
+void AS_DoorPulseAll () {
+    int i;fixed t;fixed w;fixed cx;fixed cy;bool want;
+    for(i=0;i<as_drN;i+=1) {
+        if(as_drLeaf[i]==null && !as_drBroken[i]) {continue;}
+        want=false;
+        if(as_drBroken[i]) {want=true;}
+        else if(AS_DoorCanOpen(i) && as_now>=as_drNoOpen[i]) {
+            if(AS_MarineNearDoor(i,2.2)) {as_drHold[i]=as_now+1.0;}
+            want=as_now<as_drHold[i];
+        }
+        if(!want && as_drOpen[i]>0.0 && AS_DoorBusy(i)) {want=true;}
+        t=as_drOpen[i];
+        if(want) {as_drOpen[i]=MinF(1.0,as_drOpen[i]+AS_DT/0.55);}
+        else {as_drOpen[i]=MaxF(0.0,as_drOpen[i]-AS_DT/0.55);}
+        if(t==0.0 && as_drOpen[i]>0.0 && !as_drBroken[i]) {AS_Sound("Doodad_SecurityGateDiagonalOpen",AS_DoorCX(i),AS_DoorCY(i),70.0,0.3);}
+        if(t>0.99 && as_drOpen[i]<1.0 && !as_drBroken[i]) {AS_Sound("Doodad_SecurityGateDiagonalClose",AS_DoorCX(i),AS_DoorCY(i),60.0,0.3);}
+        AS_DoorShut(i,as_drOpen[i]<0.45);
+        if(as_drLeaf[i]!=null && t!=as_drOpen[i]) {
+            // The leaf slides sideways into the wall.
+            w=AS_DoorWidth(i)*as_drOpen[i];cx=AS_DoorCX(i);cy=AS_DoorCY(i);
+            if(as_drAcross[i]) {cx-=w;}else {cy-=w;}
+            UnitSetPosition(as_drLeaf[i],Point(cx,cy),true);UnitSetPosition(as_drSeam[i],Point(cx,cy),true);
+        }
+        AS_DoorTagPulse(i);
+    }
+}
+// The door's health over it while it is damaged and shut (AS's door tooltip).
+void AS_DoorTagPulse (int i) {
+    fixed f=as_drHp[i]/AS_DOOR_HP;int n;string s="";int k;
+    if(as_drBroken[i] || f>=0.999 || as_drOpen[i]>0.5) {
+        if(as_drTag[i]!=c_textTagNone) {TextTagDestroy(as_drTag[i]);as_drTag[i]=c_textTagNone;}
+        return;
+    }
+    if(as_now-as_drTagShown[i]<0.25) {return;}
+    as_drTagShown[i]=as_now;
+    n=FixedToInt(f*12.0+0.99);
+    for(k=0;k<12;k+=1) {if(k<n) {s=s+"|";}else {s=s+".";}}
+    s="<c val=\"FFFFFF\">"+StringSub(s,1,n)+"</c><c val=\"404040\">"+StringSub(s,n+1,12)+"</c>";
+    if(as_drTag[i]==c_textTagNone) {
+        TextTagCreate(StringToText(s),20,Point(AS_DoorCX(i),AS_DoorCY(i)),2.9,true,false,PlayerGroupAll());
+        as_drTag[i]=TextTagLastCreated();TextTagSetTextShadow(as_drTag[i],true);
+    }
+    else {TextTagSetText(as_drTag[i],StringToText(s));}
+}
+// A drone's swipe at a shut door: 30, less as the weld grows.
+void AS_DoorHit (int i, fixed dmg, fixed fromX, fixed fromY) {
+    fixed before=as_drHp[i];
+    if(as_drBroken[i] || as_drOpen[i]>0.45 || as_drKind[i]==3) {return;}
+    dmg*=1.0-(as_drSeal[i]/AS_SEAL_FULL)*0.6;
+    as_drHp[i]-=dmg;
+    AS_Sound("Ultralisk_AttackImpact",AS_DoorCX(i),AS_DoorCY(i),75.0,0.25);
+    if(RandomInt(0,2)==0) {AS_Fx("ASFxSpark",AS_DoorCX(i)+RandomFixed(-0.5,0.5),AS_DoorCY(i)+RandomFixed(-0.5,0.5),RandomFixed(0.6,1.8),RandomFixed(0.0,360.0));}
+    // The door's health falls below 40%: the lesson to destroy it ourselves would come up in AS; ours warns.
+    if(before>=AS_DOOR_HP*0.4 && as_drHp[i]<AS_DOOR_HP*0.4) {AS_DoorWarn(i);}
+    if(as_drHp[i]<=0.0) {AS_DoorBreak(i);}
+}
+void AS_DoorWarn (int i) {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(AS_Person(p) && as_alive[p] && DistanceBetweenPoints(UnitGetPosition(as_m[p]),Point(AS_DoorCX(i),AS_DoorCY(i)))<16.0) {
+            AS_Message(p,"<c val=\"FF6050\">The swarm is breaking through the door!</c>");
+        }
+    }
+}
+void AS_DoorBreak (int i) {
+    fixed cx=AS_DoorCX(i);fixed cy=AS_DoorCY(i);
+    as_drBroken[i]=true;as_drHp[i]=0.0;as_drSeal[i]=0.0;
+    AS_Fx("ASFxBoom",cx,cy,0.6,0.0);AS_Burst(cx,cy,1.0,1.8,"255,200,120",4);
+    AS_Fx("ASFxSpark",cx,cy,1.2,0.0);AS_Fx("ASFxSpark",cx+0.4,cy,0.6,90.0);
+    AS_Sound("Doodad_SecurityGateDiagonalImpact",cx,cy,100.0,0.0);
+    AS_ShakeAll(0.12,0.4);
+    if(as_drLeaf[i]!=null) {UnitRemove(as_drLeaf[i]);as_drLeaf[i]=null;}
+    if(as_drSeam[i]!=null) {UnitRemove(as_drSeam[i]);as_drSeam[i]=null;}
+    AS_DoorShut(i,false);as_drOpen[i]=1.0;
+    AS_Log("door broken: "+as_drName[i]);
+    AS_AllMsg("<c val=\"FF6050\">Door breached!</c>");
+    AS_MissionDoorBroken(as_drName[i]);
+}
+int AS_DoorNamed (string name) {
+    int i;
+    for(i=0;i<as_drN;i+=1) {if(as_drName[i]==name) {return i;}}
+    return -1;
+}
+void AS_DoorUnlock (int i) {
+    if(i<0) {return;}
+    as_drLocked[i]=false;as_drHold[i]=as_now+2.0;
+}
+// The shut door between an alien and the marine it hunts, within reach of its claws; -1 none.
+int AS_DoorInTheWay (int j, point target) {
+    int i;fixed cx;fixed cy;fixed ax=as_aX[j];fixed ay=as_aY[j];fixed tx=PointGetX(target);fixed ty=PointGetY(target);fixed hw;
+    for(i=0;i<as_drN;i+=1) {
+        if(!as_drShut[i] || as_drBroken[i]) {continue;}
+        cx=AS_DoorCX(i);cy=AS_DoorCY(i);hw=AS_DoorWidth(i)*0.5+0.3;
+        if(as_drAcross[i]) {
+            if(AbsF(ax-cx)>hw || AbsF(ay-cy)>1.0+as_aRadius[j]) {continue;}
+            if((ay-cy)*(ty-cy)>=0.0) {continue;}
+        }
+        else {
+            if(AbsF(ay-cy)>hw || AbsF(ax-cx)>1.0+as_aRadius[j]) {continue;}
+            if((ax-cx)*(tx-cx)>=0.0) {continue;}
+        }
+        return i;
+    }
+    return -1;
+}
+
+// ---- welding ---------------------------------------------------------------
+// The best engineering aura round (x, y): 0.8 + 0.5 a point within 300 units, 0.6 without one.
+fixed AS_WeldRate (fixed x, fixed y) {
+    int p;fixed best=0.0;point q;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p] || AS_Skill(p,AS_SK_ENGINEERING)<=0) {continue;}
+        q=UnitGetPosition(as_m[p]);
+        if(DistanceBetweenPoints(q,Point(x,y))<3.8) {best=MaxF(best,0.8+0.5*IntToFixed(AS_Skill(p,AS_SK_ENGINEERING)));}
+    }
+    if(best<1.0) {return 0.6;}
+    return best;
+}
+// The door a marine is welding at: close, and facing it. -1 none.
+int AS_WeldTarget (int p) {
+    int i;point q=UnitGetPosition(as_m[p]);fixed cx;fixed cy;fixed d;fixed a;
+    for(i=0;i<as_drN;i+=1) {
+        if(as_drBroken[i] || as_drKind[i]==3) {continue;}
+        cx=AS_DoorCX(i);cy=AS_DoorCY(i);
+        d=DistanceBetweenPoints(q,Point(cx,cy));
+        if(d>AS_DoorWidth(i)*0.5+1.4) {continue;}
+        a=ATan2(cy-PointGetY(q),cx-PointGetX(q));
+        if(d>0.6 && Cos(AS_AngleDiff(a,as_aim[p]))<0.6 && !as_bot[p]) {continue;}
+        return i;
+    }
+    return -1;
+}
+// One step of welding (dir 1) or cutting (dir -1) by marine p. Returns whether it did anything.
+bool AS_WeldStep (int p, int dir) {
+    int i=AS_WeldTarget(p);fixed rate;fixed before;fixed cx;fixed cy;fixed z;
+    if(i<0) {return false;}
+    if(dir>0 && as_drSeal[i]>=AS_SEAL_FULL) {
+        if(as_now-as_drWeldAt[i]>1.0) {as_drWeldAt[i]=as_now;AS_Message(p,"Door fully reinforced");}
+        return false;
+    }
+    if(dir<0 && as_drSeal[i]<=0.0) {return false;}
+    // The first weld on an open door shuts it (CanCloseToWeld), and it stays shut a moment.
+    if(dir>0 && as_drOpen[i]>0.0) {
+        if(AS_DoorBusy(i)) {return false;}
+        as_drHold[i]=0.0;as_drNoOpen[i]=as_now+1.0;
+        if(as_drOpen[i]>0.45) {return true;}
+    }
+    cx=AS_DoorCX(i);cy=AS_DoorCY(i);
+    rate=AS_WeldRate(cx,cy);before=as_drSeal[i];
+    as_drSeal[i]=AS_Clamp(as_drSeal[i]+IntToFixed(dir)*AS_DT*rate,0.0,AS_SEAL_FULL);
+    as_drWeldAt[i]=as_now;as_drWeldBy[i]=p;as_drWeldDir[i]=dir;
+    // Sparks run down the seam as the seal grows.
+    z=0.3+2.0*(1.0-as_drSeal[i]/AS_SEAL_FULL);
+    if(as_tick%2==0) {AS_Fx("ASFxSpark",cx+RandomFixed(-0.2,0.2),cy+RandomFixed(-0.2,0.2),z,RandomFixed(0.0,360.0));AS_Flash(cx,cy,z,0.4,"255,220,160");}
+    AS_Sound("SCV_Repair",cx,cy,70.0,0.35);
+    AS_DoorSeamShow(i);
+    if(before<1.0 && as_drSeal[i]>=1.0 && dir>0) {AS_WeldedEvent(p,i);}
+    if(before>0.0 && as_drSeal[i]<=0.0) {
+        AS_Log("door cut open: "+as_drName[i]);AS_Message(p,"<c val=\"8CFFA0\">Door cut open</c>");
+        as_drHold[i]=as_now+1.5;
+        AS_HintEvent("door_unwelded",p);
+    }
+    return true;
+}
+// What the use panel says about a door near marine p ("" nothing to say).
+string AS_DoorUseText (int p, int i) {
+    fixed f=as_drSeal[i]/AS_SEAL_FULL;
+    if(as_now-as_drWeldAt[i]<0.4) {
+        if(as_drWeldDir[i]<0) {return "Unwelding Door";}
+        if(f<0.5) {return "Welding Door";}
+        return "Reinforcing Door";
+    }
+    if(f>0.0) {
+        if(f>=1.0) {return "Door Fully Reinforced";}
+        if(f>=0.5) {return "Door Reinforced";}
+        return "Door Welded";
+    }
+    if(AS_HasItem(p,AS_IT_WELDER) && !as_drBroken[i] && as_drKind[i]!=3) {return "Weldable";}
+    return "";
+}
+void AS_DoorsClear () {
+    int i;int k;int x;int y;
+    for(i=0;i<as_drN;i+=1) {
+        if(as_drLeaf[i]!=null) {UnitRemove(as_drLeaf[i]);as_drLeaf[i]=null;}
+        if(as_drSeam[i]!=null) {UnitRemove(as_drSeam[i]);as_drSeam[i]=null;}
+        for(k=0;k<4;k+=1) {if(as_drBlk[i][k]!=null) {UnitRemove(as_drBlk[i][k]);as_drBlk[i][k]=null;}}
+        if(as_drTag[i]!=c_textTagNone) {TextTagDestroy(as_drTag[i]);as_drTag[i]=c_textTagNone;}
+    }
+    as_drN=0;
+    for(x=0;x<AS_W;x+=1) {for(y=0;y<AS_H;y+=1) {as_doorCell[x][y]=false;}}
+}

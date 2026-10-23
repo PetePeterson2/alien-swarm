@@ -1,11 +1,41 @@
 // =====================================================================
-// The director: sleeping wanderers placed through the deck at the start,
-// then hordes pouring out of the vents every 45-70 seconds, after Alien
-// Swarm's asw_director (intensity-paced hordes, wanderers in between).
+// The director, after Alien Swarm's asw_director.cpp and asw_spawn_manager.cpp.
+//
+// In a campaign mission it does nothing: Landing Bay has no asw_director_control,
+// so every alien comes from the level's own spawners and triggers (src/Objects.galaxy),
+// including the ones that start behind the squad as it moves on. It runs only with
+// ONSLAUGHT ticked in the briefing (AS's asw_horde_override / asw_wanderer_override):
+//   intensity   per marine, 0..1: kills nearby and hits taken raise it, it holds for
+//               3.5 s after a rise, then falls from full to nothing over 20 s
+//   cycle       relax 25-40 s (the first 3-16 s), then build up: a wanderer drone
+//               every 5-7 s, each gap x0.9-0.95 down to 1 s, until a marine's
+//               intensity reaches 1; 1-3 s past that peak it relaxes again
+//   wanderers   drones dug up out of the deck 10-19 cells (800-1500 units) from the
+//               nearest marine and at least 9.3 (740) from every marine: 70% of the
+//               time ahead of the squad (north), 30% behind (south); none while 20
+//               drones are awake
+//   hordes      every 45-65 s whatever the cycle: 9-14 drones, in batches of up to
+//               10 every 5 s round one spot; skipped (retried in 10 s) while 25 drones
+//               are awake. The only warning is a music stinger, never a banner.
 // Developer keys spawn any alien at the cursor (Ctrl + 1..9, Ctrl + J a ripper, Ctrl + 0 a horde).
 // =====================================================================
 
-
+fixed[5] as_intensity;
+fixed[5] as_intensityHold;           // no decay until then
+bool as_dirSpawning;                 // in the build-up
+bool as_dirPeaked;
+fixed as_dirRelaxUntil;
+fixed as_dirPeakUntil;
+fixed as_dirWanderGap;
+fixed as_dirWanderNext;
+fixed as_hordeAt;                    // the next horde, 0 none due
+int as_hordeLeftN;
+fixed as_hordeBatchAt;
+point as_hordePt;
+int as_dirAwakeDrones;
+fixed as_scriptHordeAt;              // a mission's own swarm, due at this time (Cargo Elevator's set pieces)
+const fixed AS_HORDE_NEAR = 10.0;    // 800 units
+const fixed AS_HORDE_FAR = 18.8;     // 1500 units
 
 point AS_RoomPoint (int r) {
     int k;fixed x;fixed y;
@@ -19,95 +49,190 @@ void AS_Populate (int r, int kind, int count) {
     int k;point q;
     for(k=0;k<count;k+=1) {q=AS_RoomPoint(r);AS_SpawnNear(kind,PointGetX(q),PointGetY(q),false);}
 }
-// The deck as the marines find it: sleepers by the kind of room (the deck's mission, AS_MissionPopulate).
-void AS_PopulateByKind () {
-    int r;
-    for(r=0;r<as_roomCount;r+=1) {
-        if(as_roomKind[r]=="mess") {AS_Populate(r,AS_DRONE,4);AS_Populate(r,AS_BUZZER,2);}
-        if(as_roomKind[r]=="reactor") {AS_Populate(r,AS_DRONE,5);AS_Populate(r,AS_RANGER,2);AS_Populate(r,AS_BOOMER,1);}
-        if(as_roomKind[r]=="cargo") {AS_Populate(r,AS_DRONE,4);AS_Populate(r,AS_SHIELDBUG,1);AS_Populate(r,AS_UBER,1);}
-        if(as_roomKind[r]=="lab") {AS_Populate(r,AS_PARASITE,3);AS_Populate(r,AS_HARVESTER,1);AS_Populate(r,AS_RANGER,1);AS_Populate(r,AS_RIPPER,1);}
-        if(as_roomKind[r]=="hive") {AS_Populate(r,AS_DRONE,5);AS_Populate(r,AS_MORTAR,1);AS_Populate(r,AS_HARVESTER,1);AS_Populate(r,AS_RIPPER,2);}
-        if(as_roomKind[r]=="hall" && RandomInt(0,1)==0) {AS_Populate(r,AS_DRONE,2);}
-        if(as_roomKind[r]=="duct") {AS_Populate(r,AS_PARASITE,2);}
+
+// ---- intensity --------------------------------------------------------------
+void AS_IntensityAdd (int p, fixed v) {
+    if(!AS_Person(p)) {return;}
+    as_intensity[p]=MinF(1.0,as_intensity[p]+0.25*v);
+    as_intensityHold[p]=as_now+3.5;
+}
+// An alien died at (x, y): every live marine feels it, more when close (asw_intensity_far_range 200 units).
+void AS_DirectorKill (int kind, fixed x, fixed y) {
+    int p;point q;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        if(kind==AS_SHIELDBUG) {AS_IntensityAdd(p,0.5);continue;}
+        q=UnitGetPosition(as_m[p]);
+        if(DistanceBetweenPoints(q,Point(x,y))<2.5) {AS_IntensityAdd(p,0.2);}
+        else {AS_IntensityAdd(p,0.05);}
     }
 }
-// A new level: no horde running or due, the wave count from the start.
-void AS_DirectorInit () {
-    as_hordeLeft=0;as_hordeUntil=0.0;as_wave=0;
-    as_nextHorde=as_now+50.0;
+// A marine was hurt by the swarm: how much of what health it had left.
+void AS_DirectorHurt (int p, fixed dmg, fixed hpBefore) {
+    fixed r=dmg/MaxF(1.0,hpBefore);
+    if(r<0.2) {AS_IntensityAdd(p,0.2);}
+    else if(r<0.5) {AS_IntensityAdd(p,0.5);}
+    else {AS_IntensityAdd(p,1.0);}
 }
-// A vent out of sight of the marines and not too far from them.
-int AS_PickVent () {
-    int v;int p;int best= -1;fixed score;fixed bestScore= -1000.0;fixed d;fixed nearest;point mq;bool seen;
-    for(v=0;v<as_ventCount;v+=1) {
-        nearest=1000.0;seen=false;
-        // The cargo elevator's two levels do not join: only vents on the squad's own level.
-        if(as_level==AS_LV_CARGO && (PointGetX(as_vent[v])>93.0)!=as_lowerLevel) {continue;}
+// A hack starts: everyone calms, and a horde due later comes in 2-5 s.
+void AS_DirectorHackStarted () {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_intensity[p]=0.0;}
+    if(as_onslaught && (as_hordeAt==0.0 || as_hordeAt>as_now+5.0)) {as_hordeAt=as_now+RandomFixed(2.0,5.0);}
+}
+fixed AS_MaxIntensity () {
+    int p;fixed m=0.0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && as_alive[p]) {m=MaxF(m,as_intensity[p]);}}
+    return m;
+}
+void AS_DirectorAlienAdded (int j) {}
+
+// ---- where the swarm can come in ------------------------------------------
+// A floor cell the squad can reach, 800-1500 units from the nearest marine and 740 from all of them;
+// ahead (north of the southern-most marine) 70% of the time, else behind. A few tries, else none.
+point AS_DirectorSpot () {
+    int k;int p;fixed x;fixed y;fixed d;fixed nearest;fixed south=10000.0;fixed north= -10000.0;bool ahead=RandomFixed(0.0,1.0)<0.7;point q;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        q=UnitGetPosition(as_m[p]);south=MinF(south,PointGetY(q));north=MaxF(north,PointGetY(q));
+    }
+    if(south>9999.0) {return null;}
+    for(k=0;k<24;k+=1) {
+        if(k==12) {ahead=!ahead;}
+        x=RandomFixed(1.0,IntToFixed(AS_W)-1.0);
+        if(ahead) {y=RandomFixed(south,MinF(IntToFixed(AS_H)-1.0,north+AS_HORDE_FAR));}
+        else {y=RandomFixed(MaxF(1.0,south-AS_HORDE_FAR),north);}
+        if(!AS_Free(x,y,0.45) || !AS_Reachable(x,y)) {continue;}
+        nearest=1000.0;
         for(p=1;p<=AS_PLAYERS;p+=1) {
             if(!AS_Person(p) || !as_alive[p]) {continue;}
-            mq=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(mq,as_vent[v]);
-            nearest=MinF(nearest,d);
-            if(d<14.0 && AS_LineClear(PointGetX(mq),PointGetY(mq),PointGetX(as_vent[v]),PointGetY(as_vent[v]))) {seen=true;}
+            d=DistanceBetweenPoints(UnitGetPosition(as_m[p]),Point(x,y));nearest=MinF(nearest,d);
         }
-        score=RandomFixed(0.0,6.0)-AbsF(nearest-20.0);
-        if(seen || nearest<9.0) {score-=100.0;}
-        if(score>bestScore) {bestScore=score;best=v;}
+        if(nearest<AS_HORDE_NEAR || nearest>AS_HORDE_FAR || nearest<AS_NEAR_DIST) {continue;}
+        // Not out of the escape area (the spawn manager skips nodes inside escape triggers).
+        if(AS_InExtract(x,y)) {continue;}
+        return Point(x,y);
     }
-    return best;
+    return null;
 }
-int[5] as_hordeVent;
+// A drone that digs up out of the deck and goes for the nearest marine.
+int AS_DirectorDrone (fixed x, fixed y) {
+    int j=AS_SpawnNear(AS_DRONE,x,y,true);
+    if(j<0) {return -1;}
+    AS_Fx("ASFxBlood",as_aX[j],as_aY[j],0.0,0.0);AS_Burst(as_aX[j],as_aY[j],0.2,0.7,"120,100,70",3);
+    return j;
+}
+int AS_AwakeDrones () {
+    int i;int n=0;
+    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && as_aAwake[i] && (as_aKind[i]==AS_DRONE || as_aKind[i]==AS_JUMPER)) {n+=1;}}
+    return n;
+}
+
+// ---- the cycle -------------------------------------------------------------
+// A new level: relaxed, the first build-up in 3-16 s, the first horde 45-65 s off.
+void AS_DirectorInit () {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_intensity[p]=0.0;as_intensityHold[p]=0.0;}
+    as_dirSpawning=false;as_dirPeaked=false;as_dirRelaxUntil=as_now+RandomFixed(3.0,16.0);as_dirPeakUntil=0.0;
+    as_dirWanderGap=0.0;as_dirWanderNext=0.0;
+    as_hordeAt=0.0;as_hordeLeftN=0;as_hordeBatchAt=0.0;as_hordePt=null;as_scriptHordeAt=0.0;
+    if(as_onslaught) {as_hordeAt=as_now+RandomFixed(45.0,65.0);}
+}
+// A mission's scripted swarm: drones come in where the director would bring a horde, no banner.
+void AS_ScriptedHorde (int n) {
+    point q=AS_DirectorSpot();
+    if(q==null) {return;}
+    as_hordePt=q;as_hordeLeftN+=n;as_hordeBatchAt=as_now;
+    SoundPlay(SoundLink("Alert_BaseUnderAttackKlaxon",-1),PlayerGroupAll(),70.0,0.0);
+}
 void AS_StartHorde () {
-    int p;int v=AS_PickVent();
-    if(v<0) {return;}
-    as_wave+=1;
-    as_hordeVent[0]=v;as_hordeVent[1]=AS_PickVent();
-    as_hordeLeft=MinI(32,12+as_wave*3);as_hordeUntil=as_now+12.0;as_hordeNextSpawn=as_now+2.5;
-    as_nextHorde=as_now+RandomFixed(45.0,70.0);
-    if(as_light==0) {GameSetLighting("ASAlarm",1.5);}
-    SoundPlay(SoundLink("Alert_BaseUnderAttackKlaxon",-1),PlayerGroupAll(),90.0,0.0);
-    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Announce(p,"SWARM INCOMING","Wave "+IntToString(as_wave)+"  -  "+IntToString(as_hordeLeft)+" contacts on the motion tracker");}}
-}
-int AS_HordeKind () {
-    int r=RandomInt(1,100);
-    if(r>=95) {return AS_RIPPER;}
-    if(as_wave>=3 && r<=4) {return AS_SHIELDBUG;}
-    if(as_wave>=2 && r<=10) {return AS_UBER;}
-    if(r<=18) {return AS_PARASITE;}
-    if(r<=26) {return AS_BUZZER;}
-    if(as_wave>=2 && r<=30) {return AS_BOOMER;}
-    if(r<=34) {return AS_RANGER;}
-    return AS_DRONE;
+    point q=AS_DirectorSpot();
+    if(q==null) {as_hordeAt=as_now+RandomFixed(10.0,16.0);return;}
+    as_hordePt=q;as_hordeLeftN=RandomInt(9,14);as_hordeBatchAt=as_now;
+    as_hordeAt=as_now+RandomFixed(45.0,65.0);
+    // Spawner.Horde: a shock stinger, nothing on screen.
+    SoundPlay(SoundLink("Alert_BaseUnderAttackKlaxon",-1),PlayerGroupAll(),70.0,0.0);
+    AS_Log("horde of "+IntToString(as_hordeLeftN)+" at "+FixedToString(PointGetX(q),1)+","+FixedToString(PointGetY(q),1));
 }
 void AS_DirectorPulse () {
-    int v;int k;point q;
-    if(as_hordeLeft>0 && as_now>=as_hordeNextSpawn) {
-        as_hordeNextSpawn=as_now+0.22;
-        v=as_hordeVent[as_hordeLeft%2];
-        if(v<0) {v=as_hordeVent[0];}
-        if(as_alive2<70) {
-            q=as_vent[v];
-            k=AS_SpawnNear(AS_HordeKind(),PointGetX(q)+RandomFixed(-0.4,0.4),PointGetY(q)+RandomFixed(-0.4,0.4),true);
-            AS_Fx("ASFxBlood",PointGetX(q),PointGetY(q),0.2,0.0);
+    int p;int k;int n;fixed a;point q;
+    // Intensity holds a moment after it rises, then falls over 20 s.
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(as_now>as_intensityHold[p]) {as_intensity[p]=MaxF(0.0,as_intensity[p]-AS_DT/20.0);}
+    }
+    // A horde already called comes in batches of up to ten round its spot, five seconds apart.
+    if(as_hordeLeftN>0 && as_now>=as_hordeBatchAt && as_hordePt!=null) {
+        n=MinI(10,as_hordeLeftN);as_hordeLeftN-=n;as_hordeBatchAt=as_now+5.0;
+        for(k=0;k<n;k+=1) {
+            a=RandomFixed(0.0,360.0);
+            AS_DirectorDrone(PointGetX(as_hordePt)+Cos(a)*RandomFixed(0.0,1.6),PointGetY(as_hordePt)+Sin(a)*RandomFixed(0.0,1.6));
         }
-        as_hordeLeft-=1;
     }
-    if(as_hordeUntil>0.0 && as_now>as_hordeUntil && as_hordeLeft<=0) {
-        as_hordeUntil=0.0;
-        if(as_light==0) {GameSetLighting(as_lightId[as_light],3.0);}
+    if(as_scriptHordeAt>0.0 && as_now>=as_scriptHordeAt) {as_scriptHordeAt=0.0;AS_ScriptedHorde(12);}
+    if(!as_onslaught || !as_levelReady || AS_MissionOver()) {return;}
+    if(as_tick%8==0) {as_dirAwakeDrones=AS_AwakeDrones();}
+    if(as_hordeAt>0.0 && as_now>=as_hordeAt && as_hordeLeftN<=0) {
+        if(as_dirAwakeDrones>=25) {as_hordeAt=as_now+10.0;}
+        else {AS_StartHorde();}
     }
-    if(!as_director) {return;}
-    if(as_now>=as_nextHorde && as_hordeLeft<=0) {AS_StartHorde();}
-    // Between hordes a few wanderers drift in so the deck never empties.
-    if(as_tick%160==0 && as_alive2<10) {
-        v=AS_PickVent();
-        if(v>=0) {for(k=0;k<3;k+=1) {AS_SpawnNear(AS_DRONE,PointGetX(as_vent[v]),PointGetY(as_vent[v]),RandomInt(0,1)==0);}}
+    // Relaxed until the timer runs out (it only counts down once everyone has calmed below the peak).
+    if(!as_dirSpawning) {
+        if(AS_MaxIntensity()>=1.0) {as_dirRelaxUntil=MaxF(as_dirRelaxUntil,as_now+AS_DT);}
+        if(as_now>=as_dirRelaxUntil) {as_dirSpawning=true;as_dirPeaked=false;as_dirWanderGap=0.0;as_dirWanderNext=as_now;}
+        return;
+    }
+    if(!as_dirPeaked && AS_MaxIntensity()>=1.0) {as_dirPeaked=true;as_dirPeakUntil=as_now+RandomFixed(1.0,3.0);}
+    if(as_dirPeaked && as_now>=as_dirPeakUntil) {as_dirSpawning=false;as_dirRelaxUntil=as_now+RandomFixed(25.0,40.0);return;}
+    if(as_now>=as_dirWanderNext) {
+        if(as_dirWanderGap<=0.0) {as_dirWanderGap=RandomFixed(5.0,7.0);}
+        else {as_dirWanderGap=MaxF(1.0,as_dirWanderGap*RandomFixed(0.9,0.95));}
+        as_dirWanderNext=as_now+as_dirWanderGap;
+        if(as_dirAwakeDrones<20) {
+            q=AS_DirectorSpot();
+            if(q!=null) {AS_DirectorDrone(PointGetX(q),PointGetY(q));as_dirAwakeDrones+=1;}
+        }
     }
 }
+
+// ---- reachability ----------------------------------------------------------
+// Which open cells the squad can walk to, from the living marines through open doors: refreshed once a
+// second, so nothing comes in behind a sealed door or in a room shut off from the squad.
+bool[@W@][@H@] as_reach;
+int[16384] as_bfsQ;
+fixed as_reachAt = -1.0;
+void AS_ReachRefresh () {
+    int x;int y;int head=0;int tail=0;int p;point q;int c;int k;int nx;int ny;
+    for(x=0;x<AS_W;x+=1) {for(y=0;y<AS_H;y+=1) {as_reach[x][y]=false;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        q=UnitGetPosition(as_m[p]);x=FixedToInt(PointGetX(q));y=FixedToInt(PointGetY(q));
+        if(x<0 || y<0 || x>=AS_W || y>=AS_H || as_reach[x][y]) {continue;}
+        as_reach[x][y]=true;as_bfsQ[tail]=x*1000+y;tail+=1;
+    }
+    while(head<tail) {
+        c=as_bfsQ[head];head+=1;x=c/1000;y=c%1000;
+        for(k=0;k<4;k+=1) {
+            nx=x;ny=y;
+            if(k==0) {nx+=1;}else if(k==1) {nx-=1;}else if(k==2) {ny+=1;}else {ny-=1;}
+            if(nx<0 || ny<0 || nx>=AS_W || ny>=AS_H || as_reach[nx][ny] || as_wall[nx][ny]) {continue;}
+            as_reach[nx][ny]=true;
+            if(tail<16384) {as_bfsQ[tail]=nx*1000+ny;tail+=1;}
+        }
+    }
+    as_reachAt=as_now;
+}
+bool AS_Reachable (fixed x, fixed y) {
+    int cx=FixedToInt(x);int cy=FixedToInt(y);
+    if(as_now-as_reachAt>=1.0) {AS_ReachRefresh();}
+    if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return false;}
+    return as_reach[cx][cy];
+}
+
 void AS_DevSpawn (int p, int kind) {
     point at=AS_AimPoint(p);int i;
-    if(kind==0) {as_nextHorde=as_now;as_director=true;AS_StartHorde();return;}
+    if(kind==0) {AS_StartHorde();return;}
     if(AS_Solid(PointGetX(at),PointGetY(at))) {at=PointWithOffsetPolar(UnitGetPosition(as_m[p]),3.0,as_aim[p]);}
     i=AS_SpawnNear(kind,PointGetX(at),PointGetY(at),true);
     if(i>=0) {AS_Message(p,"Spawned "+as_kindName[kind]);}
 }
+bool AS_HordeActive () {return as_hordeLeftN>0;}

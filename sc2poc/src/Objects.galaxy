@@ -1,0 +1,194 @@
+// =====================================================================
+// A level's placed things, after Alien Swarm's map entities (tools/<level>.py):
+//   asw_spawner      aliens fed in by name when a trigger starts them, NumAliens
+//                    in all, MaxLiveAliens at once, one every SpawnInterval +-25%,
+//                    gated by skill and by marines standing near (NearDistance 740)
+//   trigger_once     rectangles the squad walks into: start spawners, complete
+//                    objectives, commander lines, hints, the odd random ambush
+//   asw_door         doors that open for marines, lock until hacked, weld shut,
+//                    are cut open with a welder, or are bashed down by aliens
+// The spawner rules are asw_spawner.cpp / asw_base_spawner.cpp's: CanSpawn refuses
+// while MaxLiveAliens are alive, once the supply is spent (unless infinite), and,
+// without SpawnIfMarinesAreNear, while a marine is within NearDistance; skill outside
+// Min/MaxSkillLevel (Brutal counts as Insane) and the spawner never spawns; on Easy an
+// infinite spawner becomes finite with at least 8.
+// =====================================================================
+
+// World units to cells: the levels are traced at about 80 Hammer units a cell.
+const fixed AS_NEAR_DIST = 9.3;              // asw_spawner NearDistance 740
+
+// ---- spawners -----------------------------------------------------------
+const int AS_SPAWNERS = 64;
+int as_spN;
+string[64] as_spName;
+fixed[64] as_spX;
+fixed[64] as_spY;
+int[64] as_spKind;
+int[64] as_spNum;
+int[64] as_spMaxLive;
+fixed[64] as_spInt;
+bool[64] as_spInf;
+int[64] as_spMin;
+int[64] as_spMax;
+bool[64] as_spIfNear;                        // SpawnIfMarinesAreNear
+bool[64] as_spBurrow;
+int[64] as_spState;                          // 1 waiting for inputs, 2 spawning, 3 finished
+int[64] as_spLive;
+int[64] as_spMade;
+fixed[64] as_spNext;
+
+void AS_Spawner (string name, fixed x, fixed y, int kind, int num, int maxLive, fixed interval, int inf, int minSkill, int maxSkill, int ifNear, int burrow) {
+    int i=as_spN;
+    if(i>=AS_SPAWNERS) {return;}
+    as_spN+=1;
+    as_spName[i]=name;as_spX[i]=x;as_spY[i]=y;as_spKind[i]=kind;as_spNum[i]=num;as_spMaxLive[i]=maxLive;
+    as_spInt[i]=MaxF(0.25,interval);as_spInf[i]=inf!=0;as_spMin[i]=minSkill;as_spMax[i]=maxSkill;
+    as_spIfNear[i]=ifNear!=0;as_spBurrow[i]=burrow!=0;as_spState[i]=1;as_spLive[i]=0;as_spMade[i]=0;as_spNext[i]=0.0;
+    // Easy: an infinite spawner runs dry after at least eight (asw_spawner.cpp MissionStart).
+    if(as_skill==1 && as_spInf[i]) {as_spInf[i]=false;as_spNum[i]=MaxI(as_spNum[i],8);}
+}
+// The skill gate: Brutal is treated as Insane.
+bool AS_SpawnerValid (int i) {
+    int s=MinI(as_skill,4);
+    if(as_spMin[i]>0 && s<as_spMin[i]) {return false;}
+    if(as_spMax[i]>0 && as_spMax[i]<10 && s>as_spMax[i]) {return false;}
+    return true;
+}
+void AS_SpawnerStart (string name) {
+    int i;int n=0;
+    for(i=0;i<as_spN;i+=1) {
+        if(as_spName[i]!=name || as_spState[i]!=1) {continue;}
+        if(!AS_SpawnerValid(i)) {as_spState[i]=3;continue;}
+        as_spState[i]=2;as_spNext[i]=as_now;n+=1;
+    }
+    if(n>0) {AS_Log("spawner on: "+name+" x"+IntToString(n));}
+}
+void AS_SpawnerStop (string name) {
+    int i;
+    for(i=0;i<as_spN;i+=1) {if(as_spName[i]==name && as_spState[i]==2) {as_spState[i]=1;}}
+}
+bool AS_MarineWithin (fixed x, fixed y, fixed r) {
+    int p;point q;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        q=UnitGetPosition(as_m[p]);
+        if((PointGetX(q)-x)*(PointGetX(q)-x)+(PointGetY(q)-y)*(PointGetY(q)-y)<r*r) {return true;}
+    }
+    return false;
+}
+// An alien leaves the level (killed, latched on, cleared): its spawner may send another.
+void AS_AlienGone (int i) {
+    int s=as_aSpawner[i];
+    as_aSpawner[i]= -1;
+    if(s>=0 && s<as_spN) {as_spLive[s]=MaxI(0,as_spLive[s]-1);}
+}
+void AS_SpawnerPulse () {
+    int i;int j;
+    for(i=0;i<as_spN;i+=1) {
+        if(as_spState[i]!=2 || as_now<as_spNext[i]) {continue;}
+        as_spNext[i]=as_now+as_spInt[i]*RandomFixed(0.75,1.25);
+        if(!as_spInf[i] && as_spMade[i]>=as_spNum[i]) {as_spState[i]=3;continue;}
+        if(as_spMaxLive[i]>0 && as_spLive[i]>=as_spMaxLive[i]) {continue;}
+        if(!as_spIfNear[i] && AS_MarineWithin(as_spX[i],as_spY[i],AS_NEAR_DIST)) {continue;}
+        if(as_alive2>=AS_MAXALIEN-8) {continue;}
+        j=AS_SpawnNear(as_spKind[i],as_spX[i],as_spY[i],true);
+        if(j<0) {continue;}
+        as_aSpawner[j]=i;as_spLive[i]+=1;as_spMade[i]+=1;
+        // Burrowed aliens dig up out of the deck, the rest come out of the vents.
+        if(as_spBurrow[i]) {AS_Fx("ASFxBlood",as_aX[j],as_aY[j],0.0,0.0);AS_Burst(as_aX[j],as_aY[j],0.2,0.7,"120,100,70",3);}
+        else {AS_Burst(as_aX[j],as_aY[j],0.5,0.5,"90,90,90",2);}
+        AS_DirectorAlienAdded(j);
+        if(!as_spInf[i] && as_spMade[i]>=as_spNum[i]) {as_spState[i]=3;}
+    }
+}
+void AS_SpawnersClear () {
+    int i;
+    as_spN=0;
+    for(i=0;i<AS_MAXALIEN;i+=1) {as_aSpawner[i]= -1;}
+}
+
+// ---- triggers -------------------------------------------------------------
+const int AS_TRIGGERS = 48;
+int as_trN;
+fixed[48] as_trX0;
+fixed[48] as_trY0;
+fixed[48] as_trX1;
+fixed[48] as_trY1;
+bool[48] as_trOnce;
+fixed[48] as_trChance;
+bool[48] as_trDone;
+int[48] as_trAct0;                           // first action, and how many
+int[48] as_trActN;
+const int AS_TRACTS = 128;
+int as_actN;
+string[128] as_actDo;
+string[128] as_actArg;
+fixed[128] as_actDelay;
+// Actions waiting for their delay.
+const int AS_PENDING = 32;
+string[32] as_pendDo;
+string[32] as_pendArg;
+fixed[32] as_pendAt;
+
+void AS_Trigger (fixed x0, fixed y0, fixed x1, fixed y1, bool once, fixed chance) {
+    int i=as_trN;
+    if(i>=AS_TRIGGERS) {return;}
+    as_trN+=1;
+    as_trX0[i]=x0;as_trY0[i]=y0;as_trX1[i]=x1;as_trY1[i]=y1;as_trOnce[i]=once;as_trChance[i]=chance;as_trDone[i]=false;
+    as_trAct0[i]=as_actN;as_trActN[i]=0;
+}
+// An action of the trigger made last.
+void AS_TriggerDo (string act, string arg, fixed delay) {
+    if(as_actN>=AS_TRACTS || as_trN==0) {return;}
+    as_actDo[as_actN]=act;as_actArg[as_actN]=arg;as_actDelay[as_actN]=delay;as_actN+=1;
+    as_trActN[as_trN-1]+=1;
+}
+void AS_ActionLater (string act, string arg, fixed delay) {
+    int k;
+    if(delay<=0.0) {AS_Action(act,arg);return;}
+    for(k=0;k<AS_PENDING;k+=1) {
+        if(as_pendDo[k]=="") {as_pendDo[k]=act;as_pendArg[k]=arg;as_pendAt[k]=as_now+delay;return;}
+    }
+    AS_Action(act,arg);
+}
+// "a|b|c|": one of the options at random (an empty one does nothing), as logic_case PickRandomShuffle.
+string AS_PickOne (string opts) {
+    int n=1;int k;int pick;string s=opts;int at;
+    for(k=1;k<=StringLength(opts);k+=1) {if(StringSub(opts,k,k)=="|") {n+=1;}}
+    pick=RandomInt(0,n-1);
+    for(k=0;k<pick;k+=1) {
+        at=StringFind(s,"|",c_stringCase);
+        if(at<1) {return "";}
+        s=StringSub(s,at+1,StringLength(s));
+    }
+    at=StringFind(s,"|",c_stringCase);
+    if(at>=1) {s=StringSub(s,1,at-1);}
+    return s;
+}
+void AS_Action (string act, string arg) {
+    if(act=="spawn") {AS_SpawnerStart(arg);}
+    else if(act=="stop") {AS_SpawnerStop(arg);}
+    else if(act=="pick") {arg=AS_PickOne(arg);if(arg=="") {AS_Log("random pick: nothing");}else {AS_Log("random pick: "+arg);AS_SpawnerStart(arg);}}
+    else {AS_MissionAction(act,arg);}
+}
+void AS_TriggerPulse () {
+    int i;int k;bool inside;
+    for(k=0;k<AS_PENDING;k+=1) {
+        if(as_pendDo[k]!="" && as_now>=as_pendAt[k]) {AS_Action(as_pendDo[k],as_pendArg[k]);as_pendDo[k]="";}
+    }
+    if(as_tick%4!=1) {return;}
+    for(i=0;i<as_trN;i+=1) {
+        if(as_trDone[i]) {continue;}
+        inside=AS_CountIn(as_trX0[i],as_trY0[i],as_trX1[i],as_trY1[i])>0;
+        if(!inside) {continue;}
+        if(as_trOnce[i]) {as_trDone[i]=true;}
+        // trigger_asw_chance rolls once, on the first touch.
+        if(as_trChance[i]<1.0 && RandomFixed(0.0,1.0)>=as_trChance[i]) {as_trDone[i]=true;continue;}
+        for(k=as_trAct0[i];k<as_trAct0[i]+as_trActN[i];k+=1) {AS_ActionLater(as_actDo[k],as_actArg[k],as_actDelay[k]);}
+    }
+}
+void AS_TriggersClear () {
+    int k;
+    as_trN=0;as_actN=0;
+    for(k=0;k<AS_PENDING;k+=1) {as_pendDo[k]="";}
+}

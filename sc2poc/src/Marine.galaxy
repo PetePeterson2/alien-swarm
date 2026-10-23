@@ -1,11 +1,18 @@
 // =====================================================================
 // Marines: the WASD controller, the two cameras, aim, flashlight, laser
-// sight, health, death and respawn.
+// sight, health, death, spectating and switching marines.
 //
 // Top-down view (Alien Swarm's own): north-up camera at 60 degrees, the
 // marine faces the cursor through a full 360, W is always up the screen.
 // Third-person view (after PUBG: Battle Royale / Doodad Royale): the mouse
 // turns a camera behind the marine's shoulder, W runs where it looks.
+//
+// Alien Swarm's rules: a marine's health is 80 + 15 a Health point, its speed
+// 290 + 10 an Agility point (3 cells a second at 290); firing or reloading
+// slows it (to half for most guns). A dead marine stays dead for the mission:
+// its guns fall to the deck with its spare clips, and its player switches to
+// another of their own living marines (F1-F4) or watches a squadmate (left
+// click cycles). When the whole squad is down the mission is lost.
 // =====================================================================
 
 const fixed AS_MARINE_R = 0.33;
@@ -73,6 +80,8 @@ bool AS_LineClear (fixed x0, fixed y0, fixed x1, fixed y1) {
 // ---- spawning ---------------------------------------------------------
 point[5] as_respawnPt;
 bool[5] as_muzzleOn;           // the muzzle light is showing
+fixed AS_ProfileHealth (int p) {return 80.0+15.0*IntToFixed(AS_Skill(p,AS_SK_HEALTH));}
+// The marine deploys at the level's start with its health, its torch and its laser.
 void AS_MarineSpawn (int p) {
     point q=Point(as_spawnX+IntToFixed((p-1)%2)*1.2,as_spawnY+IntToFixed((p-1)/2)*1.2);
     if(as_respawnPt[p]!=null) {q=as_respawnPt[p];}
@@ -84,9 +93,10 @@ void AS_MarineSpawn (int p) {
         UnitSetPosition(as_m[p],q,false);
         libNtve_gf_ShowHideUnit(as_m[p],true);
     }
-    as_hp[p]=100.0;as_hpMax[p]=100.0;as_alive[p]=true;as_infestUntil[p]=0.0;
-    as_aim[p]=as_spawnFacing;as_mvX[p]=0.0;as_mvY[p]=0.0;as_knockX[p]=0.0;as_knockY[p]=0.0;
-    UnitSetPropertyFixed(as_m[p],c_unitPropLife,100.0);
+    as_hpMax[p]=AS_ProfileHealth(p);as_hp[p]=as_hpMax[p];as_alive[p]=true;as_infestUntil[p]=0.0;as_slowHeal[p]=0.0;
+    as_aim[p]=as_spawnFacing;as_mvX[p]=0.0;as_mvY[p]=0.0;as_knockX[p]=0.0;as_knockY[p]=0.0;as_rollUntil[p]=0.0;as_spectate[p]=0;as_using[p]= -1;
+    as_elecUntil[p]=0.0;as_ampUntil[p]=0.0;as_nvPower[p]=20.0;as_nvOn[p]=false;as_zoomScope[p]=0.0;
+    UnitSetPropertyFixed(as_m[p],c_unitPropLifeMax,as_hpMax[p]);UnitSetPropertyFixed(as_m[p],c_unitPropLife,as_hpMax[p]);
     if(as_torch[p]==null) {
         UnitCreate(1,"ASFlashlight",c_unitCreateIgnorePlacement,0,q,as_aim[p]);as_torch[p]=UnitLastCreated();
         UnitCreate(1,"ASLightWhite",c_unitCreateIgnorePlacement,0,q,0.0);as_glow[p]=UnitLastCreated();
@@ -99,18 +109,30 @@ void AS_MarineSpawn (int p) {
     AS_TorchShow(p);
     AS_CameraMode(p,as_view[p],0.0);
 }
+// The flashlight attachment throws a long bright beam; without it a marine carries the suit's own weaker lamp.
 void AS_TorchShow (int p) {
     libNtve_gf_ShowHideUnit(as_torch[p],as_alive[p] && as_lightOn[p]);
     libNtve_gf_ShowHideUnit(as_glow[p],as_alive[p] && as_lightOn[p]);
     libNtve_gf_ShowHideUnit(as_laser[p],as_alive[p]);
+    if(as_torch[p]!=null) {
+        if(AS_HasItem(p,AS_IT_FLASHLIGHT)) {UnitSetScale(as_torch[p],150.0,150.0,150.0);}
+        else {UnitSetScale(as_torch[p],100.0,100.0,100.0);}
+    }
 }
 
 // ---- cameras ----------------------------------------------------------
+// A player's camera follows their own marine, or the squadmate they are watching.
+unit AS_ViewUnit (int p) {
+    if(as_alive[p] || as_spectate[p]<=0 || !as_alive[as_spectate[p]]) {return as_m[p];}
+    return as_m[as_spectate[p]];
+}
 void AS_CameraMode (int p, int mode, fixed blend) {
+    unit u=AS_ViewUnit(p);
     as_view[p]=mode;
+    if(as_bot[p] && !(as_auto && p==1)) {return;}
     if(as_camUnit[p]!=null) {CameraFollowUnitGroup(p,libNtve_gf_ConvertUnitToUnitGroup(as_camUnit[p]),false,false);}
-    as_camUnit[p]=as_m[p];
-    CameraFollowUnitGroup(p,libNtve_gf_ConvertUnitToUnitGroup(as_m[p]),true,false);
+    as_camUnit[p]=u;
+    CameraFollowUnitGroup(p,libNtve_gf_ConvertUnitToUnitGroup(u),true,false);
     CameraSetValue(p,c_cameraValueNearClip,0.08,0.0,-1,0.0);
     CameraSetValue(p,c_cameraValueFarClip,400.0,0.0,-1,0.0);
     if(mode==0) {
@@ -154,12 +176,14 @@ void AS_Camera (int p) {
 void AS_KeyMove (int p, int k, bool down) {
     if(as_bot[p]) {return;}
     as_key[p][k]=down;
+    // Walking away from a panel or terminal closes it, as stepping out of its trigger does.
+    if(down && as_using[p]>=0) {AS_UseStop(p);}
 }
 // Where the gun points: the cursor in the top-down view (kept as an offset from
 // the marine, because the camera follows the marine and a still mouse sends no
 // events), the camera's heading in the third-person view.
 void AS_AimUpdate (int p) {
-    point here=UnitGetPosition(as_m[p]);fixed want;
+    fixed want;
     if(as_view[p]==1) {as_aim[p]=CameraGetYaw(p);return;}
     if(!as_mouseSeen[p]) {return;}
     if(as_mouseDX[p]*as_mouseDX[p]+as_mouseDY[p]*as_mouseDY[p]<0.04) {return;}
@@ -188,22 +212,36 @@ void AS_Walk (int p, fixed rate) {
     if(!as_walking[p]) {as_walking[p]=true;ActorSend(a,"AnimPlay ASWalk Walk PlayForever");as_walkRate[p]=0.0;}
     if(AbsF(rate-as_walkRate[p])>0.15) {as_walkRate[p]=rate;ActorSend(a,"AnimSetTimeScale ASWalk "+FixedToString(AS_Clamp(rate/2.2,0.5,1.8),2));}
 }
+// AS's MaxSpeed: 290 + 10 an Agility point, scaled by the difficulty; the gun in hand may weigh it down,
+// and firing or reloading slows it further.
+fixed AS_MarineSpeed (int p) {
+    fixed speed=AS_RUN*(290.0+10.0*IntToFixed(AS_Skill(p,AS_SK_AGILITY)))/290.0*AS_MarineSpeedScale();
+    int w=as_slot[p];
+    if(w>=1 && w<=AS_ITEMS) {
+        speed*=as_it[w].slowCarry;
+        if(as_now-as_lastShot[p]<0.15 || as_reloadEnd[p]>0.0) {speed*=as_it[w].slowFire;}
+        else if(w==AS_IT_MINIGUN && as_spin[p]>0.3) {speed*=0.4/0.95;}
+    }
+    if(as_zoomScope[p]>0.5) {speed*=0.5;}
+    return speed;
+}
 void AS_Move (int p) {
-    fixed f=0.0;fixed s=0.0;fixed wx;fixed wy;fixed k;fixed speed=AS_RUN;fixed yaw;fixed x;fixed y;fixed nx;fixed ny;fixed len;point here;
+    fixed f=0.0;fixed s=0.0;fixed wx;fixed wy;fixed k;fixed speed;fixed yaw;fixed x;fixed y;fixed nx;fixed ny;fixed len;point here;
     fixed sx;fixed sy;fixed step;fixed dir;fixed turn;int t;
     if(!as_alive[p]) {return;}
+    if(as_using[p]>=0) {AS_Walk(p,0.0);as_mvX[p]=0.0;as_mvY[p]=0.0;return;}
+    speed=AS_MarineSpeed(p);
     if(as_key[p][0]) {f+=1.0;}if(as_key[p][2]) {f-=1.0;}
     if(as_key[p][3]) {s+=1.0;}if(as_key[p][1]) {s-=1.0;}
     if(f!=0.0 && s!=0.0) {f*=0.7071;s*=0.7071;}
-    // Firing weighs the marine down a little; the minigun a lot.
-    if(as_now-as_lastShot[p]<0.2) {speed*=as_gun[as_slot[p]].recoilSlow;}
-    if(as_slot[p]==7 && as_spin[p]>0.2) {speed*=0.7;}
     if(as_bot[p]) {wx=as_botVX[p]*speed;wy=as_botVY[p]*speed;}
     else if(as_view[p]==0) {wx=s*speed;wy=f*speed;}
     else {
         yaw=CameraGetYaw(p);
         wx=(Cos(yaw)*f+Sin(yaw)*s)*speed;wy=(Sin(yaw)*f-Cos(yaw)*s)*speed;
     }
+    // A roll carries the marine on at twice running speed for a moment.
+    if(as_rollUntil[p]>as_now) {wx=as_rollX[p]*AS_RUN*2.2;wy=as_rollY[p]*AS_RUN*2.2;}
     // A short ramp to full speed and to a stop: about a tenth of a second.
     k=MinF(1.0,AS_DT*14.0);
     as_mvX[p]+=(wx-as_mvX[p])*k;as_mvY[p]+=(wy-as_mvY[p])*k;
@@ -235,6 +273,15 @@ void AS_Move (int p) {
     if(len>0.002) {UnitSetPosition(as_m[p],Point(nx,ny),true);}
     AS_Walk(p,len/AS_DT);
 }
+// SPACE: a quick roll the way the marine is moving (or aiming), clear of spit and bile.
+void AS_Roll (int p) {
+    fixed dx=as_mvX[p];fixed dy=as_mvY[p];fixed d=SquareRoot(dx*dx+dy*dy);
+    if(!as_alive[p] || as_now<as_rollNext[p] || as_using[p]>=0) {return;}
+    if(d<0.3) {dx=Cos(as_aim[p]);dy=Sin(as_aim[p]);d=1.0;}
+    as_rollX[p]=dx/d;as_rollY[p]=dy/d;as_rollUntil[p]=as_now+0.35;as_rollNext[p]=as_now+1.0;
+    AS_Sound("Marine_Stimpack",PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])),50.0,0.2);
+    AS_HintEvent("rolled",p);
+}
 void AS_Face (int p) {
     libNtve_gf_MakeModelFaceAngle(libNtve_gf_MainActorofUnit(as_m[p]),as_aim[p]);
     UnitSetFacing(as_m[p],as_aim[p],AS_DT);
@@ -248,7 +295,7 @@ void AS_Attachments (int p) {
         UnitSetPosition(as_glow[p],here,true);
     }
     UnitSetPosition(as_muzzle[p],PointWithOffsetPolar(here,0.8,as_aim[p]),true);
-    lit=as_now-as_lastShot[p]<0.07 && as_slot[p]!=6 && as_slot[p]!=10;
+    lit=as_now-as_lastShot[p]<0.07 && as_slot[p]!=AS_IT_RAILGUN && as_slot[p]!=AS_IT_SNIPER && !AS_IsDeployable(as_slot[p]) && as_slot[p]!=AS_IT_HEALGUN && as_slot[p]!=AS_IT_CHAINSAW;
     if(lit!=as_muzzleOn[p]) {as_muzzleOn[p]=lit;libNtve_gf_ShowHideUnit(as_muzzle[p],lit);}
     // The laser sight stops at the first bulkhead.
     d=AS_RayWall(gx,gy,as_aim[p],16.0);
@@ -259,53 +306,215 @@ void AS_Attachments (int p) {
 }
 
 // ---- health -----------------------------------------------------------
-void AS_HurtMarine (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock) {
-    point here;fixed ang;
-    if(!as_alive[p]) {return;}
+// The best value of an aura skill among living marines within r of (x, y) (GetHighestSkillValueNearby).
+int AS_AuraBest (int sk, fixed x, fixed y, fixed r) {
+    int q;int best=0;point mq;
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(!AS_Person(q) || !as_alive[q] || AS_Skill(q,sk)<=best) {continue;}
+        mq=UnitGetPosition(as_m[q]);
+        if(DistanceBetweenPoints(mq,Point(x,y))<=r) {best=AS_Skill(q,sk);}
+    }
+    return best;
+}
+// kind: 0 an alien, 1 a squadmate's fire (byP), 2 the world. Leadership may halve a hit; heavy armour takes a fifth;
+// a single hit bigger than the health left leaves a marine on 1 (asw_marine_death_protection), once.
+void AS_HurtMarineBy (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock, int kind, int byP) {
+    point here;fixed ang;fixed before;int lead;
+    if(!as_alive[p] || dmg<=0.0) {return;}
     here=UnitGetPosition(as_m[p]);
     if(knock>0.0) {
         ang=ATan2(PointGetY(here)-fromY,PointGetX(here)-fromX);
         as_knockX[p]+=Cos(ang)*knock;as_knockY[p]+=Sin(ang)*knock;
     }
+    if(kind==1) {
+        dmg*=AS_FFScale();
+        if(byP>=1 && byP<=AS_PLAYERS && byP!=p) {as_ffDealt[byP]+=dmg;AS_HintEvent("friendly_fire",byP);}
+    }
+    lead=AS_AuraBest(AS_SK_LEADERSHIP,PointGetX(here),PointGetY(here),7.5);
+    if(lead>0 && RandomFixed(0.0,1.0)<0.06*IntToFixed(lead)) {dmg*=0.5;}
+    if(AS_HasItem(p,AS_IT_ARMOR)) {dmg*=0.8;}
+    if(kind==0 && as_elecUntil[p]>as_now) {dmg*=0.25;}
     as_dmgTaken[p]+=dmg;
     if(as_god[p]) {dmg=0.0;}
+    before=as_hp[p];
+    if(dmg>=as_hp[p] && as_hp[p]>1.0 && kind!=2) {dmg=as_hp[p]-1.0;}
     as_hp[p]-=dmg;as_hurtFlash[p]=as_now;
+    if(kind==0) {AS_DirectorHurt(p,dmg,before);}
     AS_Fx("ASFxBlood",PointGetX(here),PointGetY(here),0.5,RandomFixed(0.0,360.0));
     if(dmg>=10.0) {CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.05,2.5,40.0,0.18);}
     if(as_hp[p]<=0.0) {AS_MarineDie(p);return;}
     UnitSetPropertyFixed(as_m[p],c_unitPropLife,MaxF(1.0,as_hp[p]));
+    if(as_hp[p]<as_hpMax[p]*0.4) {AS_HintEvent("hurt",p);}
 }
+void AS_HurtMarine (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock) {AS_HurtMarineBy(p,dmg,fromX,fromY,knock,0,0);}
+// Healing arrives slowly: 4 health every third of a second.
+void AS_Heal (int p, fixed amount, int byP) {
+    if(!as_alive[p] || amount<=0.0) {return;}
+    as_slowHeal[p]+=amount;
+    if(byP>=1 && byP<=AS_PLAYERS) {as_healed[byP]+=MinF(amount,as_hpMax[p]-as_hp[p]);}
+}
+// Burn out an infestation: a medic's Infestation Curing keeps less of the time left (100 - 25 a point percent).
+void AS_CureInfestation (int p, int byP) {
+    fixed keep=1.0;
+    if(as_infestUntil[p]<=as_now) {return;}
+    if(byP>=1 && AS_Class(byP)==AS_CL_MEDIC) {keep=1.0-0.25*IntToFixed(AS_Skill(byP,AS_SK_XENOWOUNDS));}
+    as_infestUntil[p]=as_now+(as_infestUntil[p]-as_now)*keep;
+    if(keep<0.01 || as_infestUntil[p]-as_now<0.3) {
+        as_infestUntil[p]=0.0;AS_Message(p,"<c val=\"8CFFA0\">Infestation cured</c>");
+        AS_HintEvent("cured",p);
+        if(byP>=1 && byP!=p) {AS_AchieveEvent(byP,"infestation_savior");}
+    }
+}
+// The marine falls: its guns drop to the deck with its spare clips; nobody comes back this mission.
 void AS_MarineDie (int p) {
-    point here=UnitGetPosition(as_m[p]);
-    as_alive[p]=false;as_hp[p]=0.0;as_respawnAt[p]=as_now+4.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;
+    point here=UnitGetPosition(as_m[p]);int k;int q;
+    as_alive[p]=false;as_hp[p]=0.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;as_slowHeal[p]=0.0;as_infestUntil[p]=0.0;
     as_deaths[p]+=1;
-    if(as_mission) {as_respawnAt[p]=as_now+AS_RESPAWN;}
+    if(as_using[p]>=0) {AS_UseStop(p);}
     AS_Fx("ASDieMarine",PointGetX(here),PointGetY(here),0.0,as_aim[p]);
     AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);
+    for(k=0;k<2;k+=1) {
+        if(as_inv[p][k]>0) {AS_DropWeapon(p,k,PointGetX(here)+Cos(as_aim[p]+IntToFixed(k)*120.0)*0.5,PointGetY(here)+Sin(as_aim[p]+IntToFixed(k)*120.0)*0.5);}
+    }
+    if(as_inv[p][2]>0 && as_charges[p]>0) {AS_DropWeapon(p,2,PointGetX(here)+Cos(as_aim[p]+240.0)*0.5,PointGetY(here)+Sin(as_aim[p]+240.0)*0.5);}
     libNtve_gf_ShowHideUnit(as_m[p],false);libNtve_gf_ShowHideUnit(as_muzzle[p],false);as_muzzleOn[p]=false;
     UnitSetPosition(as_m[p],Point(as_spawnX,as_spawnY),false);
     AS_TorchShow(p);
-    if(as_mission) {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying beside your squad in 10 seconds");}
-    else {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying in 4 seconds");}
+    AS_Log("p"+IntToString(p)+" ("+AS_MarineNameS(p)+") killed");
+    AS_AllMsg("<c val=\"FF5040\">"+AS_MarineNameS(p)+" is down</c>");
+    AS_MissionMarineDied(p);
+    // A player with another marine of their own still alive switches to it (F1-F4); one with none watches the squad.
+    if(!as_bot[p] || (as_auto && p==1)) {
+        q=AS_NextOwnMarine(p);
+        if(q>0) {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  press F"+IntToString(AS_OwnIndex(p,q))+" to take control of "+AS_MarineNameS(q));AS_HintEvent("should_switch",p);}
+        else {as_spectate[p]=AS_NextLiving(p,p);AS_CameraMode(p,as_view[p],0.6);AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  left click to watch another marine");}
+    }
+}
+// Living marines in slot order after `from`, wrapping round; 0 none.
+int AS_NextLiving (int p, int from) {
+    int k;int q;
+    for(k=1;k<=AS_PLAYERS;k+=1) {
+        q=(from-1+k)%AS_PLAYERS+1;
+        if(q!=p && AS_Person(q) && as_alive[q]) {return q;}
+    }
+    return 0;
+}
+void AS_SpectateNext (int p) {
+    as_spectate[p]=AS_NextLiving(p,MaxI(as_spectate[p],p));
+    AS_CameraMode(p,0,0.4);
 }
 void AS_MarinePulse (int p) {
-    point here;int i;
+    point here;fixed f;
     if(!as_alive[p]) {
-        if(as_now>=as_respawnAt[p] && AS_CanRespawn(p)) {
-            if(as_mission) {as_respawnPt[p]=AS_RespawnPoint(p);}
-            AS_MarineSpawn(p);
-            AS_Log("p"+IntToString(p)+" redeployed at "+AS_Where(p));
-            return;
-        }
+        // The watched marine fell: on to the next.
+        if(as_spectate[p]>0 && !as_alive[as_spectate[p]]) {AS_SpectateNext(p);}
         return;
     }
     if(as_infestUntil[p]>as_now) {
-        // Parasite infestation eats away until it runs its course or a medkit burns it out.
-        AS_HurtMarine(p,5.0*AS_DT,0.0,0.0,0.0);
+        // Infestation eats TotalInfestDamage over 20 s unless it is cured; electric armour fights it off.
+        if(as_elecUntil[p]>as_now) {as_infestUntil[p]-=AS_DT*0.4;}
+        AS_HurtMarineBy(p,AS_InfestTotal()/20.0*AS_DT,0.0,0.0,0.0,2,0);
+        if(as_alive[p] && as_now>as_infestUntil[p]-AS_DT) {as_infestUntil[p]=0.0;}
     }
-    here=UnitGetPosition(as_m[p]);
-    // Ammo crates refill every reserve.
-    for(i=0;i<as_ammoCount;i+=1) {
-        if(DistanceBetweenPoints(here,as_ammoAt[i])<1.3 && as_now-as_ammoMsgAt[p]>3.0) {AS_Resupply(p);}
+    if(!as_alive[p]) {return;}
+    if(as_slowHeal[p]>0.0 && as_now>=as_slowHealNext[p]) {
+        as_slowHealNext[p]=as_now+0.33;f=MinF(4.0,as_slowHeal[p]);as_slowHeal[p]-=f;
+        as_hp[p]=MinF(as_hpMax[p],as_hp[p]+f);
+        if(as_hp[p]>=as_hpMax[p]) {as_slowHeal[p]=0.0;}
+        UnitSetPropertyFixed(as_m[p],c_unitPropLife,MaxF(1.0,as_hp[p]));
     }
+}
+
+// ---- switching marines (F1-F4, as AS's single player) ---------------------
+// A player owns their own marine and every AI marine in the squad (AS offline: one player commands all four).
+bool AS_Owns (int p, int q) {
+    if(!AS_Person(q)) {return false;}
+    if(q==p) {return true;}
+    return as_bot[q] && !(as_auto && q==1) && AS_HumanCount()==1;
+}
+int AS_HumanCount () {
+    int q;int n=0;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && (!as_bot[q] || (as_auto && q==1))) {n+=1;}}
+    return n;
+}
+// The F-key of marine q among p's own (1 is p's own slot, then the AI marines in slot order).
+int AS_OwnIndex (int p, int q) {
+    int k;int n=1;
+    if(q==p) {return 1;}
+    for(k=1;k<=AS_PLAYERS;k+=1) {
+        if(k==p || !AS_Owns(p,k)) {continue;}
+        n+=1;
+        if(k==q) {return n;}
+    }
+    return 0;
+}
+int AS_OwnByIndex (int p, int n) {
+    int k;int i=1;
+    if(n==1) {return p;}
+    for(k=1;k<=AS_PLAYERS;k+=1) {
+        if(k==p || !AS_Owns(p,k)) {continue;}
+        i+=1;
+        if(i==n) {return k;}
+    }
+    return 0;
+}
+int AS_NextOwnMarine (int p) {
+    int k;
+    for(k=1;k<=AS_PLAYERS;k+=1) {if(k!=p && AS_Owns(p,k) && as_alive[k]) {return k;}}
+    return 0;
+}
+// Take over marine q: the two slots trade marines, so the player's slot always holds the marine they drive.
+void AS_SwitchTo (int p, int n) {
+    int q=AS_OwnByIndex(p,n);
+    if(q<=0 || q==p || !as_alive[q]) {return;}
+    AS_SwapMarines(p,q);
+    as_spectate[p]=0;
+    AS_CameraMode(p,as_view[p],0.3);
+    AS_Message(p,"Now in control of <c val=\"FFD24A\">"+AS_MarineNameS(p)+"</c>");
+    AS_Log("p"+IntToString(p)+" switched to "+AS_MarineNameS(p));
+    AS_HintEvent("switched",p);
+}
+void AS_SwapUnitOwner (unit u, int p) {
+    if(u!=null) {UnitSetOwner(u,p,true);}
+}
+void AS_SwapMarines (int a, int b) {
+    unit u;int i;fixed f;int n;bool c;point q;
+    u=as_m[a];as_m[a]=as_m[b];as_m[b]=u;
+    AS_SwapUnitOwner(as_m[a],a);AS_SwapUnitOwner(as_m[b],b);
+    u=as_torch[a];as_torch[a]=as_torch[b];as_torch[b]=u;
+    u=as_glow[a];as_glow[a]=as_glow[b];as_glow[b]=u;
+    u=as_muzzle[a];as_muzzle[a]=as_muzzle[b];as_muzzle[b]=u;
+    u=as_laser[a];as_laser[a]=as_laser[b];as_laser[b]=u;
+    n=as_prof[a];as_prof[a]=as_prof[b];as_prof[b]=n;
+    for(i=0;i<3;i+=1) {n=as_inv[a][i];as_inv[a][i]=as_inv[b][i];as_inv[b][i]=n;}
+    for(i=0;i<=AS_ITEMS;i+=1) {
+        n=as_mag[a][i];as_mag[a][i]=as_mag[b][i];as_mag[b][i]=n;
+        n=as_reserve[a][i];as_reserve[a][i]=as_reserve[b][i];as_reserve[b][i]=n;
+        n=as_alt[a][i];as_alt[a][i]=as_alt[b][i];as_alt[b][i]=n;
+    }
+    n=as_hand[a];as_hand[a]=as_hand[b];as_hand[b]=n;
+    n=as_slot[a];as_slot[a]=as_slot[b];as_slot[b]=n;
+    n=as_charges[a];as_charges[a]=as_charges[b];as_charges[b]=n;
+    f=as_hp[a];as_hp[a]=as_hp[b];as_hp[b]=f;
+    f=as_hpMax[a];as_hpMax[a]=as_hpMax[b];as_hpMax[b]=f;
+    c=as_alive[a];as_alive[a]=as_alive[b];as_alive[b]=c;
+    f=as_aim[a];as_aim[a]=as_aim[b];as_aim[b]=f;
+    f=as_infestUntil[a];as_infestUntil[a]=as_infestUntil[b];as_infestUntil[b]=f;
+    f=as_slowHeal[a];as_slowHeal[a]=as_slowHeal[b];as_slowHeal[b]=f;
+    f=as_reloadEnd[a];as_reloadEnd[a]=as_reloadEnd[b];as_reloadEnd[b]=f;
+    f=as_reloadStart[a];as_reloadStart[a]=as_reloadStart[b];as_reloadStart[b]=f;
+    f=as_elecUntil[a];as_elecUntil[a]=as_elecUntil[b];as_elecUntil[b]=f;
+    f=as_nvPower[a];as_nvPower[a]=as_nvPower[b];as_nvPower[b]=f;
+    n=as_kills[a];as_kills[a]=as_kills[b];as_kills[b]=n;
+    n=as_shotsFired[a];as_shotsFired[a]=as_shotsFired[b];as_shotsFired[b]=n;
+    n=as_shotsHit[a];as_shotsHit[a]=as_shotsHit[b];as_shotsHit[b]=n;
+    n=as_deaths[a];as_deaths[a]=as_deaths[b];as_deaths[b]=n;
+    f=as_dmgTaken[a];as_dmgTaken[a]=as_dmgTaken[b];as_dmgTaken[b]=f;
+    f=as_ffDealt[a];as_ffDealt[a]=as_ffDealt[b];as_ffDealt[b]=f;
+    f=as_healed[a];as_healed[a]=as_healed[b];as_healed[b]=f;
+    as_mvX[a]=0.0;as_mvY[a]=0.0;as_mvX[b]=0.0;as_mvY[b]=0.0;as_trigger[a]=false;as_trigger[b]=false;
+    as_using[a]= -1;as_using[b]= -1;as_walking[a]=false;as_walking[b]=false;
+    as_botGoalPt[b]=null;as_botLast[b]=null;
+    AS_TorchShow(a);AS_TorchShow(b);
+    AS_HudSwapped(a,b);
 }

@@ -1,0 +1,278 @@
+// =====================================================================
+// Hints, after Alien Swarm's game instructor (scripts/mod_lessons.txt): a key
+// and a caption at the bottom of the screen when something new comes up. Each
+// lesson has a priority (a higher one hides a lower), and stops showing for good
+// once shown its display limit or done its success limit times; the counts live
+// in the player's bank, as AS keeps them per user. The level fires some itself
+// (Landing Bay's start trigger: Move Marine; the walkway: View Full Map).
+// =====================================================================
+
+const int AS_LESSONS = 26;
+string[26] as_lsName;
+string[26] as_lsCaption;
+string[26] as_lsKey;
+int[26] as_lsPri;
+int[26] as_lsShowMax;          // display_limit (0 none)
+int[26] as_lsOkMax;            // success_limit (0 none)
+fixed[26] as_lsTimeout;        // seconds on screen (0 until closed)
+int[5][26] as_lsShown;
+int[5][26] as_lsOk;
+int[5] as_hintOn;              // the lesson on screen, -1 none
+fixed[5] as_hintUntil;
+int[5] as_dHint;
+int[5] as_cHintKey;
+int[5] as_cHintKeyT;
+int[5] as_cHintText;
+fixed[5] as_hintCheckAt;
+bool[5] as_hintMoved;
+
+const int AS_LS_MOVE = 0;
+const int AS_LS_MAP = 1;
+const int AS_LS_HACK = 2;
+const int AS_LS_WELD = 3;
+const int AS_LS_UNWELD = 4;
+const int AS_LS_HEAL = 5;
+const int AS_LS_INFESTED = 6;
+const int AS_LS_RELOAD = 7;
+const int AS_LS_CLIP = 8;
+const int AS_LS_OFFHAND = 9;
+const int AS_LS_SWITCHWEAPON = 10;
+const int AS_LS_GETWEAPON = 11;
+const int AS_LS_PLACESENTRY = 12;
+const int AS_LS_BUILDSENTRY = 13;
+const int AS_LS_BARREL = 14;
+const int AS_LS_FF = 15;
+const int AS_LS_SWITCHMARINE = 16;
+const int AS_LS_ROLL = 17;
+const int AS_LS_FOLLOW = 18;
+const int AS_LS_HOLD = 19;
+const int AS_LS_HELPOTHER = 20;
+const int AS_LS_NEEDTECH = 21;
+const int AS_LS_COMPUTER = 22;
+const int AS_LS_MELEE = 23;
+const int AS_LS_FASTRELOAD = 24;
+const int AS_LS_ALTFIRE = 25;
+
+void AS_Lesson (int i, string name, string caption, string key, int pri, int showMax, int okMax, fixed timeout) {
+    as_lsName[i]=name;as_lsCaption[i]=caption;as_lsKey[i]=key;as_lsPri[i]=pri;as_lsShowMax[i]=showMax;as_lsOkMax[i]=okMax;as_lsTimeout[i]=timeout;
+}
+void AS_HintsInit () {
+    int p;
+    AS_Lesson(AS_LS_INFESTED,"infested","Heal to Survive Infestation","1",140,0,3,20.0);
+    AS_Lesson(AS_LS_SWITCHMARINE,"switchmarine","Control Marine","F1-F4",150,0,3,15.0);
+    AS_Lesson(AS_LS_HELPOTHER,"helpother","Heal to Cure Infestation","",135,0,3,10.0);
+    AS_Lesson(AS_LS_FF,"ff","Don't Hurt Squad Mates","",115,4,0,3.5);
+    AS_Lesson(AS_LS_HACK,"hack","Unlock Panel","E",110,6,3,12.0);
+    AS_Lesson(AS_LS_NEEDTECH,"needtech","Tech Needed","",110,6,0,6.0);
+    AS_Lesson(AS_LS_COMPUTER,"computer","Hack Terminal","E",110,6,3,12.0);
+    AS_Lesson(AS_LS_WELD,"weld","Weld Door","1",106,0,3,12.0);
+    AS_Lesson(AS_LS_UNWELD,"unweld","Unweld Door","1",105,0,3,12.0);
+    AS_Lesson(AS_LS_HEAL,"heal","Heal Self","1",100,0,3,12.0);
+    AS_Lesson(AS_LS_RELOAD,"reload","Manual Reload","R",20,0,2,8.0);
+    AS_Lesson(AS_LS_CLIP,"clip","Ammo lost in old clip","",85,6,0,6.0);
+    AS_Lesson(AS_LS_OFFHAND,"offhand","Use Offhand Item","1",80,6,3,12.0);
+    AS_Lesson(AS_LS_SWITCHWEAPON,"switchweapon","Select Weapon","Q",75,4,0,10.0);
+    AS_Lesson(AS_LS_GETWEAPON,"getweapon","Pick Up","E",60,6,0,8.0);
+    AS_Lesson(AS_LS_PLACESENTRY,"placesentry","Place Sentry","LMB",73,0,3,12.0);
+    AS_Lesson(AS_LS_BUILDSENTRY,"buildsentry","Build Sentry","E",72,0,3,12.0);
+    AS_Lesson(AS_LS_BARREL,"barrel","Shoot Explosive","",45,2,0,6.0);
+    AS_Lesson(AS_LS_ROLL,"roll","Roll to Avoid Projectiles","SPACE",35,2,2,10.0);
+    AS_Lesson(AS_LS_FOLLOW,"follow","All Marines Follow","V",70,2,3,10.0);
+    AS_Lesson(AS_LS_HOLD,"hold","All Marines Hold Position","X",35,2,2,10.0);
+    AS_Lesson(AS_LS_MAP,"map","View Full Map","TAB",35,2,0,10.0);
+    AS_Lesson(AS_LS_MOVE,"move","Move Marine","WASD",30,0,2,0.0);
+    AS_Lesson(AS_LS_MELEE,"melee","Melee","RMB",50,2,2,8.0);
+    AS_Lesson(AS_LS_FASTRELOAD,"fastreload","Press R again in the window to fast reload","R",21,3,2,6.0);
+    AS_Lesson(AS_LS_ALTFIRE,"altfire","Secondary Fire","F",40,3,2,8.0);
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_hintOn[p]= -1;as_hintMoved[p]=false;}
+}
+// The counts from each player's bank (src/Progress.galaxy holds the banks).
+void AS_HintsLoad (int p) {
+    int i;
+    if(!as_bankOn[p]) {return;}
+    for(i=0;i<AS_LESSONS;i+=1) {
+        if(BankKeyExists(as_bank[p],"lesson",as_lsName[i]+"_s")) {as_lsShown[p][i]=BankValueGetAsInt(as_bank[p],"lesson",as_lsName[i]+"_s");}
+        if(BankKeyExists(as_bank[p],"lesson",as_lsName[i]+"_k")) {as_lsOk[p][i]=BankValueGetAsInt(as_bank[p],"lesson",as_lsName[i]+"_k");}
+    }
+}
+void AS_HintSave (int p, int i) {
+    if(!as_bankOn[p]) {return;}
+    BankValueSetFromInt(as_bank[p],"lesson",as_lsName[i]+"_s",as_lsShown[p][i]);
+    BankValueSetFromInt(as_bank[p],"lesson",as_lsName[i]+"_k",as_lsOk[p][i]);
+    as_bankDirty[p]=true;
+}
+bool AS_HintLearned (int p, int i) {
+    if(as_lsShowMax[i]>0 && as_lsShown[p][i]>=as_lsShowMax[i]) {return true;}
+    if(as_lsOkMax[i]>0 && as_lsOk[p][i]>=as_lsOkMax[i]) {return true;}
+    return false;
+}
+// A person's hint, not an AI marine's.
+bool AS_HintFor (int p) {return AS_Person(p) && (!as_bot[p] || (as_auto && p==1)) && as_dCenter[p]!=0;}
+void AS_HintOpen (int p, int i, string caption, string key) {
+    if(!AS_HintFor(p) || AS_HintLearned(p,i) || as_levelReady==false) {return;}
+    if(as_hintOn[p]==i) {as_hintUntil[p]=as_now+MaxF(as_lsTimeout[i],1.0);return;}
+    if(as_hintOn[p]>=0 && as_lsPri[as_hintOn[p]]>as_lsPri[i]) {return;}
+    if(caption=="") {caption=as_lsCaption[i];}
+    if(key=="-") {key=as_lsKey[i];}
+    as_hintOn[p]=i;
+    if(as_lsTimeout[i]>0.0) {as_hintUntil[p]=as_now+as_lsTimeout[i];}else {as_hintUntil[p]=as_now+600.0;}
+    as_lsShown[p][i]+=1;AS_HintSave(p,i);
+    AS_HintShow(p,caption,key);
+    AS_SoundUI(p,"AC_UI_OnClick01");
+}
+void AS_HintClose (int p, int i) {
+    if(!AS_Person(p) || as_hintOn[p]!=i) {return;}
+    as_hintOn[p]= -1;
+    AS_HintShow(p,"","");
+}
+void AS_HintSuccess (int p, int i) {
+    if(!AS_HintFor(p)) {return;}
+    as_lsOk[p][i]+=1;AS_HintSave(p,i);
+    AS_HintClose(p,i);
+}
+void AS_HintShow (int p, string caption, string key) {
+    int w;
+    if(as_dHint[p]==0) {
+        as_dHint[p]=DialogCreate(720,72,c_anchorBottom,0,AS_HUD_USE_B+AS_HUD_USE_H+18,false);DialogSetImageVisible(as_dHint[p],false);
+        AS_Art(as_dHint[p],0,0,720,72,"msgbox",AS_Full());
+        as_cHintKey[p]=AS_Art(as_dHint[p],14,8,96,56,"keycap",AS_Full());
+        as_cHintKeyT[p]=AS_Lbl(as_dHint[p],14,8,96,56,"ASKeyC","");
+        as_cHintText[p]=AS_Lbl(as_dHint[p],124,0,580,72,"ASHint","");
+    }
+    if(caption=="") {DialogSetVisible(as_dHint[p],AS_Me(p),false);return;}
+    AS_Text(as_cHintText[p],p,caption);
+    AS_Text(as_cHintKeyT[p],p,key);
+    AS_Show(as_cHintKey[p],p,key!="");AS_Show(as_cHintKeyT[p],p,key!="");
+    if(key=="") {AS_Place(as_cHintText[p],p,24,0);}else {AS_Place(as_cHintText[p],p,124,0);}
+    DialogSetVisible(as_dHint[p],AS_Me(p),true);
+}
+void AS_HintsHideAll () {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(as_dHint[p]!=0) {as_hintOn[p]= -1;DialogSetVisible(as_dHint[p],AS_Me(p),false);}}
+}
+
+// ---- events -----------------------------------------------------------------------------
+bool AS_HasHealing (int p) {
+    return (as_inv[p][2]==AS_IT_MEDKIT && as_charges[p]>0) || (AS_HasItem(p,AS_IT_HEALGUN) && as_mag[p][AS_IT_HEALGUN]>0) || (AS_HasItem(p,AS_IT_HEALBEACON) && as_mag[p][AS_IT_HEALBEACON]>0);
+}
+bool AS_SquadMedic (int p) {
+    int q;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(q!=p && AS_Person(q) && as_alive[q] && AS_Class(q)==AS_CL_MEDIC) {return true;}}
+    return false;
+}
+void AS_HintEvent (string ev, int p) {
+    int q;
+    if(!AS_Person(p)) {return;}
+    if(ev=="hurt") {
+        if(as_inv[p][2]==AS_IT_MEDKIT && as_charges[p]>0) {AS_HintOpen(p,AS_LS_HEAL,"","1");}
+        else if(AS_HasHealing(p)) {AS_HintOpen(p,AS_LS_HEAL,"Heal Self","-");}
+        else if(AS_SquadMedic(p)) {AS_HintOpen(p,AS_LS_HEAL,"Call Medic","");}
+    }
+    else if(ev=="healed") {AS_HintSuccess(p,AS_LS_HEAL);}
+    else if(ev=="infested") {
+        if(AS_HasHealing(p)) {AS_HintOpen(p,AS_LS_INFESTED,"","1");}
+        else if(AS_SquadMedic(p)) {AS_HintOpen(p,AS_LS_INFESTED,"Call Medic to Survive Infestation","");}
+        for(q=1;q<=AS_PLAYERS;q+=1) {if(q!=p && AS_HasHealing(q) && AS_Class(q)==AS_CL_MEDIC) {AS_HintOpen(q,AS_LS_HELPOTHER,"","");}}
+    }
+    else if(ev=="cured") {AS_HintSuccess(p,AS_LS_INFESTED);for(q=1;q<=AS_PLAYERS;q+=1) {AS_HintClose(q,AS_LS_HELPOTHER);}}
+    else if(ev=="clip_wasted") {AS_HintOpen(p,AS_LS_CLIP,"","");}
+    else if(ev=="got_extra") {AS_HintOpen(p,AS_LS_OFFHAND,"","-");}
+    else if(ev=="used_extra") {AS_HintSuccess(p,AS_LS_OFFHAND);}
+    else if(ev=="got_weapon") {AS_HintOpen(p,AS_LS_SWITCHWEAPON,"","-");}
+    else if(ev=="switched_weapon") {AS_HintClose(p,AS_LS_SWITCHWEAPON);}
+    else if(ev=="need_tech") {AS_HintOpen(p,AS_LS_NEEDTECH,"","");}
+    else if(ev=="hacking") {AS_HintSuccess(p,AS_LS_HACK);AS_HintSuccess(p,AS_LS_COMPUTER);}
+    else if(ev=="door_welded") {AS_HintSuccess(p,AS_LS_WELD);}
+    else if(ev=="door_unwelded") {AS_HintSuccess(p,AS_LS_UNWELD);}
+    else if(ev=="sentry_down") {AS_HintSuccess(p,AS_LS_PLACESENTRY);AS_HintOpen(p,AS_LS_BUILDSENTRY,"","-");}
+    else if(ev=="sentry_built") {AS_HintSuccess(p,AS_LS_BUILDSENTRY);}
+    else if(ev=="friendly_fire") {AS_HintOpen(p,AS_LS_FF,"","");}
+    else if(ev=="should_switch") {AS_HintOpen(p,AS_LS_SWITCHMARINE,"","-");}
+    else if(ev=="switched") {AS_HintSuccess(p,AS_LS_SWITCHMARINE);}
+    else if(ev=="rolled") {AS_HintSuccess(p,AS_LS_ROLL);}
+    else if(ev=="reloaded") {AS_HintSuccess(p,AS_LS_RELOAD);}
+    else if(ev=="alt_fire") {AS_HintSuccess(p,AS_LS_ALTFIRE);}
+    else if(ev=="melee") {AS_HintSuccess(p,AS_LS_MELEE);}
+    else if(ev=="no_ammo") {if(as_inv[p][1-as_hand[p]]>0) {AS_HintOpen(p,AS_LS_SWITCHWEAPON,"","-");}}
+}
+// Hints the level fires (tools/landingbay.py TRIGGERS: hint <name>).
+void AS_HintMap (string name) {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_HintFor(p) || !as_alive[p]) {continue;}
+        if(name=="movement") {AS_HintOpen(p,AS_LS_MOVE,"","-");}
+        else if(name=="general") {AS_HintOpen(p,AS_LS_MAP,"","-");}
+        else if(name=="hack_panel") {
+            if(AS_IsTech(p)) {AS_HintOpen(p,AS_LS_HACK,"Unlock Panel","E");}
+            else {AS_HintOpen(p,AS_LS_NEEDTECH,"Tech Needed: your tech must hack the door panel","");}
+        }
+        else if(name=="welder") {AS_HintOpen(p,AS_LS_GETWEAPON,"Pick Up Hand Welder","E");}
+        else if(name=="cut_door") {
+            if(as_inv[p][2]==AS_IT_WELDER) {AS_HintOpen(p,AS_LS_UNWELD,"Unweld Door: hold 1 facing the door","1");}
+            else {AS_HintOpen(p,AS_LS_UNWELD,"Welded shut: cut it open with a welder","");}
+        }
+        else if(name=="computer") {
+            if(AS_IsTech(p)) {AS_HintOpen(p,AS_LS_COMPUTER,"Hack Terminal","E");}
+            else {AS_HintOpen(p,AS_LS_NEEDTECH,"Tech Needed: protect your tech while they hack the terminal","");}
+        }
+    }
+}
+void AS_HintWeld (int d) {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(AS_HintFor(p) && as_alive[p] && as_inv[p][2]==AS_IT_WELDER) {AS_HintOpen(p,AS_LS_WELD,"Weld Door: hold 1 at the door behind you","1");}
+    }
+}
+void AS_HintSentrySpot () {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(AS_HintFor(p) && as_alive[p] && (AS_IsSentry(as_inv[p][0]) || AS_IsSentry(as_inv[p][1]))) {AS_HintOpen(p,AS_LS_PLACESENTRY,"Place Sentry: select it and fire","LMB");}
+    }
+}
+// Looked at a few times a second: what is near each marine that a lesson covers.
+void AS_HintPulse () {
+    int p;int w;int i;point here;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_HintFor(p)) {continue;}
+        if(as_hintOn[p]>=0 && as_now>as_hintUntil[p]) {AS_HintClose(p,as_hintOn[p]);}
+        if(!as_alive[p] || as_now<as_hintCheckAt[p]) {continue;}
+        as_hintCheckAt[p]=as_now+0.5;
+        here=UnitGetPosition(as_m[p]);
+        if(!as_hintMoved[p] && DistanceBetweenPoints(here,Point(as_spawnX,as_spawnY))>3.0) {as_hintMoved[p]=true;AS_HintSuccess(p,AS_LS_MOVE);}
+        w=as_slot[p];
+        // A clip nearly spent and spares to load: reload by hand.
+        if(w>0 && !AS_IsDeployable(w) && w!=AS_IT_CHAINSAW && w!=AS_IT_HEALGUN && as_reloadEnd[p]==0.0 && as_reserve[p][w]>0 && as_mag[p][w]>0 && as_mag[p][w]<as_it[w].mag/5) {AS_HintOpen(p,AS_LS_RELOAD,"","-");}
+        if(as_reloadEnd[p]>0.0 && as_it[w].reload>=1.5) {AS_HintOpen(p,AS_LS_FASTRELOAD,"","-");}
+        if(as_using[p]<0 && AS_UseFind(p)) {
+            if(as_useKind==AS_USE_PANEL && as_drLocked[as_useRef]) {
+                if(AS_IsTech(p)) {AS_HintOpen(p,AS_LS_HACK,"","-");}else {AS_HintOpen(p,AS_LS_NEEDTECH,"","");}
+            }
+            if(as_useKind==AS_USE_TERMINAL && as_cpLocked[as_useRef] && AS_IsTech(p)) {AS_HintOpen(p,AS_LS_COMPUTER,"","-");}
+        }
+        i=AS_DropNear(p);
+        if(i>=0 && AS_CanCarry(p,as_dropItem[i])) {AS_HintOpen(p,AS_LS_GETWEAPON,"Pick Up "+as_it[as_dropItem[i]].title,"E");}
+        // A barrel or a sealed door in sight.
+        for(i=0;i<AS_MAXALIEN;i+=1) {
+            if(as_a[i]!=null && as_aKind[i]==AS_BARREL && DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]))<6.0 && AS_LineClear(PointGetX(here),PointGetY(here),as_aX[i],as_aY[i])) {AS_HintOpen(p,AS_LS_BARREL,"","");break;}
+            if(as_a[i]!=null && (as_aKind[i]==AS_RANGER || as_aKind[i]==AS_MORTAR) && as_aAwake[i] && DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]))<9.0) {AS_HintOpen(p,AS_LS_ROLL,"","-");break;}
+        }
+        for(i=0;i<as_drN;i+=1) {
+            if(as_drSeal[i]>0.0 && !as_drBroken[i] && DistanceBetweenPoints(here,Point(AS_DoorCX(i),AS_DoorCY(i)))<4.0) {
+                if(as_inv[p][2]==AS_IT_WELDER) {AS_HintOpen(p,AS_LS_UNWELD,"","-");}
+                break;
+            }
+        }
+        // A single player leading AI marines: they can be told to follow or hold.
+        if(AS_HumanCount()==1 && as_botCount>0 && as_now-as_missionStart>40.0) {AS_HintOpen(p,AS_LS_FOLLOW,"All Marines Follow  (X: hold position)","V");}
+        if(as_now-as_missionStart>90.0) {AS_HintOpen(p,AS_LS_MELEE,"Melee: a kick knocks the swarm back","RMB");}
+        if((AS_ItemAlt(as_slot[p])) && as_now-as_missionStart>20.0) {AS_HintOpen(p,AS_LS_ALTFIRE,"Secondary Fire: "+AS_AltName(as_slot[p]),"F");}
+    }
+}
+void AS_HintMapSeen (int p) {AS_HintSuccess(p,AS_LS_MAP);}
+bool AS_ItemAlt (int w) {return w>0 && (as_it[w].alt==AS_ALT_FRAG || as_it[w].alt==AS_ALT_STUN || as_it[w].alt==AS_ALT_FIRE);}
+string AS_AltName (int w) {
+    if(as_it[w].alt==AS_ALT_FRAG) {return "grenade";}
+    if(as_it[w].alt==AS_ALT_STUN) {return "stun grenade";}
+    if(as_it[w].alt==AS_ALT_FIRE) {return "incendiary grenade";}
+    return "";
+}

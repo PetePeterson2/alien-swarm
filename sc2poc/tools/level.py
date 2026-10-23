@@ -439,7 +439,7 @@ def paint_names():
 
 def sign_names():
     """Wall signs for the level's passages: slug -> text."""
-    return {name.replace(' ', '').upper(): name.upper() for name, rect, kind in AREAS if kind in ('hall', 'duct')}
+    return {name.replace(' ', '').upper(): name.upper() for name, rect, kind in AREAS if kind in ('hall', 'duct') and not name.endswith('Door')}
 
 
 def sign_pieces(slugs):
@@ -573,7 +573,7 @@ def decal_spots(floor, room, solid, seed=7):
             if run and len(run) <= 12 and all(not (0 <= xx < W) or not floor[cy, xx] for xx in (run[0] - 1, run[-1] + 1)):
                 spots.append(('KPDoor%d' % len(run), (run[0] + run[-1] + 1) / 2.0, float(y), 0.0))
                 # The passage beyond named on the room's wall beside the door, where it faces the camera.
-                if cy == y and 0 <= y - 1 and AREAS[room[y, run[0]]][2] in corridor:
+                if cy == y and 0 <= y - 1 and AREAS[room[y, run[0]]][2] in corridor and not AREAS[room[y, run[0]]][0].endswith('Door'):
                     sx = run[-1] + 2.2
                     if sx + 1 < W and all(0 <= sx + dx < W and not floor[y, int(sx + dx)] and floor[y - 1, int(sx + dx)] for dx in (-0.8, 0.0, 0.79)):
                         spots.append(('KS' + AREAS[room[y, run[0]]][0].replace(' ', '').upper(), sx, float(y), 0.0))

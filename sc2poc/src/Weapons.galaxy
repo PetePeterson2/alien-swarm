@@ -1,47 +1,129 @@
 // =====================================================================
-// Weapons: the ten primaries of the weapon table (State.galaxy), rifle
-// grenades, sentry guns, medkits and flares.
+// Weapons and equipment: the 21 weapons and 17 extra items of Alien Swarm's
+// equipment list (State.galaxy), with its numbers. Distances are AS units /
+// 80 (the levels are traced at about 80 units a cell).
 //
 // Shots are resolved when they are fired, against the aliens' current
 // positions: hitscan rays stopped by the first bulkhead (AS_RayWall), with
-// a small aim assist toward any alien within a few degrees of the aim line,
-// as Alien Swarm's own autoaim does. Fire intervals shorter than a 1/16 s
-// step fire several shots in that step.
+// aim assist toward an alien within a few degrees of the aim line, as Alien
+// Swarm's autoaim does (more with the autogun and prototype rifle, and near a
+// flare). Damage per round is the script's base_damage plus the skill bonus
+// (Accuracy for most guns), doubled inside a damage amp field, and doubled
+// again on a lucky roll near an officer (3% a Leadership point).
+// Keys: LEFT fire, F or MIDDLE secondary fire, RIGHT melee, R reload (press it
+// again in the marked window for a fast reload), Q swap weapons (or the wheel),
+// 1 the extra item, E use, SPACE roll.
 // =====================================================================
 
-const fixed AS_ASSIST = 5.0;            // degrees of aim assist
+const fixed AS_ASSIST = 4.0;            // degrees of aim assist, plain guns
+const fixed AS_FLARE_AIM = 3.1;         // asw_flare_autoaim_radius 250
+unit[16] as_flare;                      // burning flares (lights), and how long each has left
+fixed[16] as_flareUntil;
+int as_flareNext;
+int as_flareCount;
 
+// ---- loadout --------------------------------------------------------------
+// The marine's three items, chosen in the briefing (src/Briefing.galaxy) or the profile's defaults, with full ammo.
 void AS_GiveLoadout (int p) {
-    int w;
-    for(w=1;w<=AS_WEAPONS;w+=1) {as_mag[p][w]=as_gun[w].mag;as_reserve[p][w]=as_gun[w].reserve;}
-    as_grenades[p]=8;as_sentries[p]=2;as_medkits[p]=3;as_flares[p]=5;
-    as_slot[p]=1;as_reloadEnd[p]=0.0;as_nextShot[p]=0.0;
+    int k;int it;int prof=as_prof[p];
+    for(it=0;it<=AS_ITEMS;it+=1) {as_mag[p][it]=0;as_reserve[p][it]=0;as_alt[p][it]=0;}
+    if(prof<0) {as_inv[p][0]=AS_IT_RIFLE;as_inv[p][1]=AS_IT_PISTOLS;as_inv[p][2]=AS_IT_MEDKIT;}
+    for(k=0;k<3;k+=1) {
+        it=as_inv[p][k];
+        if(it<=0) {continue;}
+        as_mag[p][it]=as_it[it].mag;as_reserve[p][it]=as_it[it].reserve;as_alt[p][it]=as_it[it].altAmmo;
+        // A medic's healing items carry more with Healing (asw_gamerules.cpp 2871-2886).
+        if(it==AS_IT_HEALBEACON) {as_mag[p][it]=4+AS_Skill(p,AS_SK_HEALING);}
+        if(it==AS_IT_HEALGUN) {as_mag[p][it]=40+10*AS_Skill(p,AS_SK_HEALING);}
+        if(it==AS_IT_CHAINSAW) {as_mag[p][it]=1;}
+    }
+    as_charges[p]=0;
+    if(as_inv[p][2]>0) {as_charges[p]=as_it[as_inv[p][2]].mag;}
+    as_hand[p]=0;as_slot[p]=as_inv[p][0];
+    as_reloadEnd[p]=0.0;as_nextShot[p]=0.0;as_nextAlt[p]=0.0;as_spin[p]=0.0;as_zoomScope[p]=0.0;
+    as_lightOn[p]=true;
 }
+// An ammo stash or crate: a refill of the gun in hand (its cost from the stash).
 void AS_Resupply (int p) {
-    int w;
-    for(w=1;w<=AS_WEAPONS;w+=1) {as_reserve[p][w]=as_gun[w].reserve;}
-    as_grenades[p]=8;as_flares[p]=MaxI(as_flares[p],3);
+    int k;int it;
+    for(k=0;k<2;k+=1) {
+        it=as_inv[p][k];
+        if(it<=0 || AS_IsDeployable(it) || it==AS_IT_CHAINSAW) {continue;}
+        as_reserve[p][it]=as_it[it].reserve;as_alt[p][it]=MaxI(as_alt[p][it],as_it[it].altAmmo);
+    }
     as_ammoMsgAt[p]=as_now;
     AS_Message(p,"<c val=\"8CFFA0\">AMMO RESUPPLIED</c>");
 }
-void AS_Select (int p, int slot) {
-    if(slot<1 || slot>AS_WEAPONS || slot==as_slot[p] || !as_alive[p]) {return;}
-    as_slot[p]=slot;as_reloadEnd[p]=0.0;as_spin[p]=0.0;
+void AS_SelectHand (int p, int hand) {
+    int it;
+    if(hand<0 || hand>1 || !as_alive[p]) {return;}
+    it=as_inv[p][hand];
+    if(it<=0 || (hand==as_hand[p] && as_slot[p]==it)) {return;}
+    as_hand[p]=hand;as_slot[p]=it;as_reloadEnd[p]=0.0;as_spin[p]=0.0;as_zoomScope[p]=0.0;
     as_nextShot[p]=MaxF(as_nextShot[p],as_now+0.3);
     as_semiReady[p]=true;
+    if(as_view[p]==0 && !as_bot[p]) {CameraSetValue(p,c_cameraValueDistance,as_zoom[p],0.3,-1,0.0);}
+    AS_HintEvent("switched_weapon",p);
 }
+void AS_SwapWeapon (int p) {AS_SelectHand(p,1-as_hand[p]);}
+// R: start a reload; R again in the marked window finishes it fast (AS's active reload), a miss jams it.
+fixed AS_ReloadTime (int p, int w) {return as_it[w].reload*(1.4-0.14*IntToFixed(AS_Skill(p,AS_SK_RELOADING)));}
 void AS_Reload (int p) {
-    int w=as_slot[p];
-    if(!as_alive[p] || as_reloadEnd[p]>0.0 || as_mag[p][w]>=as_gun[w].mag || as_reserve[p][w]<=0) {return;}
-    as_reloadStart[p]=as_now;as_reloadEnd[p]=as_now+as_gun[w].reload;as_spin[p]=0.0;
+    int w=as_slot[p];fixed t;fixed width;
+    if(!as_alive[p] || w<=0 || AS_IsDeployable(w) || w==AS_IT_CHAINSAW || w==AS_IT_HEALGUN) {return;}
+    if(as_reloadEnd[p]>0.0) {AS_FastReloadTry(p);return;}
+    if(as_mag[p][w]>=as_it[w].mag || as_reserve[p][w]<=0) {return;}
+    // A part-used clip is thrown away.
+    if(as_mag[p][w]>0 && IntToFixed(as_mag[p][w])>=IntToFixed(as_it[w].mag)*0.6 && as_it[w].mag>=2) {AS_HintEvent("clip_wasted",p);}
+    t=AS_ReloadTime(p,w);
+    as_reloadStart[p]=as_now;as_reloadEnd[p]=as_now+t;as_spin[p]=0.0;as_fastTried[p]=false;
+    width=0.10;
+    if(as_skill==3) {width=RandomFixed(0.08,0.12);}else if(as_skill==4) {width=RandomFixed(0.06,0.10);}else if(as_skill==5) {width=RandomFixed(0.055,0.09);}
+    width*=1.0+0.05*IntToFixed(AS_Skill(p,AS_SK_RELOADING));
+    as_fastFrom[p]=RandomFixed(0.29,0.35);as_fastTo[p]=as_fastFrom[p]+width;
+    as_mag[p][w]=0;
+    AS_Sound("Doodad_LightBulbFlickerClick",PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])),60.0,0.3);
+}
+void AS_FastReloadTry (int p) {
+    fixed f;
+    if(as_fastTried[p] || as_reloadEnd[p]<=as_now) {return;}
+    as_fastTried[p]=true;
+    f=(as_now-as_reloadStart[p])/MaxF(0.1,as_reloadEnd[p]-as_reloadStart[p]);
+    if(f>=as_fastFrom[p] && f<=as_fastTo[p]) {
+        as_reloadEnd[p]=as_now+0.5;
+        AS_Message(p,"<c val=\"8CFFA0\">FAST RELOAD</c>");AS_SoundUI(p,"UI_Achievement");
+        AS_AchieveEvent(p,"fast_reload");
+    }
+    else {
+        as_reloadEnd[p]=MaxF(as_now+2.0,as_reloadEnd[p]+1.0);
+        AS_Message(p,"<c val=\"FF6050\">RELOAD JAMMED</c>");
+        AS_AchieveEvent(p,"fast_reload_miss");
+    }
 }
 
+// ---- damage -------------------------------------------------------------
+// Inside a damage amp's field, and in step with Alien Swarm's damage a second.
+fixed AS_ShotDamage (int p, int w) {
+    fixed d=as_it[w].damage;point here;int lead;
+    if(as_it[w].dmgSkill>=0) {d+=as_it[w].dmgStep*IntToFixed(AS_Skill(p,as_it[w].dmgSkill));}
+    if(as_it[w].rateAS>0.0 && as_it[w].rate!=as_it[w].rateAS) {d*=as_it[w].rate/as_it[w].rateAS;}
+    if(as_ampUntil[p]>as_now) {d*=2.0;}
+    if(p>=1 && p<=AS_PLAYERS && as_m[p]!=null) {
+        here=UnitGetPosition(as_m[p]);
+        lead=AS_AuraBest(AS_SK_LEADERSHIP,PointGetX(here),PointGetY(here),7.5);
+        if(lead>0 && RandomFixed(0.0,1.0)<0.03*IntToFixed(lead)) {d*=2.0;}
+    }
+    return d;
+}
+fixed AS_GrenadeDamage (int p) {return 80.0+10.0*IntToFixed(AS_Skill(p,AS_SK_GRENADES));}
+fixed AS_GrenadeRadius (int p) {return (280.0+20.0*IntToFixed(AS_Skill(p,AS_SK_GRENADES)))/80.0;}
+
 // ---- targets ----------------------------------------------------------
-// The alien nearest the aim line within `cone` degrees and `range` with a clear line, or -1.
+// The alien nearest the aim line within `cone` degrees and `range` with a clear line, or -1. Barrels are not aimed at.
 int AS_AssistTarget (fixed x, fixed y, fixed aim, fixed range, fixed cone) {
     int i;int best= -1;fixed bestScore=1000.0;fixed d;fixed off;fixed dx;fixed dy;
     for(i=0;i<AS_MAXALIEN;i+=1) {
-        if(as_a[i]==null || as_aKind[i]==AS_BIOMASS) {continue;}
+        if(as_a[i]==null || as_aKind[i]==AS_BIOMASS || as_aKind[i]==AS_BARREL) {continue;}
         dx=as_aX[i]-x;dy=as_aY[i]-y;
         if(AbsF(dx)>range || AbsF(dy)>range) {continue;}
         d=SquareRoot(dx*dx+dy*dy);
@@ -52,14 +134,23 @@ int AS_AssistTarget (fixed x, fixed y, fixed aim, fixed range, fixed cone) {
     }
     return best;
 }
+// Aliens in a flare's glow draw the aim harder (ShouldFlareAutoaim weapons).
+bool AS_InFlare (int i) {
+    int k;
+    for(k=0;k<16;k+=1) {
+        if(as_flare[k]==null) {continue;}
+        if(DistanceBetweenPoints(UnitGetPosition(as_flare[k]),Point(as_aX[i],as_aY[i]))<AS_FLARE_AIM) {return true;}
+    }
+    return false;
+}
 // ---- traces and bullets -------------------------------------------------
 // A trace finds what a shot will strike: up to pierce+1 aliens in order along the
 // line, stopping at the first bulkhead. Bullets then fly that line visibly and deal
 // each hit when they reach it, so a kill lands as the tracer arrives.
 int[96] as_rayHit;
 fixed[96] as_rayAlong;
-int[8] as_tHit;
-fixed[8] as_tAt;
+int[12] as_tHit;
+fixed[12] as_tAt;
 int as_tCount;
 fixed as_tEnd;
 bool as_tWall;
@@ -76,12 +167,14 @@ void AS_Trace (fixed x, fixed y, fixed ang, fixed range, int pierce) {
         as_rayHit[n]=i;as_rayAlong[n]=MaxF(0.0,along-SquareRoot(MaxF(0.0,(as_aRadius[i]+0.1)*(as_aRadius[i]+0.1)-perp*perp)));n+=1;
     }
     as_tCount=0;as_tEnd=wall;as_tWall=wall<range-0.05;
-    while(as_tCount<=pierce && as_tCount<8) {
+    while(as_tCount<=pierce && as_tCount<12) {
         best= -1;bestAlong=1000.0;
         for(k=0;k<n;k+=1) {if(as_rayAlong[k]>lim && as_rayAlong[k]<bestAlong) {best=k;bestAlong=as_rayAlong[k];}}
         if(best<0) {break;}
         lim=bestAlong;
         as_tHit[as_tCount]=as_rayHit[best];as_tAt[as_tCount]=bestAlong;as_tCount+=1;
+        // Nothing passes through a shieldbug.
+        if(as_aKind[as_rayHit[best]]==AS_SHIELDBUG) {as_tEnd=bestAlong;as_tWall=false;break;}
         if(as_tCount>pierce) {as_tEnd=bestAlong;as_tWall=false;}
     }
 }
@@ -90,11 +183,11 @@ void AS_HitAlien (int j, int p, fixed x, fixed y, fixed ang, fixed at, fixed dmg
     fixed hx=x+Cos(ang)*at;fixed hy=y+Sin(ang)*at;point q;fixed size;
     if(as_a[j]==null) {return;}
     size=AS_Clamp(0.6+dmg*0.02,0.6,1.6);
-    AS_Spray(hx,hy,AS_GUN_Z,ang,size);
+    if(as_aKind[j]!=AS_BARREL) {AS_Spray(hx,hy,AS_GUN_Z,ang,size);}
     AS_FxUnit("ASFxFlash",hx,hy,AS_GUN_Z,RandomFixed(0.0,360.0),0.3,0.3,"255,255,200",1);
     AS_Sound("Marine_AttackImpact",hx,hy,70.0,0.04);
     as_aHitAng[j]=ang;
-    if(push>0.0 && as_aKind[j]!=AS_SHIELDBUG && as_aKind[j]!=AS_BOOMER && as_aKind[j]!=AS_EGG && as_aKind[j]!=AS_BIOMASS && as_aKind[j]!=AS_HARVESTER) {
+    if(push>0.0 && as_aKind[j]!=AS_SHIELDBUG && as_aKind[j]!=AS_BOOMER && !AS_IsThing(as_aKind[j]) && as_aKind[j]!=AS_HARVESTER) {
         q=UnitGetPosition(as_a[j]);
         if(AS_Free(PointGetX(q)+Cos(ang)*push,PointGetY(q)+Sin(ang)*push,as_aRadius[j])) {
             UnitSetPosition(as_a[j],Point(PointGetX(q)+Cos(ang)*push,PointGetY(q)+Sin(ang)*push),true);
@@ -105,7 +198,7 @@ void AS_HitAlien (int j, int p, fixed x, fixed y, fixed ang, fixed at, fixed dmg
     if(as_a[j]!=null) {AS_Flinch(j,ang,dmg);}
     if(p>=1 && p<=AS_PLAYERS) {as_shotsHit[p]+=1;}
 }
-// Instant shots (railgun, sniper rifle): everything on the line is hit now. Returns the length.
+// Instant shots (railgun, marksman rifle): everything on the line is hit now. Returns the length.
 fixed AS_Instant (int p, fixed x, fixed y, fixed ang, fixed range, fixed dmg, int pierce, int kind, fixed push) {
     int k;
     AS_Trace(x,y,ang,range,pierce);
@@ -127,22 +220,23 @@ fixed[128] as_buDmg;
 fixed[128] as_buPush;
 int[128] as_buBy;
 int[128] as_buKind;
+int[128] as_buItem;
 int[128] as_buN;
 int[128] as_buNext;
 int[128] as_buBorn;
 bool[128] as_buWall;
 bool[128] as_buDone;
 string[128] as_buRot;          // the round's rotation message (AS_AimMsg), built once
-int[128][8] as_buHit;
-unit[128][8] as_buHitU;
-fixed[128][8] as_buHitAt;
+int[128][12] as_buHit;
+unit[128][12] as_buHitU;
+fixed[128][12] as_buHitAt;
 int as_buSlot;
 void AS_BulletHits (int i, fixed upTo) {
     int k;int j;
     while(as_buNext[i]<as_buN[i] && as_buHitAt[i][as_buNext[i]]<=upTo) {
         k=as_buNext[i];j=as_buHit[i][k];as_buNext[i]+=1;
         // The same alien it was aimed at, not whatever took its slot since.
-        if(as_a[j]!=null && as_a[j]==as_buHitU[i][k]) {AS_HitAlien(j,as_buBy[i],as_buX[i],as_buY[i],as_buAng[i],as_buHitAt[i][k],as_buDmg[i],as_buKind[i],as_buPush[i]);}
+        if(as_a[j]!=null && as_a[j]==as_buHitU[i][k]) {as_dmgItem=as_buItem[i];AS_HitAlien(j,as_buBy[i],as_buX[i],as_buY[i],as_buAng[i],as_buHitAt[i][k],as_buDmg[i],as_buKind[i],as_buPush[i]);as_dmgItem=0;}
     }
 }
 void AS_BulletStep (int i) {
@@ -169,7 +263,7 @@ void AS_Bullet (int p, fixed x, fixed y, fixed ang, fixed range, fixed dmg, int 
     if(as_bu[i]!=null) {AS_BulletHits(i,1000.0);UnitRemove(as_bu[i]);as_bu[i]=null;}
     AS_Trace(x,y,ang,range,pierce);
     as_buX[i]=x;as_buY[i]=y;as_buAng[i]=ang;as_buSpeed[i]=speed;as_buT[i]=0.0;as_buEnd[i]=MaxF(0.1,as_tEnd);as_buLen[i]=len;as_buW[i]=width;
-    as_buDmg[i]=dmg;as_buPush[i]=push;as_buBy[i]=p;as_buKind[i]=kind;as_buN[i]=as_tCount;as_buNext[i]=0;as_buWall[i]=as_tWall;as_buDone[i]=false;as_buBorn[i]=as_tick;
+    as_buDmg[i]=dmg;as_buPush[i]=push;as_buBy[i]=p;as_buKind[i]=kind;as_buItem[i]=as_dmgItem;as_buN[i]=as_tCount;as_buNext[i]=0;as_buWall[i]=as_tWall;as_buDone[i]=false;as_buBorn[i]=as_tick;
     // A round due part way through the last step has flown that much further already:
     // rounds that leave in one step are spaced along the line as they were fired.
     as_buT[i]=MinF(as_buEnd[i]*0.5,speed*as_shotLead);
@@ -192,26 +286,45 @@ void AS_BulletPulse () {
         AS_BulletStep(i);
     }
 }
+// Squadmates in the line of fire take a share of the round (friendly fire; AI marines never hurt the squad).
+void AS_ShotFF (int p, fixed x, fixed y, fixed ang, fixed range, fixed dmg) {
+    int q;point mq;fixed dx;fixed dy;fixed along;fixed perp;fixed wall;
+    if(as_bot[p] && !(as_auto && p==1)) {return;}
+    wall=AS_RayWall(x,y,ang,range);
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(q==p || !AS_Person(q) || !as_alive[q]) {continue;}
+        mq=UnitGetPosition(as_m[q]);dx=PointGetX(mq)-x;dy=PointGetY(mq)-y;
+        along=dx*Cos(ang)+dy*Sin(ang);
+        if(along<0.2 || along>MinF(wall,as_tEnd)) {continue;}
+        perp=AbsF(dx*Sin(ang)-dy*Cos(ang));
+        if(perp<AS_MARINE_R) {AS_HurtMarineBy(q,dmg*0.5,x,y,0.0,1,p);}
+    }
+}
+
 // ---- firing -----------------------------------------------------------
 void AS_FirePulse (int p) {
     int w=as_slot[p];int shots=0;
-    if(!as_alive[p]) {return;}
+    if(!as_alive[p] || w<=0) {return;}
     if(as_reloadEnd[p]>0.0 && as_now>=as_reloadEnd[p]) {
-        shots=MinI(as_gun[w].mag-as_mag[p][w],as_reserve[p][w]);
+        shots=MinI(as_it[w].mag-as_mag[p][w],as_reserve[p][w]);
         as_mag[p][w]+=shots;as_reserve[p][w]-=shots;as_reloadEnd[p]=0.0;shots=0;
     }
     if(!as_trigger[p]) {as_semiReady[p]=true;}
-    // The minigun's barrels spin up while the trigger is held and wind down after.
-    if(w==7) {
-        if(as_trigger[p] && as_reloadEnd[p]==0.0) {as_spin[p]=MinF(1.0,as_spin[p]+AS_DT/0.6);}
-        else {as_spin[p]=MaxF(0.0,as_spin[p]-AS_DT/0.8);}
+    // The minigun's barrels spin up while the trigger (or the secondary) is held and wind down after.
+    if(w==AS_IT_MINIGUN) {
+        if((as_trigger[p] || as_trigger2[p]) && as_reloadEnd[p]==0.0) {as_spin[p]=MinF(1.0,as_spin[p]+AS_DT/1.0);}
+        else {as_spin[p]=MaxF(0.0,as_spin[p]-AS_DT*0.4);}
     }
-    if(!as_trigger[p] || as_reloadEnd[p]>0.0) {return;}
-    if(as_gun[w].semi && !as_semiReady[p]) {return;}
-    if(w==7 && as_spin[p]<0.45) {return;}
+    if(as_trigger2[p]) {AS_SecondaryHeld(p);}
+    if(!as_trigger[p] || as_reloadEnd[p]>0.0 || as_using[p]>=0) {return;}
+    if(as_it[w].semi && !as_semiReady[p]) {return;}
+    if(w==AS_IT_MINIGUN && as_spin[p]<0.75) {return;}
+    if(AS_IsDeployable(w)) {AS_Deploy(p,w);return;}
+    if(w==AS_IT_CHAINSAW) {AS_ChainsawPulse(p);return;}
+    if(w==AS_IT_HEALGUN) {AS_HealGunPulse(p,false);return;}
     if(as_mag[p][w]<=0) {
         if(as_reserve[p][w]>0) {AS_Reload(p);}
-        else if(as_now-as_ammoMsgAt[p]>2.0) {as_ammoMsgAt[p]=as_now;AS_Message(p,"<c val=\"FF5040\">OUT OF AMMO</c>  -  find an ammo crate or switch weapons");}
+        else if(as_now-as_ammoMsgAt[p]>2.0) {as_ammoMsgAt[p]=as_now;AS_Message(p,"<c val=\"FF5040\">OUT OF AMMO</c>  -  find more or switch weapons (Q)");AS_HintEvent("no_ammo",p);}
         return;
     }
     // From a standing start the first round goes now; in a stream each round keeps its
@@ -220,115 +333,222 @@ void AS_FirePulse (int p) {
     while(as_now>=as_nextShot[p] && as_mag[p][w]>0 && shots<4) {
         as_shotLead=MinF(AS_DT,as_now-as_nextShot[p]);
         AS_Shoot(p,w);shots+=1;as_shotLead=0.0;
-        if(w==7) {as_nextShot[p]+=as_gun[w].rate/MaxF(0.3,as_spin[p]);}
-        else {as_nextShot[p]+=as_gun[w].rate;}
-        if(as_gun[w].semi) {as_semiReady[p]=false;break;}
+        if(w==AS_IT_MINIGUN) {as_nextShot[p]+=as_it[w].rate/MaxF(0.3,as_spin[p]);}
+        else {as_nextShot[p]+=as_it[w].rate;}
+        if(as_it[w].semi) {as_semiReady[p]=false;break;}
     }
     if(as_mag[p][w]<=0 && as_reserve[p][w]>0) {AS_Reload(p);}
 }
+// The pistols fire as fast as the trigger is pulled: a new click may fire at once.
+void AS_TriggerPulled (int p) {
+    if(as_slot[p]==AS_IT_PISTOLS && as_now>=as_lastShot[p]+0.0625) {as_nextShot[p]=MinF(as_nextShot[p],as_now);}
+}
 void AS_Shoot (int p, int w) {
     point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed aim=as_aim[p];fixed gx;fixed gy;fixed ang;fixed d;fixed side;fixed dist;
-    int k;int t;point at;
-    as_mag[p][w]-=1;as_lastShot[p]=as_now;as_shotsFired[p]+=1;
+    int k;int t;point at;fixed dmg;fixed cone=as_it[w].autoaim;int pierce=as_it[w].pierce;
+    // The minigun burns half a round a bullet.
+    if(w!=AS_IT_MINIGUN || as_shotsFired[p]%2==0) {as_mag[p][w]-=1;}
+    as_lastShot[p]=as_now;as_shotsFired[p]+=1;
     side=0.12;
-    if(w==5) {as_pistolSide[p]=1-as_pistolSide[p];if(as_pistolSide[p]==0) {side= -0.14;}else {side=0.14;}}
+    if(w==AS_IT_PISTOLS || w==AS_IT_PDW) {as_pistolSide[p]=1-as_pistolSide[p];if(as_pistolSide[p]==0) {side= -0.14;}else {side=0.14;}}
     gx=x+Cos(aim)*0.5+Cos(aim-90.0)*side;gy=y+Sin(aim)*0.5+Sin(aim-90.0)*side;
     // Keep the muzzle on this side of a bulkhead the marine is pressed against.
     if(AS_Solid(gx,gy)) {gx=x;gy=y;}
-    // Aim assist: snap to an alien hugging the aim line.
-    if(as_gun[w].kind==0 || as_gun[w].kind==5 || as_gun[w].kind==2) {
-        t=AS_AssistTarget(gx,gy,aim,as_gun[w].range,AS_ASSIST);
-        if(t>=0) {aim=ATan2(PointGetY(UnitGetPosition(as_a[t]))-gy,PointGetX(UnitGetPosition(as_a[t]))-gx);}
+    dmg=AS_ShotDamage(p,w);
+    // Aim assist: snap to an alien hugging the aim line (wider for one lit by a flare).
+    if(w!=AS_IT_FLAMER && w!=AS_IT_LAUNCHER && w!=AS_IT_TESLA) {
+        t=AS_AssistTarget(gx,gy,aim,as_it[w].range,cone);
+        if(t<0 && as_flareCount>0) {t=AS_AssistTarget(gx,gy,aim,as_it[w].range,cone*3.0);if(t>=0 && !AS_InFlare(t)) {t= -1;}}
+        if(t>=0) {aim=ATan2(as_aY[t]-gy,as_aX[t]-gx);}
     }
-    AS_Sound(as_gun[w].snd,gx,gy,80.0,0.06);
-    if(as_gun[w].kind==1) {
-        // Flamer: a stream of burning puffs.
-        for(k=0;k<2;k+=1) {AS_Puff(p,gx,gy,aim+RandomFixed(0.0-as_gun[w].spread,as_gun[w].spread)*0.5,RandomFixed(8.0,10.5),RandomFixed(0.5,0.65),as_shotLead+IntToFixed(k)*AS_DT*0.5);}
+    AS_Sound(as_it[w].snd,gx,gy,80.0,0.06);
+    if(w==AS_IT_FLAMER) {
+        // Two burning gobs a round.
+        for(k=0;k<2;k+=1) {AS_Puff(p,gx,gy,aim+RandomFixed(0.0-as_it[w].spread,as_it[w].spread)*0.5,RandomFixed(7.0,8.3),RandomFixed(0.85,1.0),as_shotLead+IntToFixed(k)*AS_DT*0.5,dmg,false);}
         return;
     }
-    if(as_gun[w].kind==3) {
-        // Grenade launcher: an arcing shell to the cursor, or as far as it reaches.
-        at=AS_AimPoint(p);dist=MinF(as_gun[w].range,MaxF(3.0,DistanceBetweenPoints(Point(gx,gy),at)));
-        AS_Lob(p,0,gx,gy,aim,dist,as_gun[w].damage,3.0);
+    if(w==AS_IT_LAUNCHER) {
+        at=AS_AimPoint(p);dist=MinF(as_it[w].range,MaxF(3.0,DistanceBetweenPoints(Point(gx,gy),at)));
+        AS_Lob(p,0,gx,gy,aim,dist,AS_GrenadeDamage(p),AS_GrenadeRadius(p));
         AS_Flash(gx,gy,AS_GUN_Z,0.6,"255,170,80");
         return;
     }
-    if(as_gun[w].kind==4) {AS_Tesla(p,gx,gy,aim);return;}
-    AS_FxUnit("ASFxFlash",gx+Cos(aim)*0.15,gy+Sin(aim)*0.15,AS_GUN_Z,RandomFixed(0.0,360.0),0.55+0.15*IntToFixed(as_gun[w].pellets/3),0.55+0.15*IntToFixed(as_gun[w].pellets/3),as_gun[w].tint,2);
-    for(k=0;k<as_gun[w].pellets;k+=1) {
-        ang=aim+RandomFixed(0.0-as_gun[w].spread,as_gun[w].spread)*0.5;
-        if(as_gun[w].kind==2) {
+    if(w==AS_IT_TESLA) {AS_Tesla(p,gx,gy,aim,dmg);return;}
+    AS_FxUnit("ASFxFlash",gx+Cos(aim)*0.15,gy+Sin(aim)*0.15,AS_GUN_Z,RandomFixed(0.0,360.0),0.55+0.15*IntToFixed(as_it[w].pellets/3),0.55+0.15*IntToFixed(as_it[w].pellets/3),as_it[w].tint,2);
+    // Special weapons marines' rounds may pierce one more alien (20% a Piercing point).
+    if(AS_Class(p)==AS_CL_SW && RandomFixed(0.0,1.0)<0.2*IntToFixed(AS_Skill(p,AS_SK_PIERCING))) {pierce+=1;}
+    if(w==AS_IT_SNIPER && as_ampUntil[p]>as_now) {pierce=3;}
+    for(k=0;k<as_it[w].pellets;k+=1) {
+        ang=aim+RandomFixed(0.0-as_it[w].spread,as_it[w].spread)*0.5;
+        if(w==AS_IT_RAILGUN) {
             // The railgun's slug: instant, through everything in line, a lingering beam.
-            d=AS_Instant(p,gx,gy,ang,as_gun[w].range,as_gun[w].damage,as_gun[w].pierce,0,0.4);
-            AS_Tracer(gx,gy,gx+Cos(ang)*d,gy+Sin(ang)*d,AS_GUN_Z,as_gun[w].tint,3.0,8);
+            d=AS_Instant(p,gx,gy,ang,as_it[w].range,dmg,pierce,0,0.4);
+            AS_Tracer(gx,gy,gx+Cos(ang)*d,gy+Sin(ang)*d,AS_GUN_Z,as_it[w].tint,3.0,8);
             AS_FxUnit("ASLightCold",gx+Cos(ang)*d*0.5,gy+Sin(ang)*d*0.5,1.0,0.0,1.0,1.0,"",3);
             CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.04,3.0,40.0,0.15);
         }
-        else if(w==10) {
-            d=AS_Instant(p,gx,gy,ang,as_gun[w].range,as_gun[w].damage,as_gun[w].pierce,0,0.3);
-            AS_Tracer(gx,gy,gx+Cos(ang)*d,gy+Sin(ang)*d,AS_GUN_Z,as_gun[w].tint,1.8,4);
+        else if(w==AS_IT_SNIPER) {
+            d=AS_Instant(p,gx,gy,ang,as_it[w].range,dmg,pierce,0,0.3);
+            AS_Tracer(gx,gy,gx+Cos(ang)*d,gy+Sin(ang)*d,AS_GUN_Z,as_it[w].tint,1.8,4);
         }
         // Everything else fires bullets you can watch fly: speed, width, streak length, shove.
-        else if(w==3) {AS_Bullet(p,gx,gy,ang,as_gun[w].range,as_gun[w].damage,0,0,58.0,as_gun[w].tint,1.1,1.0,0.12);}
-        else if(w==5) {AS_Bullet(p,gx,gy,ang,as_gun[w].range,as_gun[w].damage,0,0,70.0,as_gun[w].tint,1.6,1.6,0.08);}
-        else if(w==7) {AS_Bullet(p,gx,gy,ang,as_gun[w].range,as_gun[w].damage,0,0,80.0,as_gun[w].tint,1.2,2.0,0.03);}
-        else if(w==2) {AS_Bullet(p,gx,gy,ang,as_gun[w].range,as_gun[w].damage,0,0,75.0,as_gun[w].tint,1.5,1.8,0.04);}
-        else {AS_Bullet(p,gx,gy,ang,as_gun[w].range,as_gun[w].damage,as_gun[w].pierce,0,72.0,as_gun[w].tint,1.4,1.8,0.03);}
+        else if(w==AS_IT_SHOTGUN || w==AS_IT_VINDICATOR) {AS_Bullet(p,gx,gy,ang,as_it[w].range,dmg,0,0,58.0,as_it[w].tint,1.1,1.0,0.12);}
+        else if(w==AS_IT_PISTOLS) {AS_Bullet(p,gx,gy,ang,as_it[w].range,dmg,pierce,0,70.0,as_it[w].tint,1.6,1.6,0.08);}
+        else if(w==AS_IT_MINIGUN) {AS_Bullet(p,gx,gy,ang,as_it[w].range,dmg,pierce,0,80.0,as_it[w].tint,1.2,2.0,0.03);}
+        else if(w==AS_IT_AUTOGUN) {AS_Bullet(p,gx,gy,ang,as_it[w].range,dmg,pierce,0,75.0,as_it[w].tint,1.5,1.8,0.04);}
+        else if(w==AS_IT_PDW) {AS_Bullet(p,gx,gy,ang,as_it[w].range,dmg,pierce,0,72.0,as_it[w].tint,1.2,1.4,0.02);}
+        else {AS_Bullet(p,gx,gy,ang,as_it[w].range,dmg,pierce,0,72.0,as_it[w].tint,1.4,1.8,0.03);}
+        AS_ShotFF(p,gx,gy,ang,as_it[w].range,dmg);
     }
-    if(w==3) {CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.03,3.0,40.0,0.12);}
+    if(w==AS_IT_SHOTGUN || w==AS_IT_VINDICATOR) {CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.03,3.0,40.0,0.12);}
 }
-// Rifle under-barrel grenade (right mouse with the assault rifle).
-void AS_Secondary (int p) {
-    point here;fixed dist;
-    if(!as_alive[p] || as_slot[p]!=1 || as_grenades[p]<=0 || as_now<as_nextShot[p]) {return;}
-    here=UnitGetPosition(as_m[p]);
-    as_grenades[p]-=1;as_nextShot[p]=as_now+0.6;as_lastShot[p]=as_now;
-    dist=MinF(14.0,MaxF(3.0,DistanceBetweenPoints(here,AS_AimPoint(p))));
-    AS_Lob(p,1,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p],dist,80.0,2.6);
-    AS_Sound("Raynor_TossGrenadeLaunch",PointGetX(here),PointGetY(here),80.0,0.1);
-}
-// Tesla cannon: an arc to the nearest alien in front, chaining on to two more.
-void AS_Tesla (int p, fixed x, fixed y, fixed aim) {
-    int t=AS_AssistTarget(x,y,aim,as_gun[9].range,28.0);int hop;int next;int j;fixed bx=x;fixed by=y;point q;fixed d;fixed best;
+// Tesla cannon: latches onto the alien in front within 240 units and arcs to two more beside it (2 cells),
+// every quarter second: the target takes twice the tick, each hop less; everything it touches is stunned.
+void AS_Tesla (int p, fixed x, fixed y, fixed aim, fixed tick) {
+    int t=AS_AssistTarget(x,y,aim,as_it[AS_IT_TESLA].range,28.0);int hop;int next;int j;fixed bx=x;fixed by=y;fixed d;fixed best;fixed dmg;
     bool[96] done;
     if(t<0) {
-        d=AS_RayWall(x,y,aim,3.0);
+        d=AS_RayWall(x,y,aim,1.8);
         AS_Arc(x,y,x+Cos(aim)*d,y+Sin(aim)*d,AS_GUN_Z);
         return;
     }
+    dmg=tick*2.0;
     for(hop=0;hop<3 && t>=0;hop+=1) {
-        q=UnitGetPosition(as_a[t]);
-        AS_Arc(bx,by,PointGetX(q),PointGetY(q),AS_GUN_Z);
-        AS_FxUnit("ASLightCold",PointGetX(q),PointGetY(q),0.8,0.0,0.6,0.6,"",2);
+        AS_Arc(bx,by,as_aX[t],as_aY[t],AS_GUN_Z);
+        AS_FxUnit("ASLightCold",as_aX[t],as_aY[t],0.8,0.0,0.6,0.6,"",2);
         done[t]=true;
-        as_aStunUntil[t]=as_now+0.5;
-        bx=PointGetX(q);by=PointGetY(q);
-        AS_HurtAlien(t,as_gun[9].damage*(1.0-0.25*IntToFixed(hop)),3,p,x,y);
-        next= -1;best=4.5;
+        AS_Stun(t,6.0);
+        bx=as_aX[t];by=as_aY[t];
+        AS_HurtAlien(t,dmg,3,p,x,y);
+        dmg=MaxF(tick*0.5,dmg*0.6);
+        next= -1;best=2.0;
         for(j=0;j<AS_MAXALIEN;j+=1) {
-            if(as_a[j]==null || done[j] || as_aKind[j]==AS_BIOMASS) {continue;}
-            d=DistanceBetweenPoints(Point(bx,by),UnitGetPosition(as_a[j]));
-            if(d<best && AS_LineClear(bx,by,PointGetX(UnitGetPosition(as_a[j])),PointGetY(UnitGetPosition(as_a[j])))) {best=d;next=j;}
+            if(as_a[j]==null || done[j] || AS_IsThing(as_aKind[j])) {continue;}
+            d=DistanceBetweenPoints(Point(bx,by),Point(as_aX[j],as_aY[j]));
+            if(d<best && AS_LineClear(bx,by,as_aX[j],as_aY[j])) {best=d;next=j;}
         }
         t=next;
     }
     as_shotsHit[p]+=1;
 }
+// Chainsaw: everything in reach of the blade, every step, no ammo (0.5 x (1 + melee damage) a tenth of a second).
+void AS_ChainsawPulse (int p) {
+    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);int j;fixed dx;fixed dy;fixed d;fixed dmg;
+    as_lastShot[p]=as_now;
+    if(as_now<as_nextShot[p]) {return;}
+    as_nextShot[p]=as_now+as_it[AS_IT_CHAINSAW].rate;
+    dmg=0.5*(1.0+AS_MeleeDamage(p))*1.25;
+    AS_Sound("Ultralisk_Attack",x,y,55.0,0.4);
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || as_aKind[j]==AS_BIOMASS) {continue;}
+        dx=as_aX[j]-x;dy=as_aY[j]-y;d=SquareRoot(dx*dx+dy*dy)-as_aRadius[j];
+        if(d>as_it[AS_IT_CHAINSAW].range || AbsF(AS_AngleDiff(ATan2(dy,dx),as_aim[p]))>50.0) {continue;}
+        AS_Spray(as_aX[j],as_aY[j],0.5,as_aim[p],0.8);
+        AS_HurtAlien(j,dmg,0,p,x,y);
+        as_shotsHit[p]+=1;
+    }
+}
+// The medical gun: a beam to the marine under the aim (or yourself with secondary fire), healing a tick a third of a second.
+void AS_HealGunPulse (int p, bool self) {
+    int q;int best=0;fixed bd=as_it[AS_IT_HEALGUN].range;fixed d;point here=UnitGetPosition(as_m[p]);point mq;fixed off;fixed heal;
+    if(as_now<as_nextShot[p] || as_mag[p][AS_IT_HEALGUN]<=0) {return;}
+    if(self) {best=p;}
+    else {
+        for(q=1;q<=AS_PLAYERS;q+=1) {
+            if(q==p || !AS_Person(q) || !as_alive[q]) {continue;}
+            mq=UnitGetPosition(as_m[q]);d=DistanceBetweenPoints(here,mq);
+            off=AbsF(AS_AngleDiff(ATan2(PointGetY(mq)-PointGetY(here),PointGetX(mq)-PointGetX(here)),as_aim[p]));
+            if(d<bd && off<35.0 && AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(mq),PointGetY(mq))) {bd=d;best=q;}
+        }
+    }
+    if(best==0) {return;}
+    if(as_hp[best]>=as_hpMax[best] && as_infestUntil[best]<=as_now) {return;}
+    as_nextShot[p]=as_now+as_it[AS_IT_HEALGUN].rate;as_mag[p][AS_IT_HEALGUN]-=1;as_lastShot[p]=as_now;
+    heal=5.0+IntToFixed(AS_Skill(p,AS_SK_HEALING));
+    AS_Heal(best,heal,p);AS_CureInfestation(best,p);
+    mq=UnitGetPosition(as_m[best]);
+    if(best!=p) {AS_FxUnit("ASFxArc",PointGetX(here),PointGetY(here),0.9,ATan2(PointGetY(mq)-PointGetY(here),PointGetX(mq)-PointGetX(here)),DistanceBetweenPoints(here,mq),0.7,"90,255,120",3);}
+    AS_Burst(PointGetX(mq),PointGetY(mq),0.8,0.5,"90,255,120",3);
+}
 
-// ---- lobbed things: grenades, alien spit and bile, flares ---------------
-const int AS_LOBS = 32;
-unit[32] as_lob;
-int[32] as_lobKind;            // 0 launcher shell, 1 rifle grenade, 2 ranger spit, 3 mortar bile, 4 flare
-int[32] as_lobBy;
-fixed[32] as_lobX;
-fixed[32] as_lobY;
-fixed[32] as_lobVX;
-fixed[32] as_lobVY;
-fixed[32] as_lobT;
-fixed[32] as_lobDur;
-fixed[32] as_lobArc;
-fixed[32] as_lobDmg;
-fixed[32] as_lobRadius;
+// ---- secondary fire (F, middle mouse) -------------------------------------------------
+void AS_Secondary (int p) {
+    int w=as_slot[p];point here;fixed dist;
+    if(!as_alive[p] || w<=0 || as_using[p]>=0) {return;}
+    if(as_it[w].alt==AS_ALT_ZOOM) {
+        if(as_zoomScope[p]>0.5) {as_zoomScope[p]=0.0;CameraSetValue(p,c_cameraValueDistance,as_zoom[p],0.3,-1,0.0);}
+        else {as_zoomScope[p]=1.0;CameraSetValue(p,c_cameraValueDistance,as_zoom[p]*1.45,0.3,-1,0.0);}
+        return;
+    }
+    if(as_it[w].alt!=AS_ALT_FRAG && as_it[w].alt!=AS_ALT_STUN && as_it[w].alt!=AS_ALT_FIRE) {return;}
+    if(as_alt[p][w]<=0 || as_now<as_nextAlt[p] || as_reloadEnd[p]>0.0) {
+        if(as_alt[p][w]<=0 && as_now-as_ammoMsgAt[p]>1.5) {as_ammoMsgAt[p]=as_now;AS_Message(p,"No grenades left for the "+as_it[w].title);}
+        return;
+    }
+    here=UnitGetPosition(as_m[p]);
+    as_alt[p][w]-=1;as_nextAlt[p]=as_now+1.0;as_nextShot[p]=MaxF(as_nextShot[p],as_now+0.5);as_lastShot[p]=as_now;
+    dist=MinF(14.0,MaxF(2.0,DistanceBetweenPoints(here,AS_AimPoint(p))));
+    if(as_it[w].alt==AS_ALT_FRAG) {AS_Lob(p,1,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p],dist,AS_GrenadeDamage(p),AS_GrenadeRadius(p));}
+    else if(as_it[w].alt==AS_ALT_STUN) {AS_Lob(p,5,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p],dist,1.0,AS_GrenadeRadius(p));}
+    else {AS_Lob(p,6,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p],MinF(dist,8.0),20.0,AS_GrenadeRadius(p));}
+    AS_Sound("Raynor_TossGrenadeLaunch",PointGetX(here),PointGetY(here),80.0,0.1);
+    AS_HintEvent("alt_fire",p);
+}
+// Held secondaries: the extinguisher spray, the minigun's spin (FirePulse), healing yourself.
+void AS_SecondaryHeld (int p) {
+    int w=as_slot[p];point here;int k;
+    if(w==AS_IT_HEALGUN) {AS_HealGunPulse(p,true);return;}
+    if(w==AS_IT_FLAMER && as_mag[p][w]>0 && as_now>=as_nextShot[p]) {
+        here=UnitGetPosition(as_m[p]);as_nextShot[p]=as_now+0.125;as_mag[p][w]-=1;as_lastShot[p]=as_now;
+        for(k=0;k<2;k+=1) {AS_Puff(p,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p]+RandomFixed(-8.0,8.0),5.0,0.8,0.0,0.0,true);}
+    }
+}
+
+// ---- melee (right mouse) -------------------------------------------------------------
+// A rifle-butt kick at what is in front: 30 + 6 a Melee point, twice that with the power fist; a shove.
+fixed AS_MeleeDamage (int p) {
+    fixed d=30.0+6.0*IntToFixed(AS_Skill(p,AS_SK_MELEE));
+    if(AS_HasItem(p,AS_IT_FIST)) {d*=2.0;}
+    return d;
+}
+void AS_Melee (int p) {
+    point here;fixed x;fixed y;int j;fixed dx;fixed dy;fixed d;bool hit=false;fixed ang;int kind;
+    if(!as_alive[p] || as_now<as_meleeNext[p] || as_using[p]>=0) {return;}
+    as_meleeNext[p]=as_now+0.75/(1.0+0.1*IntToFixed(AS_Skill(p,AS_SK_MELEE)));
+    here=UnitGetPosition(as_m[p]);x=PointGetX(here);y=PointGetY(here);
+    ActorSend(libNtve_gf_MainActorofUnit(as_m[p]),"AnimPlay Melee Attack 0 0.0 0.6");
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || as_aKind[j]==AS_BIOMASS) {continue;}
+        dx=as_aX[j]-x;dy=as_aY[j]-y;d=SquareRoot(dx*dx+dy*dy)-as_aRadius[j];
+        if(d>0.9 || AbsF(AS_AngleDiff(ATan2(dy,dx),as_aim[p]))>60.0) {continue;}
+        hit=true;kind=as_aKind[j];ang=ATan2(dy,dx);
+        AS_HitAlien(j,p,x,y,ang,d,AS_MeleeDamage(p),0,0.6);
+        if(as_a[j]==null && kind==AS_PARASITE) {AS_AchieveEvent(p,"parasite_punch");}
+        if(as_a[j]==null) {as_meleeKills[p]+=1;}
+    }
+    if(hit) {AS_Sound("Zealot_AttackImpact",x,y,70.0,0.1);}
+    else {AS_Sound("Marine_AttackLaunch",x,y,30.0,0.2);}
+}
+
+// ---- lobbed things: grenades, alien spit and bile, flares, beacons, mines ---------------
+const int AS_LOBS = 40;
+unit[40] as_lob;
+int[40] as_lobItem;            // the item that threw it, when not the gun in hand (the sentry cannon)
+int[40] as_lobKind;            // 0 launcher shell, 1 frag, 2 ranger spit, 3 mortar bile, 4 flare, 5 stun, 6 incendiary,
+                               // 7 hand grenade, 8 freeze, 9 heal beacon, 10 damage amp, 11 tesla coil, 12 incendiary mine,
+                               // 13 cluster bomblet
+int[40] as_lobBy;
+fixed[40] as_lobX;
+fixed[40] as_lobY;
+fixed[40] as_lobVX;
+fixed[40] as_lobVY;
+fixed[40] as_lobT;
+fixed[40] as_lobDur;
+fixed[40] as_lobArc;
+fixed[40] as_lobDmg;
+fixed[40] as_lobRadius;
+fixed[40] as_lobFuse;          // bursts at this time (0 on landing)
+bool[40] as_lobLanded;
 int as_lobNext;
 void AS_Lob (int by, int kind, fixed x, fixed y, fixed ang, fixed dist, fixed dmg, fixed radius) {
     int i=as_lobNext;fixed speed=14.0;string model="ASGrenade";
@@ -337,97 +557,225 @@ void AS_Lob (int by, int kind, fixed x, fixed y, fixed ang, fixed dist, fixed dm
     if(kind==2) {speed=9.0;model="ASSpit";}
     if(kind==3) {speed=6.5;model="ASBile";}
     if(kind==4) {speed=9.0;model="ASFlare";}
+    if(kind>=7 && kind<=13) {speed=9.0;}
     UnitCreate(1,model,c_unitCreateIgnorePlacement,0,Point(x,y),ang);
     as_lob[i]=UnitLastCreated();
-    as_lobKind[i]=kind;as_lobBy[i]=by;as_lobX[i]=x;as_lobY[i]=y;as_lobVX[i]=Cos(ang)*speed;as_lobVY[i]=Sin(ang)*speed;
-    as_lobT[i]=0.0;as_lobDur[i]=dist/speed;as_lobDmg[i]=dmg;as_lobRadius[i]=radius;
+    if(kind==5) {ActorSend(libNtve_gf_MainActorofUnit(as_lob[i]),"SetTintColor 140,200,255");}
+    if(kind==6 || kind==12) {ActorSend(libNtve_gf_MainActorofUnit(as_lob[i]),"SetTintColor 255,120,40");}
+    if(kind==8) {ActorSend(libNtve_gf_MainActorofUnit(as_lob[i]),"SetTintColor 150,230,255");}
+    if(kind==9) {ActorSend(libNtve_gf_MainActorofUnit(as_lob[i]),"SetTintColor 90,255,120");}
+    if(kind==10) {ActorSend(libNtve_gf_MainActorofUnit(as_lob[i]),"SetTintColor 255,60,60");}
+    as_lobKind[i]=kind;as_lobBy[i]=by;as_lobItem[i]=as_dmgItem;as_lobX[i]=x;as_lobY[i]=y;as_lobVX[i]=Cos(ang)*speed;as_lobVY[i]=Sin(ang)*speed;
+    as_lobT[i]=0.0;as_lobDur[i]=dist/speed;as_lobDmg[i]=dmg;as_lobRadius[i]=radius;as_lobFuse[i]=0.0;as_lobLanded[i]=false;
+    if(kind==6) {as_lobFuse[i]=as_now+3.0;}
+    if(kind==7) {as_lobFuse[i]=as_now+4.0;}
+    if(kind==13) {as_lobFuse[i]=as_now+RandomFixed(0.5,1.0);}
     as_lobArc[i]=0.25+dist*0.12;if(kind==2) {as_lobArc[i]=0.15;}if(kind==3) {as_lobArc[i]=1.0+dist*0.25;}
     UnitSetHeight(as_lob[i],0.6,0.0);
     // Mortar bile shows where it will land, as Alien Swarm's mortarbug does.
     if(kind==3) {AS_Ring(x+Cos(ang)*dist,y+Sin(ang)*dist,radius,"120,255,60",FixedToInt(as_lobDur[i]/AS_DT)+2);}
 }
+// Whether a hand grenade has an alien close enough to set off its proximity fuse.
+bool AS_AlienNear (fixed x, fixed y, fixed r) {
+    int j;
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || AS_IsThing(as_aKind[j])) {continue;}
+        if((as_aX[j]-x)*(as_aX[j]-x)+(as_aY[j]-y)*(as_aY[j]-y)<r*r) {return true;}
+    }
+    return false;
+}
 void AS_LobPulse () {
-    int i;int j;fixed nx;fixed ny;fixed t;bool hit;point q;
+    int i;int j;fixed nx;fixed ny;fixed t;bool hit;int k;
     for(i=0;i<AS_LOBS;i+=1) {
         if(as_lob[i]==null) {continue;}
-        as_lobT[i]+=AS_DT;t=as_lobT[i]/as_lobDur[i];
-        nx=as_lobX[i]+as_lobVX[i]*AS_DT;ny=as_lobY[i]+as_lobVY[i]*AS_DT;
-        hit=t>=1.0;
-        if(AS_Solid(nx,ny)) {hit=true;nx=as_lobX[i];ny=as_lobY[i];}
-        // Shells and spit burst on whatever they strike on the way.
-        if(!hit && (as_lobKind[i]<=1)) {
-            for(j=0;j<AS_MAXALIEN;j+=1) {
-                if(as_a[j]==null) {continue;}
-                if((as_aX[j]-nx)*(as_aX[j]-nx)+(as_aY[j]-ny)*(as_aY[j]-ny)<(as_aRadius[j]+0.15)*(as_aRadius[j]+0.15)) {hit=true;break;}
+        hit=false;
+        if(!as_lobLanded[i]) {
+            as_lobT[i]+=AS_DT;t=as_lobT[i]/as_lobDur[i];
+            // Spit and bile slow down with the swarm under adrenaline.
+            if(as_slowMo>as_now && (as_lobKind[i]==2 || as_lobKind[i]==3)) {as_lobT[i]-=AS_DT*0.65;t=as_lobT[i]/as_lobDur[i];}
+            nx=as_lobX[i]+as_lobVX[i]*AS_DT;ny=as_lobY[i]+as_lobVY[i]*AS_DT;
+            if(as_slowMo>as_now && (as_lobKind[i]==2 || as_lobKind[i]==3)) {nx=as_lobX[i]+as_lobVX[i]*AS_DT*0.35;ny=as_lobY[i]+as_lobVY[i]*AS_DT*0.35;}
+            if(t>=1.0) {as_lobLanded[i]=true;}
+            if(AS_Solid(nx,ny)) {as_lobLanded[i]=true;nx=as_lobX[i];ny=as_lobY[i];}
+            // Frag shells and stun grenades burst on whatever they strike on the way.
+            if(!as_lobLanded[i] && (as_lobKind[i]<=1 || as_lobKind[i]==5)) {
+                for(j=0;j<AS_MAXALIEN;j+=1) {
+                    if(as_a[j]==null || AS_IsThing(as_aKind[j]) && as_aKind[j]!=AS_BARREL) {continue;}
+                    if((as_aX[j]-nx)*(as_aX[j]-nx)+(as_aY[j]-ny)*(as_aY[j]-ny)<(as_aRadius[j]+0.15)*(as_aRadius[j]+0.15)) {as_lobLanded[i]=true;break;}
+                }
             }
-        }
-        if(!hit && as_lobKind[i]==2) {
-            for(j=1;j<=AS_PLAYERS;j+=1) {
-                if(AS_Person(j) && as_alive[j] && DistanceBetweenPoints(UnitGetPosition(as_m[j]),Point(nx,ny))<0.45) {hit=true;break;}
+            if(!as_lobLanded[i] && as_lobKind[i]==2) {
+                for(j=1;j<=AS_PLAYERS;j+=1) {
+                    if(AS_Person(j) && as_alive[j] && as_rollUntil[j]<=as_now && DistanceBetweenPoints(UnitGetPosition(as_m[j]),Point(nx,ny))<0.45) {as_lobLanded[i]=true;break;}
+                }
             }
+            as_lobX[i]=nx;as_lobY[i]=ny;
+            UnitSetPosition(as_lob[i],Point(nx,ny),true);
+            UnitSetHeight(as_lob[i],0.6+as_lobArc[i]*4.0*MinF(1.0,t)*(1.0-MinF(1.0,t)),AS_DT);
+            if(!as_lobLanded[i]) {
+                // A hand grenade's proximity fuse arms after 0.9 s.
+                if(as_lobKind[i]==7 && as_lobT[i]>0.9 && AS_AlienNear(nx,ny,as_lobRadius[i]*0.6)) {hit=true;}
+                else {continue;}
+            }
+            UnitSetHeight(as_lob[i],0.12,0.1);
         }
-        as_lobX[i]=nx;as_lobY[i]=ny;
-        UnitSetPosition(as_lob[i],Point(nx,ny),true);
-        UnitSetHeight(as_lob[i],0.6+as_lobArc[i]*4.0*MinF(1.0,t)*(1.0-MinF(1.0,t)),AS_DT);
-        if(!hit) {continue;}
+        nx=as_lobX[i];ny=as_lobY[i];
+        // Timed ones lie on the deck until their fuse runs out (or something comes near).
+        if(as_lobFuse[i]>0.0 && !hit) {
+            if(as_now<as_lobFuse[i] && !(as_lobKind[i]==7 && as_lobT[i]>0.9 && AS_AlienNear(nx,ny,as_lobRadius[i]*0.6)) && !(as_lobKind[i]==6 && AS_AlienNear(nx,ny,0.6))) {continue;}
+        }
         UnitRemove(as_lob[i]);as_lob[i]=null;
-        if(as_lobKind[i]<=1) {AS_Explode(as_lobBy[i],nx,ny,as_lobRadius[i],as_lobDmg[i]);}
-        else if(as_lobKind[i]==2) {AS_AlienSplash(nx,ny,0.6,as_lobDmg[i],"ASFxAcid");}
-        else if(as_lobKind[i]==3) {AS_AlienSplash(nx,ny,as_lobRadius[i],as_lobDmg[i],"ASFxBileHit");}
-        else {AS_FlareLand(nx,ny);}
+        k=as_lobKind[i];
+        if(k<=1 || k==7 || k==13) {as_dmgItem=as_lobItem[i];AS_Explode(as_lobBy[i],nx,ny,as_lobRadius[i],as_lobDmg[i]);as_dmgItem=0;}
+        if(k==7) {for(j=0;j<AS_Skill(as_lobBy[i],AS_SK_GRENADES);j+=1) {AS_Lob(as_lobBy[i],13,nx,ny,RandomFixed(0.0,360.0),RandomFixed(1.0,2.5),as_lobDmg[i],as_lobRadius[i]);}}
+        else if(k==2) {AS_AlienSplash(nx,ny,0.6,as_lobDmg[i],"ASFxAcid");}
+        else if(k==3) {AS_AlienSplash(nx,ny,as_lobRadius[i],as_lobDmg[i],"ASFxBileHit");}
+        else if(k==4) {AS_FlareLand(nx,ny);}
+        else if(k==5) {AS_StunBlast(as_lobBy[i],nx,ny,as_lobRadius[i]);}
+        else if(k==6) {AS_FireBlast(as_lobBy[i],nx,ny,as_lobRadius[i]);}
+        else if(k==8) {AS_FreezeBlast(as_lobBy[i],nx,ny);}
+        else if(k==9) {AS_FieldStart(as_lobBy[i],0,nx,ny);}
+        else if(k==10) {AS_FieldStart(as_lobBy[i],1,nx,ny);}
+        else if(k==11) {AS_FieldStart(as_lobBy[i],2,nx,ny);}
+        else if(k==12) {AS_MineLay(as_lobBy[i],1,nx,ny,0.0);}
     }
 }
+// A blast: aliens within the radius (line of sight from the centre), marines only within half of it
+// (asw_marine_explosion_protection), at friendly-fire strength.
 void AS_Explode (int p, fixed x, fixed y, fixed radius, fixed dmg) {
-    int j;fixed d;
+    int j;fixed d;int before=0;int kills;
     AS_Fx("ASFxBoom",x,y,0.1,RandomFixed(0.0,360.0));
     AS_Burst(x,y,0.6,radius*1.1,"255,160,60",3);
     AS_Ring(x,y,radius,"255,150,60",4);
     AS_FxUnit("ASLightOrangebig",x,y,1.2,0.0,1.0,1.0,"",4);
     AS_Scorch(x,y,MinF(2.2,radius*0.75));
     AS_Sound("Ravager_CorrosiveBile_Explosion",x,y,100.0,0.05);
+    if(p>=1 && p<=AS_PLAYERS) {before=as_kills[p];}
     for(j=0;j<AS_MAXALIEN;j+=1) {
         if(as_a[j]==null) {continue;}
-        d=DistanceBetweenPoints(UnitGetPosition(as_a[j]),Point(x,y))-as_aRadius[j];
-        if(d<radius && AS_LineClear(x,y,PointGetX(UnitGetPosition(as_a[j])),PointGetY(UnitGetPosition(as_a[j])))) {
+        d=DistanceBetweenPoints(Point(as_aX[j],as_aY[j]),Point(x,y))-as_aRadius[j];
+        if(d<radius && AS_LineClear(x,y,as_aX[j],as_aY[j])) {
             AS_HurtAlien(j,dmg*(1.0-0.5*MaxF(0.0,d)/radius),2,p,x,y);
         }
     }
-    // Friendly fire: a fifth of the blast, and a shove.
+    if(p>=1 && p<=AS_PLAYERS) {kills=as_kills[p]-before;if(kills>=6) {AS_AchieveEvent(p,"blast_radius");}}
     for(j=1;j<=AS_PLAYERS;j+=1) {
         if(!AS_Person(j) || !as_alive[j]) {continue;}
         d=DistanceBetweenPoints(UnitGetPosition(as_m[j]),Point(x,y));
-        if(d<radius) {
-            if(p>=1 && p<=AS_PLAYERS && j!=p) {as_ffDealt[p]+=dmg*0.2*(1.0-d/radius);}
-            AS_HurtMarine(j,dmg*0.2*(1.0-d/radius),x,y,4.0);
-        }
+        if(d<radius*0.5) {AS_HurtMarineBy(j,dmg*0.25*(1.0-d/(radius*0.5)),x,y,4.0,1,p);}
     }
     for(j=1;j<=AS_PLAYERS;j+=1) {
         if(AS_Person(j) && as_alive[j] && DistanceBetweenPoints(UnitGetPosition(as_m[j]),Point(x,y))<12.0) {CameraShakeStart(j,c_cameraPositionBoth,c_cameraDirectionXYZ,0.06,3.0,40.0,0.25);}
     }
 }
+// The prototype rifle's stun grenade: every alien in the radius shocked (a 6 s stun).
+void AS_StunBlast (int p, fixed x, fixed y, fixed radius) {
+    int j;int n=0;
+    AS_Burst(x,y,0.6,radius,"150,210,255",4);AS_Ring(x,y,radius,"150,210,255",5);AS_Sound("Archon_AttackImpact",x,y,90.0,0.05);
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || AS_IsThing(as_aKind[j])) {continue;}
+        if(DistanceBetweenPoints(Point(as_aX[j],as_aY[j]),Point(x,y))<radius && AS_LineClear(x,y,as_aX[j],as_aY[j])) {AS_Stun(j,6.0);AS_HurtAlien(j,1.0,3,p,x,y);n+=1;}
+    }
+    if(n>=6) {AS_AchieveEvent(p,"electro_stunned");}
+}
+// The Vindicator's incendiary grenade: 20 burning damage across the radius, every alien in it set alight.
+void AS_FireBlast (int p, fixed x, fixed y, fixed radius) {
+    int j;
+    AS_Fx("ASFxBoom",x,y,0.1,0.0);AS_Burst(x,y,0.5,radius,"255,120,40",5);AS_Ring(x,y,radius,"255,120,40",5);
+    AS_Sound("Firebat_Attack",x,y,100.0,0.05);
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || as_aKind[j]==AS_BARREL) {continue;}
+        if(DistanceBetweenPoints(Point(as_aX[j],as_aY[j]),Point(x,y))<radius && AS_LineClear(x,y,as_aX[j],as_aY[j])) {AS_Ignite(j,p,5.0);AS_HurtAlien(j,20.0,1,p,x,y);}
+    }
+}
+// Freeze grenades: every alien in 210 units frozen solid for 3 + 0.3 a Grenades point seconds; no damage.
+void AS_FreezeBlast (int p, fixed x, fixed y) {
+    int j;int n=0;fixed r=210.0/80.0;fixed t=3.0+0.3*IntToFixed(AS_Skill(p,AS_SK_GRENADES));
+    AS_Burst(x,y,0.4,r,"190,240,255",6);AS_Ring(x,y,r,"190,240,255",6);AS_Sound("Archon_AttackImpact",x,y,90.0,0.05);
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || AS_IsThing(as_aKind[j])) {continue;}
+        if(DistanceBetweenPoints(Point(as_aX[j],as_aY[j]),Point(x,y))<r && AS_LineClear(x,y,as_aX[j],as_aY[j])) {AS_Freeze(j,t);n+=1;}
+    }
+    if(n>=6) {AS_AchieveEvent(p,"stay_frosty");}
+}
 
-// ---- offhand items ------------------------------------------------------
+// ---- deployed weapons: sentries, heal beacons, ammo stashes -------------------------------
 const int AS_SENTRIES = 8;
 unit[8] as_sentry;
 int[8] as_sentryBy;
+int[8] as_sentryKind;           // the sentry item it came from
 int[8] as_sentryAmmo;
 fixed[8] as_sentryNext;
 fixed[8] as_sentryFacing;
-void AS_DeploySentry (int p) {
-    int i;int slot= -1;point q;
-    if(!as_alive[p] || as_sentries[p]<=0) {return;}
-    q=PointWithOffsetPolar(UnitGetPosition(as_m[p]),1.1,as_aim[p]);
-    if(!AS_Free(PointGetX(q),PointGetY(q),0.35)) {AS_Message(p,"No room to deploy the sentry here");return;}
-    for(i=0;i<AS_SENTRIES;i+=1) {if(as_sentry[i]==null) {slot=i;break;}}
-    if(slot<0) {return;}
-    UnitCreate(1,"ASSentry",c_unitCreateIgnorePlacement,p,q,as_aim[p]);
-    as_sentry[slot]=UnitLastCreated();as_sentryBy[slot]=p;as_sentryAmmo[slot]=400;as_sentryNext[slot]=as_now+0.8;as_sentryFacing[slot]=as_aim[p];
-    as_sentries[p]-=1;
-    AS_Message(p,"<c val=\"8CFFA0\">SENTRY GUN DEPLOYED</c>  -  400 rounds");
-    AS_Sound("Raven_AutoTurretBirth",PointGetX(q),PointGetY(q),90.0,0.1);
+fixed[8] as_sentryBuilt;        // 0..1 assembled
+fixed[8] as_sentryBase;         // the way it was set down: it covers 60 degrees either side
+int[5] as_sentryKills;
+fixed AS_SentryDivisor (fixed x, fixed y) {
+    int e=AS_AuraBest(AS_SK_ENGINEERING,x,y,3.8);
+    if(e<=0) {return 1.0;}
+    return 1.0+0.25*IntToFixed(e);
+}
+void AS_Deploy (int p, int w) {
+    point here=UnitGetPosition(as_m[p]);point q;int i;int slot= -1;fixed dist;
+    if(as_now<as_nextShot[p] || as_mag[p][w]<=0) {
+        if(as_mag[p][w]<=0 && as_now-as_ammoMsgAt[p]>2.0) {as_ammoMsgAt[p]=as_now;AS_Message(p,"None left: switch weapons (Q)");}
+        return;
+    }
+    as_nextShot[p]=as_now+1.0;
+    if(AS_IsSentry(w)) {
+        q=PointWithOffsetPolar(here,1.1,as_aim[p]);
+        if(!AS_Free(PointGetX(q),PointGetY(q),0.35)) {AS_Message(p,"No room to set the sentry down here");return;}
+        for(i=0;i<AS_SENTRIES;i+=1) {if(as_sentry[i]==null) {slot=i;break;}}
+        if(slot<0) {return;}
+        UnitCreate(1,"ASSentry",c_unitCreateIgnorePlacement,p,q,as_aim[p]);
+        as_sentry[slot]=UnitLastCreated();as_sentryBy[slot]=p;as_sentryKind[slot]=w;as_sentryNext[slot]=as_now;as_sentryFacing[slot]=as_aim[p];as_sentryBase[slot]=as_aim[p];
+        as_sentryBuilt[slot]=0.0;
+        if(w==AS_IT_SENTRY) {as_sentryAmmo[slot]=450;}
+        else if(w==AS_IT_SENTRYCANNON) {as_sentryAmmo[slot]=25;ActorSend(libNtve_gf_MainActorofUnit(as_sentry[slot]),"SetTintColor 255,200,120");}
+        else if(w==AS_IT_SENTRYFLAME) {as_sentryAmmo[slot]=800;ActorSend(libNtve_gf_MainActorofUnit(as_sentry[slot]),"SetTintColor 255,120,60");}
+        else {as_sentryAmmo[slot]=800;ActorSend(libNtve_gf_MainActorofUnit(as_sentry[slot]),"SetTintColor 140,220,255");}
+        UnitSetScale(as_sentry[slot],60.0,60.0,40.0);
+        as_mag[p][w]-=1;
+        AS_Message(p,"<c val=\"8CFFA0\">SENTRY CASE DOWN</c>  -  hold E beside it to assemble it");
+        AS_Sound("Raven_AutoTurretBirth",PointGetX(q),PointGetY(q),90.0,0.1);
+        AS_HintEvent("sentry_down",p);
+        if(as_mag[p][w]<=0) {AS_AutoSwap(p);}
+        return;
+    }
+    dist=MinF(6.0,MaxF(1.5,DistanceBetweenPoints(here,AS_AimPoint(p))));
+    if(w==AS_IT_HEALBEACON) {as_mag[p][w]-=1;AS_Lob(p,9,PointGetX(here),PointGetY(here),as_aim[p],dist,0.0,0.0);}
+    else if(w==AS_IT_AMMOBAG) {as_mag[p][w]-=1;AS_AmmoDrop(p,PointGetX(PointWithOffsetPolar(here,1.0,as_aim[p])),PointGetY(PointWithOffsetPolar(here,1.0,as_aim[p])));}
+    if(as_mag[p][w]<=0) {AS_AutoSwap(p);}
+}
+// Out of a deployable: the other weapon comes up.
+void AS_AutoSwap (int p) {
+    if(as_inv[p][1-as_hand[p]]>0) {AS_SelectHand(p,1-as_hand[p]);}
+}
+// A sentry being assembled grows while a marine holds E beside it: 7 s, quicker near a tech (1 + 0.25 an Engineering point).
+bool AS_SentryBuildStep (int p) {
+    int i;point here=UnitGetPosition(as_m[p]);point q;
+    for(i=0;i<AS_SENTRIES;i+=1) {
+        if(as_sentry[i]==null || as_sentryBuilt[i]>=1.0) {continue;}
+        q=UnitGetPosition(as_sentry[i]);
+        if(DistanceBetweenPoints(q,here)>1.6) {continue;}
+        as_sentryBuilt[i]=MinF(1.0,as_sentryBuilt[i]+AS_DT/(7.0/AS_SentryDivisor(PointGetX(q),PointGetY(q))));
+        UnitSetScale(as_sentry[i],60.0+40.0*as_sentryBuilt[i],60.0+40.0*as_sentryBuilt[i],40.0+60.0*as_sentryBuilt[i]);
+        if(as_tick%3==0) {AS_Fx("ASFxSpark",PointGetX(q),PointGetY(q),0.6,RandomFixed(0.0,360.0));}
+        if(as_sentryBuilt[i]>=1.0) {AS_Message(p,"<c val=\"8CFFA0\">SENTRY ONLINE</c>");AS_Sound("Raven_AutoTurretBirth",PointGetX(q),PointGetY(q),90.0,0.0);AS_HintEvent("sentry_built",p);}
+        return true;
+    }
+    return false;
+}
+fixed AS_SentryProgress (int p) {
+    int i;point here=UnitGetPosition(as_m[p]);
+    for(i=0;i<AS_SENTRIES;i+=1) {
+        if(as_sentry[i]==null || as_sentryBuilt[i]>=1.0) {continue;}
+        if(DistanceBetweenPoints(UnitGetPosition(as_sentry[i]),here)<=1.6) {return as_sentryBuilt[i];}
+    }
+    return -1.0;
 }
 void AS_SentryPulse () {
-    int i;int t;point q;fixed x;fixed y;fixed ang;fixed d;fixed turn;
+    int i;int t;point q;fixed x;fixed y;fixed ang;fixed turn;int w;fixed range;fixed rate;int k;
     for(i=0;i<AS_SENTRIES;i+=1) {
         if(as_sentry[i]==null) {continue;}
         if(as_sentryAmmo[i]<=0) {
@@ -435,65 +783,506 @@ void AS_SentryPulse () {
             AS_Fx("ASDieSentry",PointGetX(q),PointGetY(q),0.0,as_sentryFacing[i]);
             UnitRemove(as_sentry[i]);as_sentry[i]=null;continue;
         }
-        if(as_now<as_sentryNext[i]) {continue;}
+        if(as_sentryBuilt[i]<1.0 || as_now<as_sentryNext[i]) {continue;}
+        w=as_sentryKind[i];range=as_it[w].range;
         q=UnitGetPosition(as_sentry[i]);x=PointGetX(q);y=PointGetY(q);
-        t=AS_AssistTarget(x,y,as_sentryFacing[i],10.0,180.0);
+        // It watches 60 degrees either side of the way it was set down; the cannon looks for the biggest thing in sight.
+        t=AS_AssistTarget(x,y,as_sentryBase[i],range,60.0);
         if(t<0) {continue;}
-        ang=ATan2(PointGetY(UnitGetPosition(as_a[t]))-y,PointGetX(UnitGetPosition(as_a[t]))-x);
-        // The turret slews toward its target before it fires.
+        ang=ATan2(as_aY[t]-y,as_aX[t]-x);
+        // The turret slews toward its target before it fires (150 degrees a second engaged).
         turn=AS_AngleDiff(ang,as_sentryFacing[i]);
-        if(AbsF(turn)>12.0) {as_sentryFacing[i]+=AS_Clamp(turn,-40.0,40.0);UnitSetFacing(as_sentry[i],as_sentryFacing[i],AS_DT);continue;}
+        if(AbsF(turn)>8.0) {as_sentryFacing[i]+=AS_Clamp(turn,-9.4,9.4);UnitSetFacing(as_sentry[i],as_sentryFacing[i],AS_DT);continue;}
         as_sentryFacing[i]=ang;UnitSetFacing(as_sentry[i],ang,AS_DT);
-        as_sentryNext[i]=as_now+0.12;as_sentryAmmo[i]-=1;
-        AS_Bullet(as_sentryBy[i],x+Cos(ang)*0.5,y+Sin(ang)*0.5,ang+RandomFixed(-2.0,2.0),12.0,8.0,0,0,70.0,"255,210,130",1.3,1.6,0.04);
-        AS_Flash(x+Cos(ang)*0.6,y+Sin(ang)*0.6,0.75,0.35,"");
-        AS_Sound("SentryGun_AttackLaunch",x,y,70.0,0.1);
+        as_dmgItem=w;
+        if(w==AS_IT_SENTRY) {
+            as_sentryNext[i]=as_now+0.0625;as_sentryAmmo[i]-=1;
+            AS_Bullet(as_sentryBy[i],x+Cos(ang)*0.5,y+Sin(ang)*0.5,ang+RandomFixed(-2.5,2.5),range,10.0*1.28,0,0,70.0,"255,210,130",1.3,1.6,0.04);
+            AS_Flash(x+Cos(ang)*0.6,y+Sin(ang)*0.6,0.75,0.35,"");
+            AS_Sound("SentryGun_AttackLaunch",x,y,70.0,0.1);
+        }
+        else if(w==AS_IT_SENTRYCANNON) {
+            as_sentryNext[i]=as_now+1.75;as_sentryAmmo[i]-=1;
+            AS_Lob(as_sentryBy[i],0,x+Cos(ang)*0.6,y+Sin(ang)*0.6,ang,DistanceBetweenPoints(q,Point(as_aX[t],as_aY[t])),AS_GrenadeDamage(as_sentryBy[i])*0.5,AS_GrenadeRadius(as_sentryBy[i])*0.5);
+            AS_Flash(x+Cos(ang)*0.6,y+Sin(ang)*0.6,0.75,0.6,"255,190,120");AS_Sound("SiegeTank_AttackLaunch",x,y,80.0,0.2);
+        }
+        else {
+            as_sentryNext[i]=as_now+0.125;as_sentryAmmo[i]-=3;
+            for(k=0;k<2;k+=1) {AS_Puff(as_sentryBy[i],x+Cos(ang)*0.5,y+Sin(ang)*0.5,ang+RandomFixed(-6.0,6.0),7.0,range/7.0,0.0,4.0,w==AS_IT_SENTRYFREEZE);}
+        }
+        as_dmgItem=0;
     }
 }
-void AS_UseMedkit (int p) {
-    point here;
-    if(!as_alive[p] || as_medkits[p]<=0 || (as_hp[p]>=as_hpMax[p] && as_infestUntil[p]<as_now)) {return;}
-    as_medkits[p]-=1;
-    as_hp[p]=MinF(as_hpMax[p],as_hp[p]+50.0);as_infestUntil[p]=0.0;
-    UnitSetPropertyFixed(as_m[p],c_unitPropLife,as_hp[p]);
+// ---- ammo stashes (the ammo satchel) -----------------------------------------------------
+const int AS_STASHES = 12;
+unit[12] as_stash;
+int[12] as_stashUnits;          // 100 to begin with; a refill costs 20 (autogun 100, shotgun 10, railgun 10)
+int[12] as_stashBy;
+void AS_AmmoDrop (int p, fixed x, fixed y) {
+    int i;
+    for(i=0;i<AS_STASHES;i+=1) {if(as_stash[i]==null) {break;}}
+    if(i>=AS_STASHES) {return;}
+    if(!AS_Free(x,y,0.3)) {x=PointGetX(UnitGetPosition(as_m[p]));y=PointGetY(UnitGetPosition(as_m[p]));}
+    UnitCreate(1,"ASAmmo",c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
+    as_stash[i]=UnitLastCreated();as_stashUnits[i]=100;as_stashBy[i]=p;UnitSetScale(as_stash[i],70.0,70.0,70.0);
+    AS_Message(p,"<c val=\"8CFFA0\">AMMO STASH DOWN</c>  -  marines press E at it for a refill");
+}
+int AS_StashCost (int w) {
+    if(w==AS_IT_AUTOGUN || w==AS_IT_MINIGUN) {return 100;}
+    if(w==AS_IT_SHOTGUN || w==AS_IT_RAILGUN) {return 10;}
+    return 20;
+}
+int AS_StashClips (int w) {
+    if(w==AS_IT_RAILGUN) {return 5;}
+    if(w==AS_IT_LAUNCHER) {return 3;}
+    return 1;
+}
+int AS_StashNear (int p) {
+    int i;point here=UnitGetPosition(as_m[p]);
+    for(i=0;i<AS_STASHES;i+=1) {if(as_stash[i]!=null && DistanceBetweenPoints(UnitGetPosition(as_stash[i]),here)<1.4) {return i;}}
+    return -1;
+}
+// E at a stash: clips for the weapon in hand, paid out of the stash.
+void AS_StashTake (int p, int i) {
+    int w=as_slot[p];int cost;int add;
+    if(i<0 || w<=0 || AS_IsDeployable(w) || w==AS_IT_CHAINSAW || w==AS_IT_HEALGUN) {return;}
+    cost=AS_StashCost(w);
+    if(as_reserve[p][w]>=as_it[w].reserve) {AS_Message(p,"Your "+as_it[w].title+" is already full");return;}
+    if(as_stashUnits[i]<cost) {AS_Message(p,"Not enough left in this stash for the "+as_it[w].title);return;}
+    as_stashUnits[i]-=cost;add=as_it[w].mag*AS_StashClips(w);
+    as_reserve[p][w]=MinI(as_it[w].reserve,as_reserve[p][w]+add);
+    AS_Message(p,"<c val=\"8CFFA0\">AMMO</c>  +"+IntToString(add)+" for the "+as_it[w].title);
+    AS_SoundUI(p,"UI_BnetClick");
+    if(as_stashBy[i]!=p && as_stashBy[i]>=1) {AS_AchieveEvent(as_stashBy[i],"ammo_shared");}
+    if(as_stashUnits[i]<10) {UnitRemove(as_stash[i]);as_stash[i]=null;}
+}
+
+// ---- fields: heal beacons, damage amps, tesla coils ---------------------------------
+const int AS_FIELDS = 8;
+unit[8] as_field;
+unit[8] as_fieldLight;
+int[8] as_fieldKind;            // 0 heal beacon, 1 damage amp, 2 tesla coil
+int[8] as_fieldBy;
+fixed[8] as_fieldUntil;
+fixed[8] as_fieldPool;          // health left to give, or zaps left
+fixed[8] as_fieldNext;
+fixed[8] as_fieldX;
+fixed[8] as_fieldY;
+void AS_FieldStart (int p, int kind, fixed x, fixed y) {
+    int i;string light="ASLightGreen";string tint="90,255,120";
+    for(i=0;i<AS_FIELDS;i+=1) {if(as_field[i]==null) {break;}}
+    if(i>=AS_FIELDS) {return;}
+    if(kind==1) {light="ASLightRedbig";tint="255,70,60";}
+    if(kind==2) {light="ASLightCold";tint="140,200,255";}
+    UnitCreate(1,"ASObjBeacon",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);
+    as_field[i]=UnitLastCreated();UnitSetScale(as_field[i],45.0,45.0,45.0);ActorSend(libNtve_gf_MainActorofUnit(as_field[i]),"SetTintColor "+tint);
+    UnitCreate(1,light,c_unitCreateIgnorePlacement,0,Point(x,y),0.0);as_fieldLight[i]=UnitLastCreated();UnitSetHeight(as_fieldLight[i],1.0,0.0);
+    as_fieldKind[i]=kind;as_fieldBy[i]=p;as_fieldX[i]=x;as_fieldY[i]=y;as_fieldNext[i]=as_now;
+    if(kind==0) {as_fieldUntil[i]=as_now+20.0;as_fieldPool[i]=50.0+10.0*IntToFixed(AS_Skill(p,AS_SK_HEALING));}
+    else if(kind==1) {as_fieldUntil[i]=as_now+30.0;as_fieldPool[i]=0.0;}
+    else {as_fieldUntil[i]=as_now+600.0;as_fieldPool[i]=30.0;}
+    AS_Ring(x,y,AS_FieldRadius(kind),tint,12);
+}
+fixed AS_FieldRadius (int kind) {
+    if(kind==0) {return 100.0/80.0+0.4;}
+    if(kind==1) {return 120.0/80.0+0.4;}
+    return 200.0/80.0;
+}
+void AS_FieldPulse () {
+    int i;int q;point mq;fixed r;fixed heal;int j;bool done;int healedAll;
+    for(i=0;i<AS_FIELDS;i+=1) {
+        if(as_field[i]==null) {continue;}
+        done=as_now>as_fieldUntil[i];
+        r=AS_FieldRadius(as_fieldKind[i]);
+        if(as_tick%8==0 && !done) {AS_Ring(as_fieldX[i],as_fieldY[i],r,"",3);}
+        if(as_fieldKind[i]==0 && as_now>=as_fieldNext[i]) {
+            // 3 health a second for each marine inside, more the more they are hurt, out of the beacon's pool.
+            as_fieldNext[i]=as_now+0.5;healedAll=0;
+            for(q=1;q<=AS_PLAYERS;q+=1) {
+                if(!AS_Person(q) || !as_alive[q]) {continue;}
+                mq=UnitGetPosition(as_m[q]);
+                if(DistanceBetweenPoints(mq,Point(as_fieldX[i],as_fieldY[i]))>r) {continue;}
+                AS_CureInfestation(q,as_fieldBy[i]);
+                if(as_hp[q]>=as_hpMax[q] || as_fieldPool[i]<=0.0) {continue;}
+                heal=MinF(as_fieldPool[i],1.5*(1.0+(1.0-as_hp[q]/as_hpMax[q])));
+                as_fieldPool[i]-=heal;AS_Heal(q,heal,as_fieldBy[i]);healedAll+=1;
+                AS_Burst(PointGetX(mq),PointGetY(mq),0.8,0.4,"90,255,120",2);
+            }
+            if(healedAll>=4) {AS_AchieveEvent(as_fieldBy[i],"group_heal");}
+            if(as_fieldPool[i]<=0.0) {done=true;}
+        }
+        else if(as_fieldKind[i]==1) {
+            for(q=1;q<=AS_PLAYERS;q+=1) {
+                if(AS_Person(q) && as_alive[q] && DistanceBetweenPoints(UnitGetPosition(as_m[q]),Point(as_fieldX[i],as_fieldY[i]))<=r) {as_ampUntil[q]=as_now+0.2;}
+            }
+        }
+        else if(as_fieldKind[i]==2 && as_now>=as_fieldNext[i]) {
+            // A zap at an alien in reach every 0.3 s, thirty in all.
+            j=AS_AssistTarget(as_fieldX[i],as_fieldY[i],0.0,r,180.0);
+            if(j>=0) {
+                as_fieldNext[i]=as_now+0.3;as_fieldPool[i]-=1.0;
+                AS_Arc(as_fieldX[i],as_fieldY[i],as_aX[j],as_aY[j],1.0);AS_Stun(j,6.0);AS_HurtAlien(j,5.0,3,as_fieldBy[i],as_fieldX[i],as_fieldY[i]);
+                AS_Sound("Archon_AttackImpact",as_fieldX[i],as_fieldY[i],60.0,0.2);
+                if(as_fieldPool[i]<=0.0) {done=true;}
+            }
+        }
+        if(done) {UnitRemove(as_field[i]);as_field[i]=null;if(as_fieldLight[i]!=null) {UnitRemove(as_fieldLight[i]);as_fieldLight[i]=null;}}
+    }
+}
+
+// ---- mines: laser trip mines and incendiary mines -----------------------------------------
+const int AS_MINES = 24;
+unit[24] as_mine;
+unit[24] as_mineBeam;
+int[24] as_mineKind;            // 0 laser, 1 incendiary
+int[24] as_mineBy;
+fixed[24] as_mineX;
+fixed[24] as_mineY;
+fixed[24] as_mineAng;
+fixed[24] as_mineLen;
+fixed[24] as_mineArmAt;
+fixed[24] as_mineFireAt;        // incendiary: goes off at this time once tripped (0 not yet)
+void AS_MineLay (int p, int kind, fixed x, fixed y, fixed ang) {
+    int i;
+    for(i=0;i<AS_MINES;i+=1) {if(as_mine[i]==null) {break;}}
+    if(i>=AS_MINES) {return;}
+    UnitCreate(1,"ASGrenade",c_unitCreateIgnorePlacement,0,Point(x,y),ang);
+    as_mine[i]=UnitLastCreated();UnitSetHeight(as_mine[i],0.1,0.0);
+    as_mineKind[i]=kind;as_mineBy[i]=p;as_mineX[i]=x;as_mineY[i]=y;as_mineAng[i]=ang;as_mineArmAt[i]=as_now+1.0;as_mineFireAt[i]=0.0;
+    as_mineLen[i]=0.0;as_mineBeam[i]=null;
+    if(kind==0) {
+        ActorSend(libNtve_gf_MainActorofUnit(as_mine[i]),"SetTintColor 255,60,60");
+        as_mineLen[i]=AS_RayWall(x,y,ang,200.0/80.0);
+        UnitCreate(1,"ASFxLaser",c_unitCreateIgnorePlacement,0,Point(x,y),ang);as_mineBeam[i]=UnitLastCreated();
+        UnitSetHeight(as_mineBeam[i],0.3,0.0);AS_AimFx(as_mineBeam[i],ang);UnitSetScale(as_mineBeam[i],as_mineLen[i]*100.0,100.0,100.0);
+        ActorSend(libNtve_gf_MainActorofUnit(as_mineBeam[i]),"SetTintColor 255,40,40");
+    }
+    else {ActorSend(libNtve_gf_MainActorofUnit(as_mine[i]),"SetTintColor 255,140,40");}
+}
+// Laser mines fix to the nearest wall in front and shine their beam back out across the passage.
+void AS_LaserMines (int p) {
+    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);int n=1;int k;fixed ang;fixed d;fixed g=IntToFixed(AS_Skill(p,AS_SK_GRENADES));
+    if(g>=4.0) {n=3;}else if(g>=1.0) {n=2;}
+    for(k=0;k<n;k+=1) {
+        ang=as_aim[p]+IntToFixed(k-(n-1)/2)*15.0;
+        if(n==2) {ang=as_aim[p]-7.5+15.0*IntToFixed(k);}
+        d=AS_RayWall(x,y,ang,180.0/80.0+0.4);
+        AS_MineLay(p,0,x+Cos(ang)*MaxF(0.3,d-0.1),y+Sin(ang)*MaxF(0.3,d-0.1),ang+180.0);
+    }
+}
+void AS_MinePulse () {
+    int i;int j;fixed c;fixed s;fixed dx;fixed dy;fixed along;fixed perp;bool trip;int k;fixed off;
+    for(i=0;i<AS_MINES;i+=1) {
+        if(as_mine[i]==null || as_now<as_mineArmAt[i]) {continue;}
+        trip=false;
+        if(as_mineKind[i]==0) {
+            c=Cos(as_mineAng[i]);s=Sin(as_mineAng[i]);
+            for(j=0;j<AS_MAXALIEN && !trip;j+=1) {
+                if(as_a[j]==null || AS_IsThing(as_aKind[j])) {continue;}
+                dx=as_aX[j]-as_mineX[i];dy=as_aY[j]-as_mineY[i];along=dx*c+dy*s;perp=AbsF(dx*s-dy*c);
+                if(along>0.0 && along<as_mineLen[i] && perp<as_aRadius[j]+0.1) {trip=true;}
+            }
+            if(trip) {
+                if(as_mineBeam[i]!=null) {UnitRemove(as_mineBeam[i]);as_mineBeam[i]=null;}
+                UnitRemove(as_mine[i]);as_mine[i]=null;
+                AS_Explode(as_mineBy[i],as_mineX[i],as_mineY[i],256.0/80.0,100.0);
+            }
+            continue;
+        }
+        // Incendiary: once an alien touches it, 0.6 s, then a wall of fire across the way it lies.
+        if(as_mineFireAt[i]==0.0 && AS_AlienNear(as_mineX[i],as_mineY[i],0.7)) {as_mineFireAt[i]=as_now+0.6;}
+        if(as_mineFireAt[i]>0.0 && as_now>=as_mineFireAt[i]) {
+            UnitRemove(as_mine[i]);as_mine[i]=null;
+            k=FixedToInt(1.0+0.5*IntToFixed(AS_Skill(as_mineBy[i],AS_SK_GRENADES)));
+            for(j= -k;j<=k;j+=1) {
+                off=IntToFixed(j)*38.0/80.0*1.6;
+                AS_FireAt(as_mineBy[i],as_mineX[i]+Cos(as_mineAng[i]+90.0)*off,as_mineY[i]+Sin(as_mineAng[i]+90.0)*off,10.0+5.0*IntToFixed(AS_Skill(as_mineBy[i],AS_SK_GRENADES)));
+            }
+            AS_Sound("Firebat_Attack",as_mineX[i],as_mineY[i],100.0,0.05);
+        }
+    }
+}
+// Fires on the deck (incendiary mines): anything walking through catches light.
+const int AS_FIRES = 24;
+unit[24] as_fire;
+fixed[24] as_fireX;
+fixed[24] as_fireY;
+fixed[24] as_fireUntil;
+int[24] as_fireBy;
+void AS_FireAt (int p, fixed x, fixed y, fixed secs) {
+    int i;
+    if(AS_Solid(x,y)) {return;}
+    for(i=0;i<AS_FIRES;i+=1) {if(as_fire[i]==null) {break;}}
+    if(i>=AS_FIRES) {return;}
+    UnitCreate(1,"ASFxFlame",c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
+    as_fire[i]=UnitLastCreated();UnitSetScale(as_fire[i],140.0,140.0,140.0);UnitSetHeight(as_fire[i],0.4,0.0);
+    as_fireX[i]=x;as_fireY[i]=y;as_fireUntil[i]=as_now+secs;as_fireBy[i]=p;
+}
+void AS_FirePulseAll () {
+    int i;int j;
+    for(i=0;i<AS_FIRES;i+=1) {
+        if(as_fire[i]==null) {continue;}
+        if(as_now>as_fireUntil[i]) {UnitRemove(as_fire[i]);as_fire[i]=null;continue;}
+        if(as_tick%4!=i%4) {continue;}
+        for(j=0;j<AS_MAXALIEN;j+=1) {
+            if(as_a[j]==null || AS_IsThing(as_aKind[j]) && as_aKind[j]!=AS_BIOMASS) {continue;}
+            if((as_aX[j]-as_fireX[i])*(as_aX[j]-as_fireX[i])+(as_aY[j]-as_fireY[i])*(as_aY[j]-as_fireY[i])<(0.6+as_aRadius[j])*(0.6+as_aRadius[j])) {
+                if(as_aBurnUntil[j]<as_now) {AS_HurtAlien(j,7.0,1,as_fireBy[i],as_fireX[i],as_fireY[i]);}
+                AS_Ignite(j,as_fireBy[i],10.0);
+            }
+        }
+    }
+}
+
+// ---- rockets: hornet barrage and the smart bomb -------------------------------------------
+const int AS_ROCKETS = 40;
+unit[40] as_rk;
+int[40] as_rkBy;
+int[40] as_rkTarget;
+fixed[40] as_rkX;
+fixed[40] as_rkY;
+fixed[40] as_rkAng;
+fixed[40] as_rkSpeed;
+fixed[40] as_rkUntil;
+int[5] as_salvoLeft;
+fixed[5] as_salvoNext;
+int as_rkNext;
+void AS_Rocket (int p) {
+    int i=as_rkNext;point here=UnitGetPosition(as_m[p]);
+    as_rkNext=(as_rkNext+1)%AS_ROCKETS;
+    if(as_rk[i]!=null) {UnitRemove(as_rk[i]);}
+    as_rkX[i]=PointGetX(here);as_rkY[i]=PointGetY(here);as_rkAng[i]=as_aim[p]+RandomFixed(-60.0,60.0);as_rkSpeed[i]=3.5;as_rkUntil[i]=as_now+3.0;as_rkBy[i]=p;
+    as_rkTarget[i]=AS_AssistTarget(as_rkX[i],as_rkY[i],as_aim[p],14.0,70.0);
+    UnitCreate(1,"ASGrenade",c_unitCreateIgnorePlacement,0,Point(as_rkX[i],as_rkY[i]),as_rkAng[i]);
+    as_rk[i]=UnitLastCreated();UnitSetHeight(as_rk[i],1.0,0.0);ActorSend(libNtve_gf_MainActorofUnit(as_rk[i]),"SetTintColor 255,200,90");
+    AS_Sound("MissileTurret_AttackLaunch",as_rkX[i],as_rkY[i],60.0,0.05);
+}
+void AS_RocketPulse () {
+    int i;int p;fixed want;fixed turn;fixed nx;fixed ny;bool hit;int j;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(as_salvoLeft[p]>0 && as_now>=as_salvoNext[p] && AS_Person(p) && as_alive[p]) {as_salvoLeft[p]-=1;as_salvoNext[p]=as_now+0.09;AS_Rocket(p);}
+    }
+    for(i=0;i<AS_ROCKETS;i+=1) {
+        if(as_rk[i]==null) {continue;}
+        if(as_rkTarget[i]<0 || as_a[as_rkTarget[i]]==null) {as_rkTarget[i]=AS_AssistTarget(as_rkX[i],as_rkY[i],as_rkAng[i],12.0,90.0);}
+        if(as_rkTarget[i]>=0) {
+            want=ATan2(as_aY[as_rkTarget[i]]-as_rkY[i],as_aX[as_rkTarget[i]]-as_rkX[i]);
+            turn=AS_Clamp(AS_AngleDiff(want,as_rkAng[i]),-25.0,25.0);as_rkAng[i]+=turn;
+        }
+        as_rkSpeed[i]=MinF(7.5,as_rkSpeed[i]+0.5);
+        nx=as_rkX[i]+Cos(as_rkAng[i])*as_rkSpeed[i]*AS_DT;ny=as_rkY[i]+Sin(as_rkAng[i])*as_rkSpeed[i]*AS_DT;
+        hit=AS_Solid(nx,ny) || as_now>as_rkUntil[i];
+        for(j=0;j<AS_MAXALIEN && !hit;j+=1) {
+            if(as_a[j]==null || AS_IsThing(as_aKind[j])) {continue;}
+            if((as_aX[j]-nx)*(as_aX[j]-nx)+(as_aY[j]-ny)*(as_aY[j]-ny)<(as_aRadius[j]+0.15)*(as_aRadius[j]+0.15)) {hit=true;}
+        }
+        as_rkX[i]=nx;as_rkY[i]=ny;UnitSetPosition(as_rk[i],Point(nx,ny),true);UnitSetFacing(as_rk[i],as_rkAng[i],0.0);
+        if(as_tick%2==0) {AS_Burst(nx,ny,1.0,0.25,"255,200,120",2);}
+        if(hit) {
+            UnitRemove(as_rk[i]);as_rk[i]=null;
+            AS_Explode(as_rkBy[i],nx,ny,0.8,50.0+IntToFixed(AS_Skill(as_rkBy[i],AS_SK_GRENADES)));
+        }
+    }
+}
+
+// ---- the extra item (key 1) -------------------------------------------------------------
+void AS_UseExtra (int p) {
+    int it=as_inv[p][2];point here;fixed dist;fixed t;
+    if(!as_alive[p] || it<=0) {return;}
     here=UnitGetPosition(as_m[p]);
-    AS_Burst(PointGetX(here),PointGetY(here),0.6,1.2,"90,255,120",5);
-    AS_Message(p,"<c val=\"8CFFA0\">MEDKIT</c>  +50 health, infestation cured");
-}
-// Flares: thrown to the cursor, they burn red for twenty seconds and light the corridor.
-unit[16] as_flare;
-fixed[16] as_flareUntil;
-int as_flareNext;
-void AS_ThrowFlare (int p) {
-    point here;fixed dist;
-    if(!as_alive[p] || as_flares[p]<=0) {return;}
-    as_flares[p]-=1;here=UnitGetPosition(as_m[p]);
     dist=MinF(10.0,MaxF(2.0,DistanceBetweenPoints(here,AS_AimPoint(p))));
-    AS_Lob(p,4,PointGetX(here),PointGetY(here),as_aim[p],dist,0.0,0.0);
+    if(it==AS_IT_WELDER) {return;}
+    if(it==AS_IT_ARMOR || it==AS_IT_FIST || it==AS_IT_FLASHLIGHT) {AS_Message(p,as_it[it].title+" is always on");return;}
+    if(it==AS_IT_NIGHTVISION) {
+        if(as_nvOn[p]) {as_nvOn[p]=false;}
+        else if(as_nvPower[p]>=1.0) {as_nvOn[p]=true;}
+        AS_HudNightVision(p);
+        return;
+    }
+    if(as_charges[p]<=0) {AS_Message(p,"No "+as_it[it].title+" left");return;}
+    if(it==AS_IT_MEDKIT) {
+        if(as_hp[p]>=as_hpMax[p] && as_infestUntil[p]<=as_now) {AS_Message(p,"Already at full health");return;}
+        if(as_slowHeal[p]>0.0) {return;}
+        as_charges[p]-=1;
+        if(AS_Class(p)==AS_CL_MEDIC) {AS_Heal(p,50.0+5.0*IntToFixed(AS_Skill(p,AS_SK_HEALING)),p);AS_CureInfestation(p,p);}
+        else {AS_Heal(p,50.0,p);}
+        AS_Burst(PointGetX(here),PointGetY(here),0.6,1.2,"90,255,120",5);
+        AS_Message(p,"<c val=\"8CFFA0\">MEDKIT</c>");
+        AS_HintEvent("healed",p);
+        return;
+    }
+    if(it==AS_IT_STIM) {
+        if(as_slowMo>as_now+1.0) {return;}
+        as_charges[p]-=1;t=5.0+0.8*IntToFixed(AS_BestSquadSkill(AS_SK_DRUGS));
+        as_slowMo=as_now+t;
+        AS_AllMsg("<c val=\"9FE4FF\">ADRENALINE</c>  -  "+AS_MarineNameS(p)+" slows the swarm for "+FixedToString(t,1)+" s");
+        AS_AllSound("Marine_Stimpack");AS_HudSlowMo(true);
+        return;
+    }
+    if(it==AS_IT_ELECARMOR) {
+        if(as_elecUntil[p]>as_now+8.0) {return;}
+        as_charges[p]-=1;as_elecUntil[p]=as_now+12.0;
+        AS_ElecShock(p);
+        return;
+    }
+    as_charges[p]-=1;
+    if(it==AS_IT_FLARES) {AS_Lob(p,4,PointGetX(here),PointGetY(here),as_aim[p],dist,0.0,0.0);}
+    else if(it==AS_IT_LASERMINES) {AS_LaserMines(p);}
+    else if(it==AS_IT_DAMAGEAMP) {AS_Lob(p,10,PointGetX(here),PointGetY(here),as_aim[p],MinF(dist,4.0),0.0,0.0);}
+    else if(it==AS_IT_HORNET) {as_salvoLeft[p]+=8;as_salvoNext[p]=as_now;}
+    else if(it==AS_IT_SMARTBOMB) {as_salvoLeft[p]+=32;as_salvoNext[p]=as_now;}
+    else if(it==AS_IT_FREEZEGREN) {AS_Lob(p,8,PointGetX(here),PointGetY(here),as_aim[p],dist,0.0,0.0);}
+    else if(it==AS_IT_TESLATRAP) {AS_Lob(p,11,PointGetX(here),PointGetY(here),as_aim[p],MinF(dist,4.0),0.0,0.0);}
+    else if(it==AS_IT_INCMINES) {AS_Lob(p,12,PointGetX(here),PointGetY(here),as_aim[p],MinF(dist,5.0),0.0,0.0);}
+    else if(it==AS_IT_GRENADES) {AS_Lob(p,7,PointGetX(here),PointGetY(here),as_aim[p],dist,AS_GrenadeDamage(p),AS_GrenadeRadius(p));}
+    AS_HintEvent("used_extra",p);
 }
+int AS_BestSquadSkill (int sk) {
+    int q;int best=0;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && as_alive[q]) {best=MaxI(best,AS_Skill(q,sk));}}
+    return best;
+}
+// The electric armour's first jolt: every alien within 160 units shocked.
+void AS_ElecShock (int p) {
+    point here=UnitGetPosition(as_m[p]);int j;
+    AS_Ring(PointGetX(here),PointGetY(here),2.0,"150,210,255",6);AS_Sound("Archon_AttackImpact",PointGetX(here),PointGetY(here),90.0,0.05);
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || AS_IsThing(as_aKind[j])) {continue;}
+        if(DistanceBetweenPoints(Point(as_aX[j],as_aY[j]),here)<2.0) {AS_Stun(j,6.0);AS_HurtAlien(j,5.0,3,p,PointGetX(here),PointGetY(here));}
+    }
+}
+// Night vision runs its battery down while on and recharges while off.
+void AS_GearPulse (int p) {
+    if(as_nvOn[p]) {
+        as_nvPower[p]-=AS_DT;
+        if(as_nvPower[p]<=0.0) {as_nvPower[p]=0.0;as_nvOn[p]=false;AS_HudNightVision(p);}
+    }
+    else if(AS_HasItem(p,AS_IT_NIGHTVISION)) {as_nvPower[p]=MinF(20.0,as_nvPower[p]+AS_DT*1.4);}
+    if(as_elecUntil[p]>as_now && as_tick%6==p) {
+        AS_Arc(PointGetX(UnitGetPosition(as_m[p]))-0.3,PointGetY(UnitGetPosition(as_m[p])),PointGetX(UnitGetPosition(as_m[p]))+0.3,PointGetY(UnitGetPosition(as_m[p]))+RandomFixed(-0.3,0.3),0.8);
+    }
+}
+
+// ---- weapons dropped on the deck, and pickups -------------------------------------------
+const int AS_DROPS = 32;
+unit[32] as_drop;
+int[32] as_dropItem;
+int[32] as_dropMag;
+int[32] as_dropReserve;
+int[32] as_dropAlt;
+int as_dropNext;
+// A weapon left lying: its clip and whole clips of its spare ammo, as a dead marine's guns are.
+void AS_DropAt (int it, fixed x, fixed y, int mag, int reserve, int alt) {
+    int i=as_dropNext;string model="ASPickup";
+    as_dropNext=(as_dropNext+1)%AS_DROPS;
+    if(as_drop[i]!=null) {UnitRemove(as_drop[i]);}
+    if(AS_Solid(x,y)) {x=IntToFixed(FixedToInt(x))+0.5;y=IntToFixed(FixedToInt(y))+0.5;}
+    if(it==AS_IT_MEDKIT) {model="ASMedkit";}
+    UnitCreate(1,model,c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
+    as_drop[i]=UnitLastCreated();as_dropItem[i]=it;as_dropMag[i]=mag;as_dropReserve[i]=reserve;as_dropAlt[i]=alt;
+    UnitSetHeight(as_drop[i],0.15,0.0);
+}
+void AS_DropWeapon (int p, int k, fixed x, fixed y) {
+    int it=as_inv[p][k];int mag;int res;
+    if(it<=0) {return;}
+    if(k==2) {AS_DropAt(it,x,y,as_charges[p],0,0);return;}
+    mag=as_mag[p][it];res=as_reserve[p][it];
+    if(as_it[it].mag>1) {res=res/as_it[it].mag*as_it[it].mag;}
+    AS_DropAt(it,x,y,mag,res,as_alt[p][it]);
+}
+int AS_DropNear (int p) {
+    int i;point here=UnitGetPosition(as_m[p]);int best= -1;fixed bd=1.3;fixed d;
+    for(i=0;i<AS_DROPS;i+=1) {
+        if(as_drop[i]==null) {continue;}
+        d=DistanceBetweenPoints(UnitGetPosition(as_drop[i]),here);
+        if(d<bd) {bd=d;best=i;}
+    }
+    return best;
+}
+// Whether marine p may carry item it (class and one-per-marine rules; MarineCanPickup).
+bool AS_CanCarry (int p, int it) {
+    if(as_it[it].cls>=0 && as_it[it].cls!=AS_Class(p)) {return false;}
+    if(as_it[it].unique && (as_inv[p][0]==it || as_inv[p][1]==it)) {return false;}
+    return true;
+}
+string AS_ClassOnly (int it) {
+    if(as_it[it].cls==AS_CL_TECH) {return "Tech only";}
+    if(as_it[it].cls==AS_CL_MEDIC) {return "Medic Only";}
+    if(as_it[it].cls==AS_CL_SW) {return "Special Weapons Only";}
+    if(as_it[it].cls==AS_CL_OFFICER) {return "Officer Only";}
+    return "";
+}
+// E on a dropped item: pick it up, swapping it for what the marine carries in that slot.
+void AS_PickUp (int p, int i) {
+    int it=as_dropItem[i];int k;int old;point here=UnitGetPosition(as_m[p]);int mag;int res;int alt;
+    if(!AS_CanCarry(p,it)) {AS_Message(p,"<c val=\"FF6050\">"+AS_ClassOnly(it)+"</c>");return;}
+    mag=as_dropMag[i];res=as_dropReserve[i];alt=as_dropAlt[i];
+    UnitRemove(as_drop[i]);as_drop[i]=null;
+    if(AS_IsExtra(it)) {k=2;}
+    else if(as_inv[p][1]<=0) {k=1;}
+    else {k=as_hand[p];}
+    old=as_inv[p][k];
+    if(old>0) {
+        if(k==2) {AS_DropAt(old,PointGetX(here),PointGetY(here),as_charges[p],0,0);}
+        else {AS_DropAt(old,PointGetX(here),PointGetY(here),as_mag[p][old],as_reserve[p][old],as_alt[p][old]);}
+    }
+    as_inv[p][k]=it;
+    if(k==2) {as_charges[p]=mag;}
+    else {as_mag[p][it]=mag;as_reserve[p][it]=res;as_alt[p][it]=alt;as_hand[p]=k;as_slot[p]=it;as_reloadEnd[p]=0.0;}
+    AS_Message(p,"<c val=\"8CFFA0\">Picked up</c> "+as_it[it].title);
+    AS_SoundUI(p,"UI_BnetClick");
+    AS_TorchShow(p);
+    if(k==2 && it!=AS_IT_WELDER) {AS_HintEvent("got_extra",p);}
+    if(k!=2) {AS_HintEvent("got_weapon",p);}
+}
+// The level's own pickups (a welder on a bench, a sentry in a sealed room): items with their full load.
+void AS_LevelPickup (string kind, fixed x, fixed y) {
+    int it=AS_IT_WELDER;
+    if(kind=="sentry") {it=AS_IT_SENTRY;}
+    else if(kind=="medkit") {it=AS_IT_MEDKIT;}
+    AS_DropAt(it,x,y,as_it[it].mag,as_it[it].reserve,as_it[it].altAmmo);
+}
+
+// ---- flares -------------------------------------------------------------------------
+// Flares: thrown to the cursor, they burn red for thirty seconds (fading the last ten) and light the corridor.
 void AS_FlareLand (fixed x, fixed y) {
     int i=as_flareNext;
     as_flareNext=(as_flareNext+1)%16;
     if(as_flare[i]!=null) {UnitRemove(as_flare[i]);}
     UnitCreate(1,"ASLightRedbig",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);
     as_flare[i]=UnitLastCreated();UnitSetHeight(as_flare[i],0.6,0.0);
-    as_flareUntil[i]=as_now+20.0;
-    AS_FxUnit("ASFlare",x,y,0.05,RandomFixed(0.0,360.0),1.0,1.0,"255,60,40",320);
+    as_flareUntil[i]=as_now+30.0;
+    AS_FxUnit("ASFlare",x,y,0.05,RandomFixed(0.0,360.0),1.0,1.0,"255,60,40",480);
 }
 void AS_FlarePulse () {
-    int i;
+    int i;fixed left;
+    as_flareCount=0;
     for(i=0;i<16;i+=1) {
         if(as_flare[i]==null) {continue;}
         if(as_now>as_flareUntil[i]) {UnitRemove(as_flare[i]);as_flare[i]=null;continue;}
-        // A flare sputters.
-        if(RandomInt(0,7)==0) {UnitSetScale(as_flare[i],RandomFixed(80.0,115.0),RandomFixed(80.0,115.0),RandomFixed(80.0,115.0));}
+        as_flareCount+=1;
+        // A flare sputters, and fades over its last ten seconds.
+        left=MinF(1.0,(as_flareUntil[i]-as_now)/10.0);
+        if(RandomInt(0,7)==0) {UnitSetScale(as_flare[i],RandomFixed(80.0,115.0)*left,RandomFixed(80.0,115.0)*left,RandomFixed(80.0,115.0)*left);}
     }
 }
 // Everything a marine left about the deck, cleared between levels.
 void AS_WeaponsClear () {
-    int i;
+    int i;int p;
     for(i=0;i<AS_BULLETS;i+=1) {if(as_bu[i]!=null) {UnitRemove(as_bu[i]);as_bu[i]=null;}}
-    for(i=0;i<32;i+=1) {if(as_lob[i]!=null) {UnitRemove(as_lob[i]);as_lob[i]=null;}}
+    for(i=0;i<AS_LOBS;i+=1) {if(as_lob[i]!=null) {UnitRemove(as_lob[i]);as_lob[i]=null;}}
     for(i=0;i<AS_SENTRIES;i+=1) {if(as_sentry[i]!=null) {UnitRemove(as_sentry[i]);as_sentry[i]=null;}}
     for(i=0;i<16;i+=1) {if(as_flare[i]!=null) {UnitRemove(as_flare[i]);as_flare[i]=null;}}
+    for(i=0;i<AS_STASHES;i+=1) {if(as_stash[i]!=null) {UnitRemove(as_stash[i]);as_stash[i]=null;}}
+    for(i=0;i<AS_FIELDS;i+=1) {if(as_field[i]!=null) {UnitRemove(as_field[i]);as_field[i]=null;}if(as_fieldLight[i]!=null) {UnitRemove(as_fieldLight[i]);as_fieldLight[i]=null;}}
+    for(i=0;i<AS_MINES;i+=1) {if(as_mine[i]!=null) {UnitRemove(as_mine[i]);as_mine[i]=null;}if(as_mineBeam[i]!=null) {UnitRemove(as_mineBeam[i]);as_mineBeam[i]=null;}}
+    for(i=0;i<AS_FIRES;i+=1) {if(as_fire[i]!=null) {UnitRemove(as_fire[i]);as_fire[i]=null;}}
+    for(i=0;i<AS_ROCKETS;i+=1) {if(as_rk[i]!=null) {UnitRemove(as_rk[i]);as_rk[i]=null;}}
+    for(i=0;i<AS_DROPS;i+=1) {if(as_drop[i]!=null) {UnitRemove(as_drop[i]);as_drop[i]=null;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_salvoLeft[p]=0;}
+    as_slowMo=0.0;
+}
+void AS_WeaponsPulse () {
+    AS_BulletPulse();AS_LobPulse();AS_SentryPulse();AS_FlarePulse();AS_FieldPulse();AS_MinePulse();AS_FirePulseAll();AS_RocketPulse();
+    if(as_slowMo>0.0 && as_now>as_slowMo) {as_slowMo=0.0;AS_HudSlowMo(false);}
 }
