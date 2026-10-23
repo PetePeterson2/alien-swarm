@@ -259,7 +259,7 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **EMERGENCY lighting** (the swarm alarm) is a red cast that keeps the room readable instead of flooding it red; the alarm lamps carry the rest.
 - **Lab accents** are glowing blue grates.
 - **Hull caps reach five cells** from the deck (was three), so the bare terrain stays out of view: 18 more cap actors, the kit builds in 3.2 s instead of 2.6 (`AS_KitBuildRest` yields every 4 rows there now).
-- **Blasts leave scorch marks** (ASFxScorch, multiplied, in the splat pool; `AS_Scorch` from `AS_Explode`). Not yet seen in the client: no grenade landed while I watched; the autopilot runs since show no script errors.
+- **Blasts leave scorch marks** (ASFxScorch, multiplied, in the splat pool; `AS_Scorch` from `AS_Explode`). Seen in the client: a rifle grenade left a sooty star burst on the bay floor (`dist/screens/overhaul-scorch.jpg`).
 - **A soft dark vignette** frames the view (the HUD's vignette art in black at half opacity, under every other dialog).
 - **Ceilings** (third-person view) in the pale panel style with vents.
 
