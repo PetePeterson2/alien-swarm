@@ -312,6 +312,17 @@ def decal_cable(seed, size=512):
     return _img(np.dstack([g, g, g]))
 
 
+def light_shaft(w=128, h=256, tint=(255, 244, 220)):
+    """asw_vol_light: the haze under a lamp, added over the scene; brightest at the lamp (row 0), gone at the
+    deck, soft at the cone's edges."""
+    v = np.linspace(0, 1, h)[:, None]
+    u = np.abs(np.linspace(-1, 1, w))[None, :]
+    g = (1 - v) ** 1.6 * np.clip(1 - u, 0, 1) ** 1.2 * 0.3
+    n = _noise(0, 30, 61, 3, (h, w))
+    g *= 0.8 + 0.4 * n
+    return _img(np.dstack([g * tint[0], g * tint[1], g * tint[2]]))
+
+
 def decal_shadow(w=64, h=64):
     """Contact shadow at a wall's foot: dark at row 0 (the wall), fading to white (no change)."""
     t = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
@@ -500,6 +511,8 @@ MUL_DECALS = {
     'decal_goo': lambda: decal_grime(34, 'goo'),
     'decal_cable1': lambda: decal_cable(51),
     'decal_cable2': lambda: decal_cable(52),
+    'shaft_warm': lambda: light_shaft(),
+    'shaft_cold': lambda: light_shaft(tint=(200, 226, 255)),
 }
 
 

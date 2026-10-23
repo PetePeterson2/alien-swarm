@@ -448,6 +448,22 @@ def sign_pieces(slugs):
     return out
 
 
+def shaft_pieces():
+    """KVWarm / KVCold: a lamp's light shaft, a ring of eight added quads from a narrow top at the lamp to a wide
+    foot on the deck (the lamps hang 2.1 up, src/Fx.galaxy AS_Lamp)."""
+    import math
+    from tools.shipkit import ShipModel, UNLIT, ADD
+    out = {}
+    for name, tex in (('KVWarm', 'shaft_warm'), ('KVCold', 'shaft_cold')):
+        m = out[name] = ShipModel(name, (0, 0, 0))
+        top, foot, z = 0.25, 1.5, 2.15
+        for k in range(8):
+            t0, t1 = 2 * math.pi * k / 8, 2 * math.pi * (k + 1) / 8
+            m.quad((tex, True, UNLIT, ADD), (foot * math.cos(t0), foot * math.sin(t0), 0.03), (foot * math.cos(t1), foot * math.sin(t1), 0.03),
+                   (top * math.cos(t1), top * math.sin(t1), z), (top * math.cos(t0), top * math.sin(t0), z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    return out
+
+
 def paint_spots():
     """(piece, x, y, facing): each big room's name inside its south edge, a pad under the dropship."""
     spots = []
@@ -457,6 +473,10 @@ def paint_spots():
     for model, x, y, rot, scale, rad in PROPS:
         if model == 'Hercules':
             spots.append(('KNPad', x, y, 0.0))
+    # A haze of light under each steady white or cold lamp.
+    for x, y, kind, flick in LIGHTS:
+        if flick == 0 and kind in ('white', 'whitebig', 'cold'):
+            spots.append(('KVCold' if kind == 'cold' else 'KVWarm', x, y, 0.0))
     # Yellow guide lines round the bays and cargo rooms, a unit and a half in from the walls.
     floor, room = carve()
     solid = blocked(floor)

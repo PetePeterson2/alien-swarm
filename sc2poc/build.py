@@ -441,6 +441,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     models = L.kit_pieces()
     models.update(L.paint_pieces(sorted(paint)))
     models.update(L.sign_pieces(sorted(signs)))
+    models.update(L.shaft_pieces())
     textures = shipkit.hull_textures()
     textures.update(elevator.textures())
     from tools import deckart
