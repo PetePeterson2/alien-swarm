@@ -466,6 +466,26 @@ def shaft_pieces():
     return out
 
 
+def corridor_lamps(floor, room):
+    """Steady lamps added along the corridors wherever no lamp hangs within five units, one every six, as Alien
+    Swarm keeps its passages lit between the rooms' pools."""
+    lamps = [(x, y) for x, y, k, f in LIGHTS]
+    out = []
+    for name, (x0, y0, x1, y1), kind in AREAS:
+        if kind not in ('hall', 'duct'):
+            continue
+        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        steps = ([(x + 0.5, cy) for x in range(x0 + 3, x1 - 2, 6)] if x1 - x0 >= y1 - y0
+                 else [(cx, y + 0.5) for y in range(y0 + 3, y1 - 2, 6)])
+        for x, y in steps:
+            if not floor[int(y), int(x)] or in_void(int(x), int(y)):
+                continue
+            if all(math.hypot(x - lx, y - ly) > 5.0 for lx, ly in lamps):
+                out.append((x, y, 'cold' if kind == 'duct' else 'white', 0))
+                lamps.append((x, y))
+    return out
+
+
 def paint_spots():
     """(piece, x, y, facing): each big room's name inside its south edge, a pad under the dropship."""
     spots = []

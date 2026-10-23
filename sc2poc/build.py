@@ -184,7 +184,7 @@ def level_galaxy(n, solid, room, floor, MW, MH):
     for i, (x, y) in enumerate(tour_spots(solid)):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))
     out.append('    as_tourCount=%d;as_tourAt= -1;' % len(L.AREAS))
-    for x, y, kind, flick in L.LIGHTS:
+    for x, y, kind, flick in L.LIGHTS + L.corridor_lamps(floor, room):
         out.append('    AS_Lamp(%.2f,%.2f,"%s",%d);' % (x, y, kind, flick))
     for i, (x, y) in enumerate(L.VENTS):
         out.append('    as_vent[%d]=Point(%.2f,%.2f);' % (i, x, y))
