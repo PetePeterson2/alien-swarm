@@ -237,7 +237,7 @@ Kit totals for Distress Beacon: 444 walls, 467 floor pieces, 333 decals and prop
 
 Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo Elevator 225.6 s, CAMPAIGN COMPLETE), with no script errors. Screenshots: `dist/screens/overhaul-*.jpg`, with `overhaul-compare.jpg` setting two Alien Swarm shots beside the before and after. Texture previews: `dist/deck-art.png`, `dist/wall-art.png`.
 
-**Second pass (same day).** More of Alien Swarm's dressing, each checked in the client:
+**Second pass (same day).** More of Alien Swarm's dressing, each checked in the client unless noted:
 - **Bulkhead frames** (`propart.py` KPDoor1-12) at every corridor-to-room doorway: chevron lintel, posts with a green status light.
 - **Backlit passage signs** ("← SOUTH PASSAGE", after AS's reactorcontrolwitharrow) beside doors on the walls the camera faces.
 - **Loose cables** across working rooms (multiplied decals, thick rubber with a duller core).
@@ -259,9 +259,8 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **EMERGENCY lighting** (the swarm alarm) is a red cast that keeps the room readable instead of flooding it red; the alarm lamps carry the rest.
 - **Lab accents** are glowing blue grates.
 - **Hull caps reach five cells** from the deck (was three), so the bare terrain stays out of view: 18 more cap actors, the kit builds in 3.2 s instead of 2.6 (`AS_KitBuildRest` yields every 4 rows there now).
-- **Blasts leave scorch marks** (ASFxScorch, multiplied, in the splat pool; `AS_Scorch` from `AS_Explode`).
-
-Totals after the second pass: Distress Beacon's kit is 2,914 actors and Cargo Elevator's 3,105, each built in 3.2 s with 0 pathing leaks; the map is 7.3 MB. Autopilot campaign runs after the second pass: 44.3/238.6 s, 44.8/225.6 s, 45.0/237.8 s, 44.8/229.6 s, 44.3/225.6 s on the final build (Distress Beacon/Cargo Elevator), CAMPAIGN COMPLETE each time, no script errors.
+- **Blasts leave scorch marks** (ASFxScorch, multiplied, in the splat pool; `AS_Scorch` from `AS_Explode`). Not yet seen in the client: no grenade landed while I watched; the autopilot runs since show no script errors.
 - **A soft dark vignette** frames the view (the HUD's vignette art in black at half opacity, under every other dialog).
 - **Ceilings** (third-person view) in the pale panel style with vents.
 
+Totals after the second pass: Distress Beacon's kit is 2,918 actors and Cargo Elevator's 3,104, each built in 3.2 s with 0 pathing leaks; the map is 7.3 MB. Autopilot campaign runs after the second pass: 44.3/238.6 s, 44.8/225.6 s, 45.0/237.8 s, 44.8/229.6 s, 44.3/225.6 s on the final build (Distress Beacon/Cargo Elevator), CAMPAIGN COMPLETE each time, no script errors.
