@@ -127,7 +127,29 @@ def tex_doorpost(seed=47):
     return _img(a), _img(emis)
 
 
+def tex_ammo(seed=48, top=False):
+    """Alien Swarm's ammo supply case: olive-grey steel, a yellow band, an AMMO stencil and rounds; the lid
+    carries a green status strip that glows (emissive) so the crate is found in the dark."""
+    a = np.array((96, 102, 88), float)[None, None] * (0.85 + 0.25 * _noise(0, 24, seed, 3, (T, T))[..., None])
+    _edges(a, 12)
+    emis = np.zeros((T, T, 3))
+    if top:
+        a[T // 2 - 10:T // 2 + 10, 30:T - 30] = (40, 42, 40)
+        a[T // 2 - 5:T // 2 + 5, 40:T - 40] = (90, 255, 120); emis[T // 2 - 5:T // 2 + 5, 40:T - 40] = (50, 230, 90)
+        for cx in (40, T - 52):
+            a[30:60, cx:cx + 12] *= 0.6; a[T - 60:T - 30, cx:cx + 12] *= 0.6
+    else:
+        a[30:56, 12:T - 12] = (206, 164, 40)
+        _stencil(a, 'AMMO', 90, 46, (226, 214, 160))
+        for k in range(6):
+            x = 50 + k * 28
+            a[176:226, x:x + 14] = (190, 150, 60); a[168:178, x + 2:x + 12] = (150, 110, 60)
+    return _img(a), (_img(emis) if top else None)
+
+
 TEXTURES = {
+    'prop_ammo': lambda: tex_ammo(),
+    'prop_ammo_top': lambda: tex_ammo(top=True),
     'prop_doorframe': lambda: (tex_doorframe(), None),
     'prop_doorpost': tex_doorpost,
     'prop_column': lambda: (tex_column(), None),
@@ -202,9 +224,10 @@ DOOR_WIDTHS = range(1, 13)
 
 
 def pieces(out):
-    """KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
+    """KPAmmo (the ammo supply case, the ASAmmo unit's model), KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
     from tools.shipkit import ShipModel
     m = out['KPCol'] = ShipModel('KPCol', (0, 0, 0)); _column(m)
+    m = out['KPAmmo'] = ShipModel('KPAmmo', (0, 0, 0)); _box(m, 'prop_ammo', 'prop_ammo_top', 0.95, 0.65, 0.5)
     for w in DOOR_WIDTHS:
         m = out['KPDoor%d' % w] = ShipModel('KPDoor%d' % w, (0, 0, 0)); _door(m, w)
     m = out['KPCrateG'] = ShipModel('KPCrateG', (0, 0, 0)); _box(m, 'prop_crate_green', 'prop_crate_green_top', 1.1, 1.1, 0.9)

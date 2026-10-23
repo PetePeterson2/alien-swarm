@@ -98,21 +98,28 @@ def floor_tile(seed=2, tone=(142, 146, 146), mottle=0.18):
     return _img(_dirt(a, seed + 4, 0.15))
 
 
-def floor_lab(seed=3):
-    """Clean white lab tiles, half a unit each, pale grout."""
-    base = np.array((176, 182, 186), float)
+def floor_lab(seed=3, glow=True):
+    """Clean blue-white lab tiles, a unit each, whose seams carry a faint cyan light (emissive), as the bright
+    grid of Alien Swarm's lab and colony floors does."""
+    base = np.array((168, 180, 190), float)
     n = _noise(0, 50, seed, 3, (S, S))
-    a = base[None, None] * (0.94 + 0.1 * n[..., None])
+    a = base[None, None] * (0.92 + 0.12 * n[..., None])
+    emis = np.zeros((S, S, 3))
+    for k in range(0, S, U):
+        for sl in (np.s_[max(0, k - 3):k + 3, :], np.s_[:, max(0, k - 3):k + 3]):
+            a[sl] = (186, 206, 214)
+            if glow:
+                emis[sl] = (16, 36, 44)
+        a[k + 3:k + 6] *= 0.8; a[:, k + 3:k + 6] *= 0.8
+    # Half-unit scoring inside each tile, and a few tiles a shade off.
     q = U // 2
-    for k in range(0, S, q):
-        a[max(0, k - 2):k + 2] *= 0.62
-        a[:, max(0, k - 2):k + 2] *= 0.62
-    # A few tiles a shade off.
+    for k in range(q, S, U):
+        a[k - 1:k + 1] *= 0.86; a[:, k - 1:k + 1] *= 0.86
     r = np.random.default_rng(seed)
-    for _ in range(5):
-        tx, ty = r.integers(0, 4, 2) * q
-        a[ty + 2:ty + q - 2, tx + 2:tx + q - 2] *= r.uniform(0.9, 1.04)
-    return _img(_dirt(a, seed + 4, 0.12))
+    for _ in range(2):
+        tx, ty = r.integers(0, 2, 2) * U
+        a[ty + 6:ty + U - 6, tx + 6:tx + U - 6] *= r.uniform(0.9, 1.04)
+    return _img(_dirt(a, seed + 4, 0.14)), (_img(emis) if glow else None)
 
 
 def floor_diamond(seed=4, tone=(124, 124, 120)):
@@ -401,6 +408,33 @@ def paint_textures(names):
     return out
 
 
+def wall_sign(text, w=512, h=128):
+    """A backlit wall sign after Alien Swarm's (reactorcontrolwitharrow, maintainancesign): white lettering and an
+    arrow on a deep blue plate in a steel bezel; the plate glows (emissive)."""
+    im = Image.new('RGB', (w, h), (64, 68, 72))
+    d = ImageDraw.Draw(im)
+    d.rectangle([8, 8, w - 9, h - 9], fill=(22, 58, 112))
+    # The arrow points left: the sign hangs to the right of the door it names.
+    d.polygon([(70, h * 0.3), (30, h / 2), (70, h * 0.7)], fill=(236, 240, 244))
+    d.rectangle([68, h * 0.44, 110, h * 0.56], fill=(236, 240, 244))
+    f = _font(52)
+    box = d.textbbox((0, 0), text, font=f)
+    if box[2] - box[0] > w - 160:
+        f = _font(int(52 * (w - 160) / (box[2] - box[0])))
+    d.text((134, h / 2), text, font=f, fill=(236, 240, 244), anchor='lm')
+    a = np.asarray(im).astype(float)
+    a *= (0.9 + 0.15 * _noise(0, 20, len(text), 2, (h, w)))[..., None]
+    emis = np.zeros_like(a)
+    inner = np.s_[8:h - 8, 8:w - 8]
+    emis[inner] = a[inner] * 0.55
+    return _img(a), _img(emis)
+
+
+def sign_textures(names):
+    """slug -> (diffuse, emissive): each passage's wall sign."""
+    return {'sign_' + slug.lower(): wall_sign(text) for slug, text in names.items()}
+
+
 def decal_arrow(w=256, h=256, color=(226, 182, 40)):
     im = Image.new('RGBA', (w, h), color + (0,))
     d = ImageDraw.Draw(im)
@@ -429,7 +463,7 @@ FLOORS = {
     'floor_plate2': lambda: (floor_plate(21, (104, 100, 94)), None),
     'floor_tile': lambda: (floor_tile(), None),
     'floor_tile2': lambda: (floor_tile(22, (126, 134, 140)), None),
-    'floor_lab': lambda: (floor_lab(), None),
+    'floor_lab': lambda: floor_lab(),
     'floor_diamond': lambda: (floor_diamond(), None),
     'floor_grille': lambda: (floor_grille(), None),
     'floor_grate': lambda: floor_grate(),

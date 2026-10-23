@@ -432,6 +432,22 @@ def paint_names():
     return out
 
 
+def sign_names():
+    """Wall signs for the level's passages: slug -> text."""
+    return {name.replace(' ', '').upper(): name.upper() for name, rect, kind in AREAS if kind in ('hall', 'duct')}
+
+
+def sign_pieces(slugs):
+    """KS<slug>: a sign plate 1.6 x 0.4 standing just proud of a wall that faces -Y, its middle 1.7 up."""
+    from tools.shipkit import ShipModel
+    out = {}
+    for slug in slugs:
+        m = out['KS' + slug] = ShipModel('KS' + slug, (0, 0, 0))
+        m.quad(('sign_' + slug.lower(), False, 0), (-0.8, -0.035, 1.5), (0.8, -0.035, 1.5), (0.8, -0.035, 1.9), (-0.8, -0.035, 1.9),
+               [(0, 1), (1, 1), (1, 0), (0, 0)])
+    return out
+
+
 def paint_spots():
     """(piece, x, y, facing): each big room's name inside its south edge, a pad under the dropship."""
     spots = []
@@ -506,6 +522,11 @@ def decal_spots(floor, room, solid, seed=7):
             cy = y if run and kind(run[0], y) in corridor else y - 1
             if run and len(run) <= 12 and all(not (0 <= xx < W) or not floor[cy, xx] for xx in (run[0] - 1, run[-1] + 1)):
                 spots.append(('KPDoor%d' % len(run), (run[0] + run[-1] + 1) / 2.0, float(y), 0.0))
+                # The passage beyond named on the room's wall beside the door, where it faces the camera.
+                if cy == y and 0 <= y - 1 and AREAS[room[y, run[0]]][2] in corridor:
+                    sx = run[-1] + 2.2
+                    if sx + 1 < W and all(0 <= sx + dx < W and not floor[y, int(sx + dx)] and floor[y - 1, int(sx + dx)] for dx in (-0.8, 0.0, 0.79)):
+                        spots.append(('KS' + AREAS[room[y, run[0]]][0].replace(' ', '').upper(), sx, float(y), 0.0))
             run = []
     for x in range(1, W):
         run = []

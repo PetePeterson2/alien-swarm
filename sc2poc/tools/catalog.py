@@ -39,7 +39,7 @@ STATICS = [
     ('ASEgg', 'Egg', 0.85, 30),
     ('ASBiomass', 'DestructibleZergInfestation3x3', 0.45, 600),
     ('ASSentry', 'SentryGun', 0.85, 300),
-    ('ASAmmo', 'PickupPlasmaRounds', 0.9, 0),
+    ('ASAmmo', 'ASAmmoCaseModel', 1.0, 0),       # Alien Swarm's ammo case (tools/propart.py KPAmmo)
     ('ASMedkit', 'PickupHealth100', 0.9, 0),
 ]
 # Projectiles moved by the script.
@@ -137,6 +137,8 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
     child(a, 'On', Terms='ActorCreation', Send='TimerSet 8 ASExpire')
     child(a, 'On', Terms='TimerExpired; TimerName ASExpire', Send='Destroy')
     child(a, 'FogVisibility', value='Visible')
+    m = child(cat['Model'], 'CModel', id='ASAmmoCaseModel', parent='Doodad')
+    child(m, 'Model', value='Derelict\\KPAmmo.m3')
     for ident, model, scale, life in STATICS:
         unit(ident, model, scale, life, radius=0.5 if life else 0.0, collide=ident in ('ASSentry',))
     for ident, model, scale in PROJECTILES:
