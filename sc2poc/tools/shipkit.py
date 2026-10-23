@@ -23,6 +23,7 @@ TEX_DIR = 'Derelict\\'
 NO_SHADOW_CAST = 0x20
 UNLIT = 0x4 | 0x8 | 0x10 | 0x20 | 0x40 | 0x80     # tools/fx.py's: unshaded, two-sided, no shadows, no hit test
 MULTIPLY = 4
+ADD = 2
 
 
 # ------------------------------------------------------------------ DDS

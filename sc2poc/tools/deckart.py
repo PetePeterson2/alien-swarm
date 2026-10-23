@@ -306,6 +306,44 @@ def decal_text(text, w=1024, h=256, color=(226, 182, 40)):
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), 'RGBA')
 
 
+def paint_pad(size=512, color=(226, 182, 40)):
+    """A landing pad: a broad yellow ring with four inward chevrons, worn (with alpha)."""
+    im = Image.new('RGBA', (size, size), color + (0,))
+    d = ImageDraw.Draw(im)
+    c = size / 2
+    d.ellipse([c - size * 0.44, c - size * 0.44, c + size * 0.44, c + size * 0.44], outline=color + (225,), width=int(size * 0.05))
+    for k in range(4):
+        import math as _m
+        ang = k * _m.pi / 2
+        def P(r, t):
+            return (c + r * _m.cos(ang + t), c + r * _m.sin(ang + t))
+        d.polygon([P(size * 0.34, 0), P(size * 0.24, 0.32), P(size * 0.27, 0), P(size * 0.24, -0.32)], fill=color + (225,))
+    a = np.asarray(im).astype(float)
+    a[..., 3] *= np.clip(0.55 + (_noise(0, 16, 91, 3, (size, size)) - 0.35) * 1.6, 0, 1)
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), 'RGBA')
+
+
+def _paint_split(im, tint=(1.0, 0.84, 0.30), lift=(64, 48, 6)):
+    """An RGBA paint image as two layers the client draws (an alpha blend drew its clear parts opaque,
+    2026-10-23): one multiplied over the deck (tints it yellow where painted, white elsewhere) and
+    one added over that (lifts the paint's brightness)."""
+    c = np.asarray(im).astype(float)[..., 3:4] / 255
+    mul = 255 * (1 - c * (1 - np.array(tint)[None, None]))
+    add = c * np.array(lift, float)[None, None]
+    return _img(mul), _img(add)
+
+
+def paint_textures(names):
+    """name -> image: each room's stencilled name and the landing pad, as _m (multiplied) and _a (added) layers."""
+    src = {'paint_pad': paint_pad()}
+    for slug, text in names.items():
+        src['paint_' + slug.lower()] = decal_text(text, 512, 128)
+    out = {}
+    for k, im in src.items():
+        out[k + '_m'], out[k + '_a'] = _paint_split(im)
+    return out
+
+
 def decal_arrow(w=256, h=256, color=(226, 182, 40)):
     im = Image.new('RGBA', (w, h), color + (0,))
     d = ImageDraw.Draw(im)

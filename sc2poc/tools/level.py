@@ -61,7 +61,7 @@ LIGHTS = [
     (33.0, 16.0, 'white', 1), (44.0, 16.0, 'white', 0), (55.0, 16.0, 'red', 3), (44.0, 24.0, 'white', 2),
     (68.0, 11.0, 'white', 0), (84.0, 11.0, 'white', 1), (68.0, 27.0, 'orange', 2), (84.0, 27.0, 'white', 0), (76.0, 19.0, 'white', 2),
     (63.0, 42.0, 'red', 3), (68.0, 35.0, 'white', 1),
-    (61.0, 50.0, 'white', 2), (68.0, 52.0, 'green', 0), (82.0, 52.0, 'green', 0), (68.0, 66.0, 'green', 1), (82.0, 66.0, 'cold', 2), (75.0, 64.0, 'green', 0),
+    (61.0, 50.0, 'white', 2), (68.0, 52.0, 'white', 0), (82.0, 52.0, 'green', 0), (68.0, 66.0, 'cold', 1), (82.0, 66.0, 'white', 2), (75.0, 64.0, 'green', 0),
     (44.0, 58.0, 'purple', 0), (34.0, 63.0, 'purple', 1), (52.0, 63.0, 'purple', 0), (34.0, 71.0, 'purple', 2), (52.0, 71.0, 'purple', 0), (43.0, 69.0, 'orange', 2),
     (60.0, 65.0, 'red', 3),
     (11.0, 55.0, 'red', 3), (11.0, 63.0, 'white', 1), (20.0, 67.0, 'white', 2),
@@ -420,6 +420,40 @@ def decal_pieces(out):
         m.quad(key, (-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
 
 
+def paint_names():
+    """Stencilled names for the level's big rooms: slug -> text, after Alien Swarm's LANDING BAY 7 floor paint."""
+    out = {}
+    for name, (x0, y0, x1, y1), kind in AREAS:
+        if kind in ('bay', 'cargo', 'mess', 'reactor', 'lab') and x1 - x0 >= 12:
+            n = (sum(map(ord, name)) * 7) % 19 + 1
+            out[name.replace(' ', '').upper()] = '%s %02d' % (name.upper(), n)
+    return out
+
+
+def paint_spots():
+    """(piece, x, y, facing): each big room's name inside its south edge, a pad under the dropship."""
+    spots = []
+    for name, (x0, y0, x1, y1), kind in AREAS:
+        if name.replace(' ', '').upper() in paint_names():
+            spots.append(('KN' + name.replace(' ', '').upper(), (x0 + x1) / 2.0, y0 + 1.5, 0.0))
+    for model, x, y, rot, scale, rad in PROPS:
+        if model == 'Hercules':
+            spots.append(('KNPad', x, y, 0.0))
+    return spots
+
+
+def paint_pieces(slugs):
+    """KN<slug> (a 6 x 1.5 name) and KNPad (a 4 x 4 landing ring): paint just over the plating, a multiplied
+    layer that tints the deck and an added one that brightens it (tools/deckart.py paint_textures)."""
+    from tools.shipkit import ShipModel, UNLIT, MULTIPLY, ADD
+    out = {}
+    for slug, tex, a, b in [(s_, 'paint_' + s_.lower(), 3.0, 0.75) for s_ in slugs] + [('Pad', 'paint_pad', 2.0, 2.0)]:
+        m = out['KN' + slug] = ShipModel('KN' + slug, (0, 0, 0))
+        for layer, blend, z in (('_m', MULTIPLY, 0.012), ('_a', ADD, 0.014)):
+            m.quad((tex + layer, False, UNLIT, blend), (-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    return out
+
+
 def decal_spots(floor, room, solid, seed=7):
     """(piece, x, y, facing) for every decal of the level in use: hazard paint across each doorway
     (where a corridor meets a room), a warning sign beside a few, and grime, scorches and alien goo."""
@@ -469,7 +503,7 @@ def decal_spots(floor, room, solid, seed=7):
         solid[y + dy, x + dx] for dx in (-2, 0, 2) for dy in (-2, 0, 2) if 0 <= x + dx < W and 0 <= y + dy < H)]
     for x, y in rng.sample(rooms, min(len(rooms), 3)):
         spots.append(('KDWarn', x + 0.5, y + 0.5, rng.choice([0.0, 90.0, 180.0, 270.0])))
-    return spots
+    return spots + paint_spots()
 
 
 def deck_rows(floor, room):

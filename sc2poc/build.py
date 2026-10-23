@@ -383,6 +383,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     """Every level in one map: the terrain is a blank floor the size of the biggest level, and the script
     builds whichever level is being played from its strings (src/Kit.galaxy), then the next."""
     levels, missions, pieces, props, floors, report, maps = [], [], {}, set(), set(), [], []
+    paint = {}
     sizes = []
     for name, *_ in LEVELS:
         L.use(name)
@@ -396,6 +397,7 @@ def compose(qa, demo=False, auto=False, start=-1):
         maps.append((floor, np.array([[L.in_void(x, y) for x in range(L.W)] for y in range(L.H)])))
         missions.append(mission_galaxy(n))
         props |= {p[0] for p in L.PROPS if p[0] not in FLAT_PROPS}
+        paint.update(L.paint_names())
         floors.add(L.FLOOR)
         if L.LIFT is not None:
             pieces.update(elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR))
@@ -434,9 +436,11 @@ def compose(qa, demo=False, auto=False, start=-1):
         'DocInfo/Website=\nDocInfo/Category=Other\nVariant001/ModeName=Co-op\nVariant001/ModeDesc=Up to four marines\n' % TITLE).encode()
     # The hull kit's pieces, every level's set pieces, and their textures.
     models = L.kit_pieces()
+    models.update(L.paint_pieces(sorted(paint)))
     textures = shipkit.hull_textures()
     textures.update(elevator.textures())
-    shipkit.pack_textures(files, textures, shipkit.multiply_textures())
+    from tools import deckart
+    shipkit.pack_textures(files, textures, {**shipkit.multiply_textures(), **deckart.paint_textures(paint)})
     emissive = {k for k, (d, e) in textures.items() if e is not None}
     for name, model in sorted(models.items()):
         files['Base.SC2Assets/Derelict/%s.m3' % name] = shipkit.write_m3(name, model.export(emissive))
