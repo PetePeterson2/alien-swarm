@@ -103,16 +103,24 @@ def _hazard(a, y0, y1, seed=0):
 
 
 def tex_ceiling(seed=6, size=512):
+    """The ceiling the third-person camera sees: pale grey panels a unit square with bevelled seams, a vent grille
+    in some, and one long recessed lamp across the four-unit tile (lit in the 'ceiling' variant)."""
     n = _noise(size, 60, seed)
-    a = np.array((44, 48, 52), float)[None, None] * (0.75 + 0.35 * n[..., None])
+    a = np.array((96, 102, 108), float)[None, None] * (0.8 + 0.3 * n[..., None])
     emis = np.zeros((size, size, 3))
-    for k in range(0, size, size // 4):
-        a[k:k + 3] *= 0.4; a[:, k:k + 3] *= 0.4
-    # One recessed lamp per tile, most of them dead.
-    a[size // 2 - 20:size // 2 + 20, 60:size - 60] = (30, 32, 34)
-    a[size // 2 - 12:size // 2 + 12, 70:size - 70] = (170, 180, 186)
-    emis[size // 2 - 12:size // 2 + 12, 70:size - 70] = (120, 130, 140)
-    return _img(_grime(a, seed + 3, 0.3)), _img(emis)
+    q = size // 4
+    for k in range(0, size, q):
+        a[k:k + 3] *= 0.45; a[:, k:k + 3] *= 0.45
+        a[k + 3:k + 5] *= 1.2; a[:, k + 3:k + 5] *= 1.2
+    r = np.random.default_rng(seed)
+    for _ in range(3):
+        tx, ty = r.integers(0, 4) * q, r.choice([0, 3]) * q
+        for y in range(ty + 24, ty + q - 24, 9):
+            a[y:y + 4, tx + 24:tx + q - 24] *= 0.35
+    a[size // 2 - 20:size // 2 + 20, 60:size - 60] = (40, 42, 44)
+    a[size // 2 - 12:size // 2 + 12, 70:size - 70] = (200, 208, 214)
+    emis[size // 2 - 12:size // 2 + 12, 70:size - 70] = (150, 160, 170)
+    return _img(_grime(a, seed + 3, 0.25)), _img(emis)
 
 
 def tex_plain(rgb, size=16):
