@@ -97,7 +97,7 @@ PROPS = [
     ('DOM_CeilingDebris_Beams', 19.0, 37.5, 70.0, 0.8, 0.0), ('SpacePlatformWallDebris', 7.5, 43.0, 0.0, 0.8, 0.0),
     ('ZergCarcasses', 15.0, 47.0, 0.0, 0.7, 0.0),
     # Reactor core.
-    ('Moebius_Reactor', 46.0, 42.0, 0.0, 0.55, 0.0),
+    ('KPReactor', 46.0, 42.0, 0.0, 1.0, 0.0),        # the glowing core on top of its housing (tools/propart.py)
     ('SpacePlatformGenerator', 36.5, 42.0, 90.0, 0.7, 0.0), ('SpacePlatformGenerator', 55.5, 42.0, 270.0, 0.7, 0.0),
     ('ElectricalArcs', 44.0, 39.5, 0.0, 0.8, 0.0), ('ElectricalArcs', 48.5, 44.5, 0.0, 0.8, 0.0),
     ('SpacePlatformSteamVent', 40.0, 32.0, 0.0, 0.8, 0.0), ('SpacePlatformSteamVent', 52.0, 52.0, 0.0, 0.8, 0.0),

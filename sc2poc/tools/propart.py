@@ -186,7 +186,41 @@ def tex_console(seed=50, top=False):
     return _img(a), _img(emis)
 
 
+def tex_reactor(seed=51):
+    """The reactor core's drum, unrolled: dark ribbed steel with three bright cyan coolant bands (emissive)."""
+    w, h = 512, 256
+    a = np.array((70, 78, 88), float)[None, None] * (0.85 + 0.25 * _noise(0, 24, seed, 3, (h, w))[..., None])
+    for x in range(0, w, 32):
+        a[:, x:x + 4] *= 0.5; a[:, x + 4:x + 7] *= 1.3
+    emis = np.zeros((h, w, 3))
+    for y0 in (40, 120, 200):
+        band = np.s_[y0:y0 + 18]
+        a[band] = (150, 230, 255); emis[band] = (60, 200, 255)
+        a[y0 - 4:y0] *= 0.4; a[y0 + 18:y0 + 22] *= 0.4
+    return _img(a), _img(emis)
+
+
+def tex_reactor_top(seed=52):
+    """The core seen from above: a glowing cyan iris in a heavy steel ring."""
+    a = np.array((60, 66, 74), float)[None, None] * (0.85 + 0.25 * _noise(0, 20, seed, 3, (T, T))[..., None])
+    yy, xx = np.mgrid[0:T, 0:T]
+    d = np.hypot(xx - T / 2, yy - T / 2) / (T / 2)
+    ang = np.arctan2(yy - T / 2, xx - T / 2)
+    emis = np.zeros((T, T, 3))
+    core = d < 0.55
+    glow = np.clip(1 - d / 0.55, 0, 1) ** 0.6 * (0.75 + 0.25 * np.cos(ang * 8))
+    a[core] = (np.array((120, 220, 255)) * (0.5 + 0.5 * glow[core][..., None]))
+    emis[core] = np.array((70, 210, 255)) * glow[core][..., None]
+    a[(d > 0.55) & (d < 0.62)] = (30, 32, 36)
+    for k in range(12):
+        t = k * np.pi / 6
+        a[(np.abs(((ang - t + np.pi) % (2 * np.pi)) - np.pi) < 0.06) & (d > 0.65) & (d < 0.95)] *= 1.5
+    return _img(a), _img(emis)
+
+
 TEXTURES = {
+    'prop_reactor': tex_reactor,
+    'prop_reactor_top': tex_reactor_top,
     'prop_locker': lambda: (tex_locker(), None),
     'prop_console': lambda: tex_console(),
     'prop_console_top': lambda: tex_console(top=True),
@@ -271,6 +305,17 @@ def _wallbox(m, side, top, w, d, hgt, front_uv=((0, 1), (1, 1), (1, 0), (0, 0)))
     m.quad((top, False, 0), (-a, -d, hgt), (a, -d, hgt), (a, 0, hgt), (-a, 0, hgt), [(0, 1), (1, 1), (1, 0), (0, 0)])
 
 
+def _drum(m, side, top, r, z0, hgt, n=20):
+    """An upright drum of radius r from z0 to z0 + hgt, its top a disc."""
+    for i in range(n):
+        t0, t1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+        p0, p1 = (r * math.cos(t0), r * math.sin(t0)), (r * math.cos(t1), r * math.sin(t1))
+        m.quad((side, False, 0), (p0[0], p0[1], z0), (p1[0], p1[1], z0), (p1[0], p1[1], z0 + hgt), (p0[0], p0[1], z0 + hgt),
+               [(2 * i / n, 1), (2 * (i + 1) / n, 1), (2 * (i + 1) / n, 0), (2 * i / n, 0)])
+    m.poly((top, False, 0), [(r * math.cos(2 * math.pi * i / n), r * math.sin(2 * math.pi * i / n), z0 + hgt) for i in range(n)],
+           [(0.5 + 0.5 * math.cos(2 * math.pi * i / n), 0.5 - 0.5 * math.sin(2 * math.pi * i / n)) for i in range(n)])
+
+
 DOOR_WIDTHS = range(1, 13)
 
 
@@ -278,6 +323,9 @@ def pieces(out):
     """KPAmmo (the ammo supply case, the ASAmmo unit's model), KPLockers and KPConsole (against a wall facing -Y), KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
     from tools.shipkit import ShipModel
     m = out['KPCol'] = ShipModel('KPCol', (0, 0, 0)); _column(m)
+    m = out['KPReactor'] = ShipModel('KPReactor', (0, 0, 0))
+    _drum(m, 'prop_reactor', 'prop_reactor_top', 1.55, 2.5, 0.9)
+    _drum(m, 'prop_column', 'prop_reactor_top', 1.75, 2.5, 0.18)
     m = out['KPAmmo'] = ShipModel('KPAmmo', (0, 0, 0)); _box(m, 'prop_ammo', 'prop_ammo_top', 0.95, 0.65, 0.5)
     m = out['KPLockers'] = ShipModel('KPLockers', (0, 0, 0)); _wallbox(m, 'prop_locker', 'prop_crate_metal_top', 1.3, 0.42, 1.85)
     m = out['KPConsole'] = ShipModel('KPConsole', (0, 0, 0))

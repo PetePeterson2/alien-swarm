@@ -171,6 +171,8 @@ def level_galaxy(n, solid, room, floor, MW, MH):
         # Flat stock decals would lie under the floor plating: blood becomes goo, the rest goes.
         if model == 'BloodSplats':
             out.append('    AS_KitDecal("KDGoo",%.2f,%.2f,%.1f);' % (x, y, rot))
+        elif model.startswith('KP'):
+            out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % (model, x, y, rot))
         elif model == 'DOM_Crate':
             out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % ('KPCrateG' if int(x + y) % 3 else 'KPCrateM', x, y, rot))
         elif model not in FLAT_PROPS:
@@ -396,7 +398,7 @@ def compose(qa, demo=False, auto=False, start=-1):
         levels.append(level_galaxy(n, solid, room, floor, *MAP_SIZE))
         maps.append((floor, np.array([[L.in_void(x, y) for x in range(L.W)] for y in range(L.H)])))
         missions.append(mission_galaxy(n))
-        props |= {p[0] for p in L.PROPS if p[0] not in FLAT_PROPS}
+        props |= {p[0] for p in L.PROPS if p[0] not in FLAT_PROPS and not p[0].startswith('KP')}
         paint.update(L.paint_names())
         signs.update(L.sign_names())
         floors.add(L.FLOOR)

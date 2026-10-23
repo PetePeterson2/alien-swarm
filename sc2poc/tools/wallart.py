@@ -225,7 +225,7 @@ def tex_trim(seed=12):
 def tex_cap(seed=5, size=512):
     """The top of the hull as the camera sees it: dark blue-grey plating, conduits and vents."""
     n = _noise(size, 50, seed)
-    a = np.array((46, 52, 58), float)[None, None] * (0.8 + 0.4 * n[..., None])
+    a = np.array((28, 32, 37), float)[None, None] * (0.8 + 0.4 * n[..., None])
     q = size // 4
     for k in range(0, size, q):
         a[k:k + 3] *= 0.45; a[:, k:k + 3] *= 0.45
@@ -239,7 +239,7 @@ def tex_cap(seed=5, size=512):
     for k in range(2):
         y = int(r.integers(20, size - 20))
         yy = np.arange(-9, 9); s = np.sqrt(np.clip(1 - (yy / 9.0) ** 2, 0, 1))
-        a[y - 9:y + 9] = np.array((70, 74, 78))[None, None] * (0.4 + 0.8 * s)[:, None, None]
+        a[y - 9:y + 9] = np.array((46, 50, 54))[None, None] * (0.4 + 0.8 * s)[:, None, None]
     return _img(a)
 
 
