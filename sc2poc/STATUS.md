@@ -261,7 +261,7 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **Hull caps reach five cells** from the deck (was three), so the bare terrain stays out of view: 18 more cap actors, the kit builds in 3.2 s instead of 2.6 (`AS_KitBuildRest` yields every 4 rows there now).
 - **Blasts leave scorch marks** (ASFxScorch, multiplied, in the splat pool; `AS_Scorch` from `AS_Explode`).
 
-Totals after the second pass: Distress Beacon's kit is 2,896 actors and Cargo Elevator's 3,151, each built in 2.6 s with 0 pathing leaks; the map is 7.3 MB. Autopilot campaign runs after the second pass: 44.3/238.6 s, 44.8/225.6 s, 45.0/237.8 s (Distress Beacon/Cargo Elevator), CAMPAIGN COMPLETE each time, no script errors.
+Totals after the second pass: Distress Beacon's kit is 2,914 actors and Cargo Elevator's 3,105, each built in 3.2 s with 0 pathing leaks; the map is 7.3 MB. Autopilot campaign runs after the second pass: 44.3/238.6 s, 44.8/225.6 s, 45.0/237.8 s, 44.8/229.6 s (Distress Beacon/Cargo Elevator), CAMPAIGN COMPLETE each time, no script errors.
 - **A soft dark vignette** frames the view (the HUD's vignette art in black at half opacity, under every other dialog).
 - **Ceilings** (third-person view) in the pale panel style with vents.
 
