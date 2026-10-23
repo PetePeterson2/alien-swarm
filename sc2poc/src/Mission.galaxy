@@ -707,7 +707,8 @@ bool AS_HoldPulse (int on) {
     if(as_now<as_holdAt+AS_HOLD) {
         // A swarm every dozen seconds from the station's vents, heavier as the car gets close.
         if(as_now>=as_holdWave && as_hordeLeft<=0) {
-            as_holdWave=as_now+12.0;AS_StartHorde();
+            // The director's own horde size grows wave on wave (30 and more by now): the hold's are sized to the squad.
+            as_holdWave=as_now+12.0;AS_StartHorde();as_hordeLeft=AS_Scaled(6);
             if(as_now>as_holdAt+25.0) {AS_SpawnNear(AS_BOOMER,111.0,43.0,true);}
         }
         return true;
@@ -715,6 +716,8 @@ bool AS_HoldPulse (int on) {
     if(as_holdWave>0.0) {
         as_holdWave=0.0;
         AS_All("TRANSIT CAR ARRIVED","Everyone onto the platform");AS_Log("car arrived");
+        // No more swarms: what is left is getting the squad aboard.
+        as_director=false;as_hordeLeft=0;
         SoundPlayAtPoint(SoundLink("Doodad_TrainDockingDoorOpen",-1),PlayerGroupAll(),Point(111.0,20.0),0.5,100.0,0.0);
         AS_Flash(111.0,20.0,1.5,6.0,"255,240,200");
         GameSetLighting("ASDerelict",2.0);
@@ -738,8 +741,10 @@ void AS_ExtractPulse () {
     as_director=false;as_hordeLeft=0;
     GameSetLighting("ASPowered",3.0);
     AS_AllSound("Alert_Victory");
+    // God mode first: boomers bursting in the clean-up below would otherwise still down a marine.
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {as_god[p]=true;}}
     for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS) {AS_KillAlien(i,0,1);}}
-    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {as_god[p]=true;AS_Debrief(p);}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p);}}
     TriggerExecute(TriggerCreate("AS_EndT"),false,false);
 }
 bool AS_EndT (bool testConds, bool runActions) {

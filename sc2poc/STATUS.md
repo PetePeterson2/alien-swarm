@@ -69,4 +69,9 @@ QA keys (both builds): Ctrl+N room tour, Ctrl+P probe, Ctrl+U reset trigger path
 - HUD: an objectives list with a compass bearing to the objective, a centre bar (override %, lift countdown, ride depth), squad health, and the debrief.
 - build.py now catches three compile errors galaxy_check misses: duplicate globals, globals used above their declaration, and locals declared after a statement.
 
-**Not yet seen in the client.** The first QA launch failed to compile (`as_spin` clashed with the minigun's global). The client then stayed in that game, so later builds couldn't load. The current build passes every static check. Next: `.\launch.ps1 -Auto`, read the ASAuto bank, then look at the ride in person. The online test steps are in `TESTING-ONLINE.md`.
+**Autopilot run passes (2026-10-22).** `.\launch.ps1 -Auto` plays the mission end to end: **MISSION COMPLETE in 228.3 s** (game time), every stage logged in order, the ride 74.6 s with the exit lintel set and the entrance gone, 2 marine deaths in the whole run, no script errors. Two fixes came out of the first autopilot run, which never finished:
+
+- After its last waypoint the autopilot marine stopped steering, and the swarm shoved it off the transit platform to the south wall (y ≈ 12), so the extraction check never passed. `AS_RouteGoal` now holds the last waypoint.
+- Victory killed the leftover aliens before it turned on god mode, so a boomer bursting in that cleanup could still down a marine. God mode now comes first.
+
+The status line now logs deaths per marine (`/d`). Next: look at the ride in person (`.\launch.ps1 -QA`, Ctrl+L to skip ahead), then the online test in `TESTING-ONLINE.md`. Not covered by the autopilot: how anything looks, input feel, and frame rate.
