@@ -157,6 +157,8 @@ def build():
         tint = np.array((0.42, 0.55, 0.12))
         rgb = 255 * (1 - cover[..., None] * (1 - tint[None, None]) - edge[..., None] * 0.3)
         save('splat%d.dds' % k, rgb)
+        # Its glow, added over the darkened deck: Alien Swarm's alien blood is a vivid yellow-green.
+        save('splatglow%d.dds' % k, cover[..., None] ** 1.5 * np.array((50, 54, 4)))
     models = {}
     t = []; streak(t, 0.035); models['Tracer'] = (t, 'tracer.dds')
     t = []; streak(t, 0.012); models['Laser'] = (t, 'laser.dds')
@@ -167,6 +169,7 @@ def build():
     t = []; quad(t, (-1, 1, .04), (1, 1, .04), (1, -1, .04), (-1, -1, .04)); models['Ring'] = (t, 'ring.dds')
     for k in (1, 2):
         t = []; quad(t, (-1, 1, .03), (1, 1, .03), (1, -1, .03), (-1, -1, .03)); models['Splat%d' % k] = (t, 'splat%d.dds' % k, MULTIPLY)
+        t = []; quad(t, (-1, 1, .034), (1, 1, .034), (1, -1, .034), (-1, -1, .034)); models['SplatGlow%d' % k] = (t, 'splatglow%d.dds' % k, ADD)
     for name, spec in models.items():
         tris, tex = spec[0], spec[1]
         blend = spec[2] if len(spec) > 2 else ADD

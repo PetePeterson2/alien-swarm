@@ -221,19 +221,25 @@ void AS_PuffPulse () {
 // Blood splats stay on the deck for most of a minute, multiplied over the floor.
 const int AS_SPLATS = 64;
 unit[64] as_splat;
+unit[64] as_splatGlow;            // the splat's added yellow-green glow, laid with it
 fixed[64] as_splatUntil;
 bool[64] as_splatFading;
 int as_splatNext;
 void AS_Splat (fixed x, fixed y, fixed facing, fixed size) {
-    int i=as_splatNext;string kind="ASFxSplat1";
+    int i=as_splatNext;string kind="1";
     as_splatNext=(as_splatNext+1)%AS_SPLATS;
     if(as_splat[i]!=null) {UnitRemove(as_splat[i]);as_splat[i]=null;}
+    if(as_splatGlow[i]!=null) {UnitRemove(as_splatGlow[i]);as_splatGlow[i]=null;}
     if(AS_Solid(x,y)) {return;}
-    if(RandomInt(0,1)==0) {kind="ASFxSplat2";}
-    UnitCreate(1,kind,c_unitCreateIgnorePlacement,0,Point(x,y),facing-90.0);
+    if(RandomInt(0,1)==0) {kind="2";}
+    UnitCreate(1,"ASFxSplat"+kind,c_unitCreateIgnorePlacement,0,Point(x,y),facing-90.0);
     as_splat[i]=UnitLastCreated();
     AS_AimFx(as_splat[i],facing);
     UnitSetScale(as_splat[i],size*100.0,size*100.0,100.0);
+    UnitCreate(1,"ASFxSplatGlow"+kind,c_unitCreateIgnorePlacement,0,Point(x,y),facing-90.0);
+    as_splatGlow[i]=UnitLastCreated();
+    AS_AimFx(as_splatGlow[i],facing);
+    UnitSetScale(as_splatGlow[i],size*100.0,size*100.0,100.0);
     as_splatUntil[i]=as_now+RandomFixed(35.0,50.0);as_splatFading[i]=false;
 }
 void AS_SplatPulse () {
@@ -241,9 +247,11 @@ void AS_SplatPulse () {
     if(as_splat[i]==null || as_now<as_splatUntil[i]) {return;}
     if(!as_splatFading[i]) {
         ActorSend(libNtve_gf_MainActorofUnit(as_splat[i]),"SetOpacity 0 3");
+        if(as_splatGlow[i]!=null) {ActorSend(libNtve_gf_MainActorofUnit(as_splatGlow[i]),"SetOpacity 0 3");}
         as_splatFading[i]=true;as_splatUntil[i]=as_now+3.5;return;
     }
     UnitRemove(as_splat[i]);as_splat[i]=null;
+    if(as_splatGlow[i]!=null) {UnitRemove(as_splatGlow[i]);as_splatGlow[i]=null;}
 }
 // Every effect unit still out (tracer meshes, flame puffs, splats), cleared between levels.
 void AS_FxClear () {
@@ -251,6 +259,7 @@ void AS_FxClear () {
     for(i=0;i<AS_FXN;i+=1) {if(as_fx[i]!=null) {UnitRemove(as_fx[i]);as_fx[i]=null;}}
     for(i=0;i<AS_PUFFS;i+=1) {if(as_puff[i]!=null) {UnitRemove(as_puff[i]);as_puff[i]=null;}}
     for(i=0;i<AS_SPLATS;i+=1) {if(as_splat[i]!=null) {UnitRemove(as_splat[i]);as_splat[i]=null;}}
+    for(i=0;i<AS_SPLATS;i+=1) {if(as_splatGlow[i]!=null) {UnitRemove(as_splatGlow[i]);as_splatGlow[i]=null;}}
 }
 // A spray of alien blood along the direction the hit travelled.
 void AS_Spray (fixed x, fixed y, fixed z, fixed ang, fixed size) {

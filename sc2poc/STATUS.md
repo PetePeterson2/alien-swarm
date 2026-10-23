@@ -255,6 +255,7 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **Soft contact shadows** under crates, barrels, lockers, consoles and the ammo case.
 - **Pipe runs** (yellow and grey, KPPipes) high along the corridors' camera-facing walls.
 - **Painted arrows** down the middle of each corridor (KNArrow); cables thinned to one per 240 open cells.
+- **Alien blood** splats carry an added yellow-green glow layer (ASFxSplatGlow1/2, laid and faded with each splat), so the goo reads as vividly as AS's.
 - **A soft dark vignette** frames the view (the HUD's vignette art in black at half opacity, under every other dialog).
 - **Ceilings** (third-person view) in the pale panel style with vents.
 
