@@ -36,24 +36,32 @@ bool AS_Free (fixed x, fixed y, fixed r) {
             if((nx-x)*(nx-x)+(ny-y)*(ny-y)<r*r) {return false;}
         }
     }
+    if(as_bioCount<=0) {return true;}
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null || as_aKind[i]!=AS_BIOMASS) {continue;}
-        if(DistanceBetweenPoints(UnitGetPosition(as_a[i]),Point(x,y))<as_aRadius[i]+r) {return false;}
+        nx=as_aX[i]-x;ny=as_aY[i]-y;
+        if(nx*nx+ny*ny<(as_aRadius[i]+r)*(as_aRadius[i]+r)) {return false;}
     }
     return true;
 }
-// Distance along a ray to the first solid cell (0.1 steps, then refined), capped at max.
+// Distance along a ray to the first solid cell, capped at limit. It walks the grid
+// cell by cell (Amanatides and Woo), so it is exact and costs one test per cell
+// crossed: the 0.2 march it replaces took five, and could step over the corner
+// where two wall cells meet diagonally.
 fixed AS_RayWall (fixed x, fixed y, fixed angle, fixed limit) {
-    fixed c=Cos(angle);fixed s=Sin(angle);fixed d=0.0;fixed lo;
-    while(d<limit) {
-        d+=0.2;
-        if(AS_Solid(x+c*d,y+s*d)) {
-            lo=d-0.2;
-            while(d-lo>0.02) {
-                if(AS_Solid(x+c*(lo+d)*0.5,y+s*(lo+d)*0.5)) {d=(lo+d)*0.5;}else {lo=(lo+d)*0.5;}
-            }
-            return lo;
-        }
+    fixed c=Cos(angle);fixed s=Sin(angle);int cx=FixedToInt(x);int cy=FixedToInt(y);int sx=1;int sy=1;
+    fixed tx=10000.0;fixed ty=10000.0;fixed dx=10000.0;fixed dy=10000.0;fixed t;
+    if(AS_Solid(x,y)) {return 0.0;}
+    if(c>0.0001) {dx=1.0/c;tx=(IntToFixed(cx+1)-x)*dx;}
+    else if(c< -0.0001) {sx= -1;dx= -1.0/c;tx=(x-IntToFixed(cx))*dx;}
+    if(s>0.0001) {dy=1.0/s;ty=(IntToFixed(cy+1)-y)*dy;}
+    else if(s< -0.0001) {sy= -1;dy= -1.0/s;ty=(y-IntToFixed(cy))*dy;}
+    while(true) {
+        if(tx<ty) {t=tx;cx+=sx;tx+=dx;}
+        else {t=ty;cy+=sy;ty+=dy;}
+        if(t>=limit) {return limit;}
+        if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return MaxF(0.0,t-0.01);}
+        if(as_wall[cx][cy]) {return MaxF(0.0,t-0.01);}
     }
     return limit;
 }
@@ -64,6 +72,7 @@ bool AS_LineClear (fixed x0, fixed y0, fixed x1, fixed y1) {
 
 // ---- spawning ---------------------------------------------------------
 point[5] as_respawnPt;
+bool[5] as_muzzleOn;           // the muzzle light is showing
 void AS_MarineSpawn (int p) {
     point q=Point(as_spawnX+IntToFixed((p-1)%2)*1.2,as_spawnY+IntToFixed((p-1)/2)*1.2);
     if(as_respawnPt[p]!=null) {q=as_respawnPt[p];}
@@ -181,6 +190,7 @@ void AS_Walk (int p, fixed rate) {
 }
 void AS_Move (int p) {
     fixed f=0.0;fixed s=0.0;fixed wx;fixed wy;fixed k;fixed speed=AS_RUN;fixed yaw;fixed x;fixed y;fixed nx;fixed ny;fixed len;point here;
+    fixed sx;fixed sy;fixed step;fixed dir;fixed turn;int t;
     if(!as_alive[p]) {return;}
     if(as_key[p][0]) {f+=1.0;}if(as_key[p][2]) {f-=1.0;}
     if(as_key[p][3]) {s+=1.0;}if(as_key[p][1]) {s-=1.0;}
@@ -202,10 +212,24 @@ void AS_Move (int p) {
     as_knockX[p]*=0.7;as_knockY[p]*=0.7;
     if(AbsF(as_knockX[p])+AbsF(as_knockY[p])<0.05) {as_knockX[p]=0.0;as_knockY[p]=0.0;}
     if(!AS_Free(nx,ny,AS_MARINE_R)) {
-        // Slide along the wall: keep whichever half of the step is free.
-        if(AS_Free(nx,y,AS_MARINE_R)) {ny=y;as_mvY[p]=0.0;}
-        else if(AS_Free(x,ny,AS_MARINE_R)) {nx=x;as_mvX[p]=0.0;}
-        else {nx=x;ny=y;as_mvX[p]=0.0;as_mvY[p]=0.0;}
+        // Slide along the wall: keep whichever half of the step is free and still moves.
+        sx=nx;sy=ny;nx=x;ny=y;
+        step=SquareRoot((sx-x)*(sx-x)+(sy-y)*(sy-y));
+        if(AbsF(sx-x)>0.001 && AS_Free(sx,y,AS_MARINE_R)) {nx=sx;as_mvY[p]=0.0;}
+        else if(AbsF(sy-y)>0.001 && AS_Free(x,sy,AS_MARINE_R)) {ny=sy;as_mvX[p]=0.0;}
+        else if(step>0.001) {
+            // Neither half moves: a corner caught the body square on (a door frame, a
+            // pillar). Round it, turning the step up to 60 degrees off the line it wanted.
+            dir=ATan2(sy-y,sx-x);
+            for(t=0;t<4;t+=1) {
+                turn=30.0;if(t>=2) {turn=60.0;}
+                if(t%2==1) {turn= -turn;}
+                if(AS_Free(x+Cos(dir+turn)*step*Cos(turn),y+Sin(dir+turn)*step*Cos(turn),AS_MARINE_R)) {
+                    nx=x+Cos(dir+turn)*step*Cos(turn);ny=y+Sin(dir+turn)*step*Cos(turn);break;
+                }
+            }
+            if(nx==x && ny==y) {as_mvX[p]=0.0;as_mvY[p]=0.0;}
+        }
     }
     len=SquareRoot((nx-x)*(nx-x)+(ny-y)*(ny-y));
     if(len>0.002) {UnitSetPosition(as_m[p],Point(nx,ny),true);}
@@ -217,14 +241,15 @@ void AS_Face (int p) {
 }
 // Flashlight, personal light, laser sight and muzzle light ride with the marine.
 void AS_Attachments (int p) {
-    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed d;fixed gx;fixed gy;
+    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed d;fixed gx;fixed gy;bool lit;
     gx=x+Cos(as_aim[p])*0.45+Cos(as_aim[p]-90.0)*0.12;gy=y+Sin(as_aim[p])*0.45+Sin(as_aim[p]-90.0)*0.12;
     if(as_lightOn[p]) {
         UnitSetPosition(as_torch[p],Point(x+Cos(as_aim[p])*0.3,y+Sin(as_aim[p])*0.3),true);UnitSetFacing(as_torch[p],as_aim[p],AS_DT);
         UnitSetPosition(as_glow[p],here,true);
     }
     UnitSetPosition(as_muzzle[p],PointWithOffsetPolar(here,0.8,as_aim[p]),true);
-    libNtve_gf_ShowHideUnit(as_muzzle[p],as_now-as_lastShot[p]<0.07 && as_slot[p]!=6 && as_slot[p]!=10);
+    lit=as_now-as_lastShot[p]<0.07 && as_slot[p]!=6 && as_slot[p]!=10;
+    if(lit!=as_muzzleOn[p]) {as_muzzleOn[p]=lit;libNtve_gf_ShowHideUnit(as_muzzle[p],lit);}
     // The laser sight stops at the first bulkhead.
     d=AS_RayWall(gx,gy,as_aim[p],16.0);
     UnitSetPosition(as_laser[p],Point(gx,gy),true);UnitSetFacing(as_laser[p],as_aim[p],0.0);
@@ -257,7 +282,7 @@ void AS_MarineDie (int p) {
     if(as_mission) {as_respawnAt[p]=as_now+AS_RESPAWN;}
     AS_Fx("ASDieMarine",PointGetX(here),PointGetY(here),0.0,as_aim[p]);
     AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);
-    libNtve_gf_ShowHideUnit(as_m[p],false);libNtve_gf_ShowHideUnit(as_muzzle[p],false);
+    libNtve_gf_ShowHideUnit(as_m[p],false);libNtve_gf_ShowHideUnit(as_muzzle[p],false);as_muzzleOn[p]=false;
     UnitSetPosition(as_m[p],Point(as_spawnX,as_spawnY),false);
     AS_TorchShow(p);
     if(as_mission) {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying beside your squad in 10 seconds");}

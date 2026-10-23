@@ -211,6 +211,16 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         child(tod, 'DirectionalLight', index='Key', Color=key, ColorMultiplier=mult, Direction='-0.35,-0.45,0.82')
         child(tod, 'DirectionalLight', index='Fill', Color='0.45,0.55,0.70', ColorMultiplier=fill, Direction='0.5,0.5,0.70')
         child(tod, 'DirectionalLight', index='Back', Color='0.5,0.5,0.6', ColorMultiplier='0.05', Direction='0.0,0.80,0.60')
+    # The camera follows the marine with a 0.08 s smoothing (Doodad Royale's values, proven
+    # there). SC2's default follow is tuned for RTS panning and trailed a running marine by
+    # about a unit, catching up only once it stopped: the screen felt like it dragged.
+    cam = ET.Element('Catalog')
+    for attrs in ({'default': '1'}, {'id': 'Dflt'}):
+        c = child(cam, 'CCamera', **attrs)
+        child(c, 'TargetSmooth', SmoothTimeMin='0.080000', SmoothTimeMax='0.080000', VelocityMax='100.000000')
+        child(c, 'FollowScrollLimit', value='1000.000000')
+        child(c, 'BorderSizeX', value=0); child(c, 'BorderSizeY', value=0)
+    cat['Camera'] = cam
     for kind, tree in cat.items():
         ET.indent(tree, space='    ')
         files['Base.SC2Data/GameData/%sData.xml' % kind] = ET.tostring(tree, encoding='utf-8', xml_declaration=True)

@@ -166,3 +166,52 @@ Checked in the client (`dist/screens/hud-debrief.jpg`, `hud-debrief-tabs.jpg`): 
 - **Bank:** `src/Campaign.galaxy` reads `cosmetic/portrait` from each marine's bank, and the HUD swaps the portrait when `as_portrait[p]` changes. Nothing awards a skin yet.
 - **Extending it:** a new skin is one PORTRAITS line. A non-marine squad is a renderer plus its skins.
 - **Client check:** with `cosmetic/portrait = marine_veteran` in the QA bank, the HUD showed the veteran portrait (`dist/screens/hud-portrait-veteran.jpg`).
+
+## Feel pass: movement and shooting (2026-10-23)
+
+A pass on what matters most in Alien Swarm: smooth movement, and shooting that responds at once and shows every hit.
+
+**Shooting**
+- **The first round leaves on the click.** It used to wait for the next 1/16 s step, and a quick click let go before that step fired nothing at all (pistols, shotgun, sniper). `AS_MouseDownT` now fires at once (after Doodad Royale's "resolve shots on the input event").
+- **Fire intervals are whole steps.** An interval between steps fired on one step, then two, then one, and the gun limped: the rifle 0.07 s is now 0.0625, the autogun 0.1 s is 0.125 with 9 damage (the same 70 a second), and the flamer, pistols, railgun, grenade launcher and sniper rifle are rounded to whole steps too.
+- **Rounds keep their own time inside a step.** When the minigun fires two rounds in one step, the later one has already flown for the part of the step it was late by (`as_shotLead`), so a stream reads as evenly spaced tracers instead of pairs. Flame puffs do the same.
+- **Hit flash:** a struck alien glows over-bright for two steps (0.12 s) and fades back over 0.15 s. Shock flashes blue-white; a shieldbug turning a round on its plates flashes dim grey. The tint pattern is Doodad Royale's, which was checked in the client there.
+- **Stagger,** after AS's flinch behaviour: a hit may stop an alien for 0.22 s and knock it back 0.18. The chance is 10% plus 1.2% per point of damage, up to 70%, and 40% of that for an uber drone. There is at most one stagger per 0.8 s. Shieldbugs, boomers, mortarbugs, harvesters, eggs, biomass and leaping aliens never stagger.
+- **Damage numbers:**
+  - Floating numbers rise off the alien, shown only to the marine who did the damage.
+  - Damage is summed per alien over a quarter second, so a stream shows its total.
+  - Colours: bullets white, fire orange, blasts yellow, shock pale blue, armour grey. The killing blow is larger and red.
+  - N toggles them; they're on by default.
+
+**Movement**
+- **Corners:** a body caught square on a door frame or pillar corner used to stop dead. Neither axis slide moved it, but the old code still accepted the slide along the free axis, which went nowhere. Now an axis slide counts only if it moves. Otherwise the step turns 30° and then 60° either way, shortened by the cosine, and the marine rounds the corner.
+
+**Cost per step (lag)**
+- **`AS_RayWall` walks the grid cell by cell (DDA).** That is one test per cell crossed; the old 0.2 march with a bisection took about five, and it could step over the point where two wall cells meet diagonally. The laser sight, every trace, line of sight and the camera boom use it.
+- **Positions are read once per step:** `AS_AlienCache` reads every alien's position into `as_aX`/`as_aY`. Traces, aim assist, flame puffs (64 puffs × 96 aliens, three engine reads each), lobbed shells and the marines' biomass collision use the cache. The biomass test is skipped when no growth stands.
+- **Effects:** sprite effects (flash, burst, flame, ring) no longer get a rotation message. Each message cost six number-to-string conversions, and every live effect resent one each step: up to about 300 a step in heavy fire. Streaks build theirs once and resend the cached string.
+- **The HUD** touches the health ring's tint, the grenade count, the reload marker, the status line and the red hurt edge only when they change. The hurt edge was set every step. The muzzle light is shown or hidden only when its state changes.
+
+**Checked:**
+- **Build and static checks:** `build.py` passes its compile assertions. `galaxy_check` shows no new error kinds against the previous build; only its known local-variable false positives remain.
+- **Autopilot run** (`-Auto`, run `a521f736256f`): CAMPAIGN COMPLETE at 316.4 s, against 316.4 s before.
+  - Distress Beacon took 45.3 s and Cargo Elevator 225.8 s.
+  - The ride was 74.6 s, and the kit reported 0 leaks.
+  - No script errors were logged, so stagger, hit flash, the position cache and the new fire rates run without breaking anything.
+
+**Demo run in the client** (`-Demo`):
+- **Damage numbers first drew nothing.** `libNtve_gf_HideGameUI` hides the text-tag layer along with the rest of the game UI. `AS_Init` now turns it back on with `UISetFrameVisible(..., c_syncFrameTypeTextTag, true)`, as Doodad Royale does. A QA log had confirmed the numbers were being created.
+- **Sizes:** the numbers were too small at the top-down distance, so they are now 22 (blasts 26, kills 28) with a shadow.
+- **Seen working:** sums of autogun and minigun hits (27, 35, 28) and red killing blows (9, 18) rising off the drones.
+- **The demo's AI marines now hold fire** (`AS_BotPulse`), so the drones are player 1's to shoot. They were killing most of them first, and those kills show no numbers.
+
+**QA run by hand in the client** (`-Start 0`, real mouse clicks):
+- **A single quick click fired:** the clip went from 98 to 97. A quick click like that is the case that could fire nothing before.
+- **The hit flash:** a shieldbug under fire glows hot orange-white, where its body is normally dark. The flash now holds for two steps (0.12 s) and fades over 0.15 s. One step is about 45 ms at Faster, too brief to read, and still frames could not catch it.
+- **Seen working:** a 55 number on an uber drone, and the rifle stream reading as evenly spaced tracers.
+
+**Camera:**
+- **The problem:** walking by hand (held keys do work now), the marine ran about a unit ahead of the screen centre and the camera caught up only when it stopped. That was SC2's default follow smoothing, built for RTS panning.
+- **The fix:** `tools/catalog.py` now writes `CameraData.xml` with Doodad Royale's values: `TargetSmooth` 0.08 s, `FollowScrollLimit` 1000, and no screen-edge scrolling.
+- **Checked:** with it, the marine stays at the screen centre while the deck moves past.
+- **How it feels by hand.** Try `.\launch.ps1 -QA`: Ctrl+1 spawns drones, N toggles the numbers.

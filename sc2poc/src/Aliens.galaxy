@@ -30,8 +30,80 @@ int AS_SpawnAlien (int kind, fixed x, fixed y, bool awake) {
     as_aBurnUntil[i]=0.0;as_aStunUntil[i]=0.0;as_aLeapUntil[i]=0.0;as_aParent[i]= -1;as_aChildren[i]=0;
     as_aSpawnAt[i]=as_now+RandomFixed(1.0,3.0);as_aBornAt[i]=as_now;
     as_aStuckX[i]=x;as_aStuckY[i]=y;as_aStuckAt[i]=as_now;
+    as_aX[i]=x;as_aY[i]=y;
+    as_aFlashUntil[i]=0.0;as_aFlinchUntil[i]=0.0;as_aFlinchNext[i]=0.0;as_aTagDmg[i]=0.0;as_aTagBy[i]=0;as_aTagKind[i]=0;
     if(kind!=AS_EGG && kind!=AS_BIOMASS) {as_alive2+=1;}
+    if(kind==AS_BIOMASS) {as_bioCount+=1;}
     return i;
+}
+// Every alien's position, once a step, for the many tests that only need x and y.
+void AS_AlienCache () {
+    int i;point q;
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]==null) {continue;}
+        q=UnitGetPosition(as_a[i]);as_aX[i]=PointGetX(q);as_aY[i]=PointGetY(q);
+    }
+}
+
+// ---- hit feedback -------------------------------------------------------
+// Every hit shows on the alien that took it: the body flashes over-bright for two steps
+// (one step, 45 ms at Faster, was too brief to read) and fades back (as Doodad Royale's bodies do), and the shooter sees the damage as a
+// number rising off it, one number per alien every quarter second so a stream of
+// rounds reads as its total. Kills show the last blow larger, in red.
+void AS_HitFlash (int i, int kind) {
+    actor a;
+    if(as_a[i]==null || as_aFlashUntil[i]>0.0 || kind==1) {return;}
+    a=libNtve_gf_MainActorofUnit(as_a[i]);
+    if(kind==4) {ActorSend(a,libNtve_gf_SetTintColor(Color(70.0,80.0,100.0),1.4,0.0));}
+    else if(kind==3) {ActorSend(a,libNtve_gf_SetTintColor(Color(60.0,85.0,100.0),2.2,0.0));}
+    else {ActorSend(a,libNtve_gf_SetTintColor(Color(100.0,92.0,80.0),2.0,0.0));}
+    as_aFlashUntil[i]=as_now+0.12;
+}
+void AS_DamageTag (int i, bool kill) {
+    int p=as_aTagBy[i];string tint="FFFFFF";int size=22;fixed z=0.9;fixed dmg=as_aTagDmg[i];
+    as_aTagDmg[i]=0.0;as_aTagAt[i]=0.0;
+
+    if(dmg<0.5 || !AS_Person(p) || as_bot[p] || !as_numbers[p] || as_a[i]==null) {as_aTagKind[i]=0;return;}
+    if(as_aTagKind[i]==1) {tint="FFA040";}
+    else if(as_aTagKind[i]==2) {tint="FFD24A";size=26;}
+    else if(as_aTagKind[i]==3) {tint="9FE4FF";}
+    else if(as_aTagKind[i]==4) {tint="9A9A9A";size=18;}
+    if(kill) {tint="FF6A4A";size=28;}
+    if(as_aKind[i]==AS_BUZZER) {z=2.2;}
+    as_aTagKind[i]=0;
+    TextTagCreate(StringToText("<c val=\""+tint+"\">"+FixedToString(dmg,0)+"</c>"),size,Point(as_aX[i]+RandomFixed(-0.25,0.25),as_aY[i]+RandomFixed(-0.1,0.2)),z,true,false,PlayerGroupSingle(p));
+    TextTagSetTextShadow(TextTagLastCreated(),true);TextTagSetVelocity(TextTagLastCreated(),1.1,90.0);
+
+    TextTagSetTime(TextTagLastCreated(),c_textTagTimeDuration,0.8);TextTagSetTime(TextTagLastCreated(),c_textTagTimeFadeOut,0.45);
+}
+void AS_TagAdd (int i, int p, fixed dmg, int kind) {
+    if(p<1 || p>AS_PLAYERS) {return;}
+    // A different marine's hit shows what was owed to the last one first.
+    if(as_aTagBy[i]!=p && as_aTagDmg[i]>0.0) {AS_DamageTag(i,false);}
+    as_aTagBy[i]=p;as_aTagDmg[i]+=dmg;as_aTagKind[i]=MaxI(as_aTagKind[i],kind);
+    if(as_aTagAt[i]==0.0) {as_aTagAt[i]=as_now+0.25;}
+}
+// Alien Swarm's flinch (asw_ai_behavior_flinch): a hit may stagger an alien, which
+// stops in its tracks for a moment and is knocked back a little. Bigger rounds stagger
+// more often; the heavy kinds never do, and one stagger cannot follow another at once.
+void AS_Flinch (int i, fixed ang, fixed dmg) {
+    int k=as_aKind[i];fixed chance=MinF(0.7,0.1+dmg*0.012);fixed nx;fixed ny;
+    if(as_a[i]==null || k==AS_SHIELDBUG || k==AS_BOOMER || k==AS_MORTAR || k==AS_HARVESTER || k==AS_EGG || k==AS_BIOMASS) {return;}
+    if(as_now<as_aFlinchNext[i] || as_aLeapUntil[i]>as_now) {return;}
+    if(k==AS_UBER) {chance*=0.4;}
+    if(RandomFixed(0.0,1.0)>chance) {return;}
+    as_aFlinchUntil[i]=as_now+0.22;as_aFlinchNext[i]=as_now+0.8;
+    as_aNextOrder[i]=as_aFlinchUntil[i];
+    AS_Halt(i);
+    nx=as_aX[i]+Cos(ang)*0.18;ny=as_aY[i]+Sin(ang)*0.18;
+    if(AS_Free(nx,ny,as_aRadius[i])) {UnitSetPosition(as_a[i],Point(nx,ny),true);as_aX[i]=nx;as_aY[i]=ny;}
+}
+void AS_HitFeedbackPulse (int i) {
+    if(as_aFlashUntil[i]>0.0 && as_now>=as_aFlashUntil[i]) {
+        as_aFlashUntil[i]=0.0;
+        ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(100.0,100.0,100.0),1.0,0.15));
+    }
+    if(as_aTagAt[i]>0.0 && as_now>=as_aTagAt[i]) {AS_DamageTag(i,false);}
 }
 // Spawn at the nearest open spot to (x, y): vents and growths sit against walls.
 int AS_SpawnNear (int kind, fixed x, fixed y, bool awake) {
@@ -49,7 +121,7 @@ int AS_SpawnNear (int kind, fixed x, fixed y, bool awake) {
 // ---- damage -----------------------------------------------------------
 // kind: 0 bullet, 1 fire, 2 blast, 3 shock. (fromX, fromY) is where the harm came from.
 void AS_HurtAlien (int i, fixed dmg, int kind, int p, fixed fromX, fixed fromY) {
-    point q;fixed toward;
+    point q;fixed toward;bool turned=false;
     if(as_a[i]==null || dmg<=0.0) {return;}
     q=UnitGetPosition(as_a[i]);
     // Alien Swarm burns aliens for three times the damage (asw_fire_alien_damage_scale).
@@ -58,12 +130,14 @@ void AS_HurtAlien (int i, fixed dmg, int kind, int p, fixed fromX, fixed fromY) 
         // The shieldbug's plates turn anything that meets it head on.
         toward=ATan2(fromY-PointGetY(q),fromX-PointGetX(q));
         if(AbsF(AS_AngleDiff(toward,UnitGetFacing(as_a[i])))<70.0) {
-            dmg*=0.1;
+            dmg*=0.1;turned=true;
             if(RandomInt(0,3)==0) {AS_Burst(PointGetX(q)+Cos(toward)*0.8,PointGetY(q)+Sin(toward)*0.8,0.8,0.5,"255,230,160",1);}
         }
     }
     if(as_aKind[i]==AS_BIOMASS && kind!=1) {dmg*=0.05;}
     as_aHp[i]-=dmg;as_aLastDmg[i]=dmg;
+    if(turned && kind!=1) {AS_HitFlash(i,4);AS_TagAdd(i,p,dmg,4);}
+    else {AS_HitFlash(i,kind);AS_TagAdd(i,p,dmg,kind);}
     if(kind!=0) {as_aHitAng[i]=ATan2(PointGetY(q)-fromY,PointGetX(q)-fromX);}
     // Anything that is shot notices who shot it.
     if(!as_aAwake[i] && as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS) {as_aAwake[i]=true;if(p>=1) {as_aTarget[i]=p;}}
@@ -73,8 +147,12 @@ void AS_HurtAlien (int i, fixed dmg, int kind, int p, fixed fromX, fixed fromY) 
 void AS_KillAlien (int i, int p, int kind) {
     point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);int k=as_aKind[i];int j;fixed facing=UnitGetFacing(as_a[i]);
     string die=as_kindDie[k];
+    as_aX[i]=x;as_aY[i]=y;
+    if(p>=1 && p<=AS_PLAYERS) {as_aTagBy[i]=p;}
+    AS_DamageTag(i,p>=1 && p<=AS_PLAYERS);
     UnitRemove(as_a[i]);as_a[i]=null;
     if(k!=AS_EGG && k!=AS_BIOMASS) {as_alive2-=1;}
+    if(k==AS_BIOMASS) {as_bioCount=MaxI(0,as_bioCount-1);}
     if(as_aParent[i]>=0 && as_aParent[i]<AS_MAXALIEN) {as_aChildren[as_aParent[i]]=MaxI(0,as_aChildren[as_aParent[i]]-1);}
     if(p>=1 && p<=AS_PLAYERS) {as_kills[p]+=1;}
     AS_Gore(i,k,kind,x,y,facing);
@@ -182,6 +260,9 @@ void AS_AlienThink (int i) {
         if(as_a[i]==null) {return;}
         if(RandomInt(0,2)==0) {AS_FxUnit("ASFxFlame",x+RandomFixed(-0.3,0.3),y+RandomFixed(-0.3,0.3),0.3,0.0,0.35,0.35,"",3);}
     }
+    // Staggered by a hit (AS_Flinch): it gives no orders until it recovers; a swing it
+    // had started lands late, if the marine is still in reach by then.
+    if(as_aFlinchUntil[i]>as_now) {return;}
     if(k==AS_EGG) {AS_EggThink(i);return;}
     if(k==AS_BIOMASS) {return;}
     // Asleep: a wanderer waits until a marine comes near, or is heard firing.
@@ -349,6 +430,7 @@ void AS_AlienPulse () {
     int i;
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null) {continue;}
+        AS_HitFeedbackPulse(i);
         AS_AlienThink(i);
         if(as_a[i]!=null && as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS) {AS_Unstick(i);}
     }
@@ -357,5 +439,5 @@ void AS_AlienPulse () {
 void AS_AliensClear () {
     int i;
     for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null) {UnitRemove(as_a[i]);as_a[i]=null;}}
-    as_alive2=0;
+    as_alive2=0;as_bioCount=0;
 }

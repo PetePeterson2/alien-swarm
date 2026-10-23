@@ -111,6 +111,8 @@ int AS_BotFoe (int p) {
 void AS_BotPulse (int p) {
     point here;point goal;fixed dx;fixed dy;fixed d;int q;point oq;fixed sx=0.0;fixed sy=0.0;int f;
     if(!as_bot[p] || !as_alive[p]) {return;}
+    // The demo is player 1's firing range: the squad stands by and holds its fire.
+    if(as_demo) {as_trigger[p]=false;as_botVX[p]=0.0;as_botVY[p]=0.0;return;}
     here=UnitGetPosition(as_m[p]);
     // The trail search is the costly part: once every four steps, each bot on its own step.
     if(as_tick%4==p%4 || as_botGoalPt[p]==null || (as_auto && p==1)) {as_botGoalPt[p]=AS_BotGoal(p);}

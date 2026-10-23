@@ -39,15 +39,16 @@ void AS_Reload (int p) {
 // ---- targets ----------------------------------------------------------
 // The alien nearest the aim line within `cone` degrees and `range` with a clear line, or -1.
 int AS_AssistTarget (fixed x, fixed y, fixed aim, fixed range, fixed cone) {
-    int i;int best= -1;fixed bestScore=1000.0;fixed d;fixed off;point q;
+    int i;int best= -1;fixed bestScore=1000.0;fixed d;fixed off;fixed dx;fixed dy;
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null || as_aKind[i]==AS_BIOMASS) {continue;}
-        q=UnitGetPosition(as_a[i]);
-        d=DistanceBetweenPoints(Point(x,y),q);
+        dx=as_aX[i]-x;dy=as_aY[i]-y;
+        if(AbsF(dx)>range || AbsF(dy)>range) {continue;}
+        d=SquareRoot(dx*dx+dy*dy);
         if(d>range || d<0.3) {continue;}
-        off=AbsF(AS_AngleDiff(ATan2(PointGetY(q)-y,PointGetX(q)-x),aim));
+        off=AbsF(AS_AngleDiff(ATan2(dy,dx),aim));
         if(off>cone+ASin(MinF(1.0,as_aRadius[i]/d))) {continue;}
-        if(off+d*0.1<bestScore && AS_LineClear(x,y,PointGetX(q),PointGetY(q))) {best=i;bestScore=off+d*0.1;}
+        if(off+d*0.1<bestScore && AS_LineClear(x,y,as_aX[i],as_aY[i])) {best=i;bestScore=off+d*0.1;}
     }
     return best;
 }
@@ -67,7 +68,7 @@ void AS_Trace (fixed x, fixed y, fixed ang, fixed range, int pierce) {
     int i;int n=0;int k;int best;fixed bestAlong;
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null) {continue;}
-        dx=PointGetX(UnitGetPosition(as_a[i]))-x;dy=PointGetY(UnitGetPosition(as_a[i]))-y;
+        dx=as_aX[i]-x;dy=as_aY[i]-y;
         along=dx*c+dy*s;
         if(along<0.0 || along>wall+as_aRadius[i]) {continue;}
         perp=AbsF(dx*s-dy*c);
@@ -95,9 +96,13 @@ void AS_HitAlien (int j, int p, fixed x, fixed y, fixed ang, fixed at, fixed dmg
     as_aHitAng[j]=ang;
     if(push>0.0 && as_aKind[j]!=AS_SHIELDBUG && as_aKind[j]!=AS_BOOMER && as_aKind[j]!=AS_EGG && as_aKind[j]!=AS_BIOMASS && as_aKind[j]!=AS_HARVESTER) {
         q=UnitGetPosition(as_a[j]);
-        if(AS_Free(PointGetX(q)+Cos(ang)*push,PointGetY(q)+Sin(ang)*push,as_aRadius[j])) {UnitSetPosition(as_a[j],Point(PointGetX(q)+Cos(ang)*push,PointGetY(q)+Sin(ang)*push),true);}
+        if(AS_Free(PointGetX(q)+Cos(ang)*push,PointGetY(q)+Sin(ang)*push,as_aRadius[j])) {
+            UnitSetPosition(as_a[j],Point(PointGetX(q)+Cos(ang)*push,PointGetY(q)+Sin(ang)*push),true);
+            as_aX[j]=PointGetX(q)+Cos(ang)*push;as_aY[j]=PointGetY(q)+Sin(ang)*push;
+        }
     }
     AS_HurtAlien(j,dmg,kind,p,x,y);
+    if(as_a[j]!=null) {AS_Flinch(j,ang,dmg);}
     if(p>=1 && p<=AS_PLAYERS) {as_shotsHit[p]+=1;}
 }
 // Instant shots (railgun, sniper rifle): everything on the line is hit now. Returns the length.
@@ -127,6 +132,7 @@ int[128] as_buNext;
 int[128] as_buBorn;
 bool[128] as_buWall;
 bool[128] as_buDone;
+string[128] as_buRot;          // the round's rotation message (AS_AimMsg), built once
 int[128][8] as_buHit;
 unit[128][8] as_buHitU;
 fixed[128][8] as_buHitAt;
@@ -146,7 +152,7 @@ void AS_BulletStep (int i) {
     UnitSetPosition(as_bu[i],Point(as_buX[i]+c*tail,as_buY[i]+s*tail),true);
     UnitSetScale(as_bu[i],MaxF(0.05,nt-tail)*100.0,as_buW[i]*100.0,as_buW[i]*100.0);
     // Every step, as the laser sight does: a rotation sent once at creation did not hold (frames of 2026-10-21).
-    AS_AimFx(as_bu[i],as_buAng[i]);
+    ActorSend(libNtve_gf_MainActorofUnit(as_bu[i]),as_buRot[i]);
     as_buT[i]=nt;
     if(nt>=as_buEnd[i]-0.001) {
         as_buDone[i]=true;
@@ -164,11 +170,14 @@ void AS_Bullet (int p, fixed x, fixed y, fixed ang, fixed range, fixed dmg, int 
     AS_Trace(x,y,ang,range,pierce);
     as_buX[i]=x;as_buY[i]=y;as_buAng[i]=ang;as_buSpeed[i]=speed;as_buT[i]=0.0;as_buEnd[i]=MaxF(0.1,as_tEnd);as_buLen[i]=len;as_buW[i]=width;
     as_buDmg[i]=dmg;as_buPush[i]=push;as_buBy[i]=p;as_buKind[i]=kind;as_buN[i]=as_tCount;as_buNext[i]=0;as_buWall[i]=as_tWall;as_buDone[i]=false;as_buBorn[i]=as_tick;
+    // A round due part way through the last step has flown that much further already:
+    // rounds that leave in one step are spaced along the line as they were fired.
+    as_buT[i]=MinF(as_buEnd[i]*0.5,speed*as_shotLead);
     for(k=0;k<as_tCount;k+=1) {as_buHit[i][k]=as_tHit[k];as_buHitU[i][k]=as_a[as_tHit[k]];as_buHitAt[i][k]=as_tAt[k];}
     // Pre-turned: on the step a mesh unit is born it draws a quarter turn off its facing before SetRotation holds.
     UnitCreate(1,"ASFxTracer",c_unitCreateIgnorePlacement,0,Point(x,y),ang-90.0);
     as_bu[i]=UnitLastCreated();
-    AS_AimFx(as_bu[i],ang);
+    as_buRot[i]=AS_AimMsg(ang);
     UnitSetHeight(as_bu[i],AS_GUN_Z,0.0);
     UnitSetScale(as_bu[i],5.0,width*100.0,width*100.0);
     if(tint!="") {ActorSend(libNtve_gf_MainActorofUnit(as_bu[i]),"SetTintColor "+tint);}
@@ -205,9 +214,12 @@ void AS_FirePulse (int p) {
         else if(as_now-as_ammoMsgAt[p]>2.0) {as_ammoMsgAt[p]=as_now;AS_Message(p,"<c val=\"FF5040\">OUT OF AMMO</c>  -  find an ammo crate or switch weapons");}
         return;
     }
-    if(as_nextShot[p]<as_now-AS_DT) {as_nextShot[p]=as_now-AS_DT;}
+    // From a standing start the first round goes now; in a stream each round keeps its
+    // own time, and the part of a step it is late by goes into its flight (as_shotLead).
+    if(as_nextShot[p]<as_now-AS_DT*0.5) {as_nextShot[p]=as_now;}
     while(as_now>=as_nextShot[p] && as_mag[p][w]>0 && shots<4) {
-        AS_Shoot(p,w);shots+=1;
+        as_shotLead=MinF(AS_DT,as_now-as_nextShot[p]);
+        AS_Shoot(p,w);shots+=1;as_shotLead=0.0;
         if(w==7) {as_nextShot[p]+=as_gun[w].rate/MaxF(0.3,as_spin[p]);}
         else {as_nextShot[p]+=as_gun[w].rate;}
         if(as_gun[w].semi) {as_semiReady[p]=false;break;}
@@ -231,7 +243,7 @@ void AS_Shoot (int p, int w) {
     AS_Sound(as_gun[w].snd,gx,gy,80.0,0.06);
     if(as_gun[w].kind==1) {
         // Flamer: a stream of burning puffs.
-        for(k=0;k<2;k+=1) {AS_Puff(p,gx,gy,aim+RandomFixed(0.0-as_gun[w].spread,as_gun[w].spread)*0.5,RandomFixed(8.0,10.5),RandomFixed(0.5,0.65));}
+        for(k=0;k<2;k+=1) {AS_Puff(p,gx,gy,aim+RandomFixed(0.0-as_gun[w].spread,as_gun[w].spread)*0.5,RandomFixed(8.0,10.5),RandomFixed(0.5,0.65),as_shotLead+IntToFixed(k)*AS_DT*0.5);}
         return;
     }
     if(as_gun[w].kind==3) {
@@ -346,7 +358,7 @@ void AS_LobPulse () {
         if(!hit && (as_lobKind[i]<=1)) {
             for(j=0;j<AS_MAXALIEN;j+=1) {
                 if(as_a[j]==null) {continue;}
-                if(DistanceBetweenPoints(UnitGetPosition(as_a[j]),Point(nx,ny))<as_aRadius[j]+0.15) {hit=true;break;}
+                if((as_aX[j]-nx)*(as_aX[j]-nx)+(as_aY[j]-ny)*(as_aY[j]-ny)<(as_aRadius[j]+0.15)*(as_aRadius[j]+0.15)) {hit=true;break;}
             }
         }
         if(!hit && as_lobKind[i]==2) {

@@ -147,6 +147,11 @@ int[5] as_prevSlot;
 int[5] as_kClips;
 int[5] as_kItems;
 int[5] as_kAmmo;
+int[5] as_kTint;            // the ring's tint and its track's (0 nothing set yet)
+int[5] as_kGren;            // grenades shown, plus one
+int[5] as_kRel;             // the reload marker's x, plus one (0 hidden)
+string[5] as_kStatus;
+fixed[5] as_kHurt;          // the red edge's transparency (0 nothing set yet)
 // Names under the marines: a dialog per viewer and marine, following the marine.
 int[5][5] as_dTag;
 int[5][5] as_cTagName;
@@ -397,7 +402,7 @@ void AS_HudCreate (int p) {
         +"<c val=\"8CC8F0\">R</c>  reload    <c val=\"8CC8F0\">1 - 0</c>  weapons    <c val=\"8CC8F0\">WHEEL</c>  zoom (top-down)<n/>"
         +"<c val=\"8CC8F0\">Q</c>  deploy sentry gun    <c val=\"8CC8F0\">E</c>  medkit    <c val=\"8CC8F0\">X</c>  throw flare<n/>"
         +"<c val=\"8CC8F0\">TAB</c>  objectives    <c val=\"8CC8F0\">F</c>  flashlight    <c val=\"8CC8F0\">V</c>  top-down / third person<n/>"
-        +"<c val=\"8CC8F0\">L</c>  lighting preset    <c val=\"8CC8F0\">T</c>  director on / off<n/><n/>"
+        +"<c val=\"8CC8F0\">L</c>  lighting preset    <c val=\"8CC8F0\">T</c>  director on / off    <c val=\"8CC8F0\">N</c>  damage numbers<n/><n/>"
         +"<c val=\"8CC8F0\">TESTING</c><n/>"
         +"<c val=\"8CC8F0\">CTRL + 1..9</c>  spawn at the cursor: drone, parasite, shieldbug, boomer,<n/>    buzzer, ranger, mortarbug, harvester, uber drone<n/>"
         +"<c val=\"8CC8F0\">CTRL + J</c>  spawn a ripper at the cursor<n/>"
@@ -406,7 +411,7 @@ void AS_HudCreate (int p) {
         +"Shieldbugs shrug off fire from the front: flank them or use explosives.<n/>"
         +"Biomass only burns: use the flamer. Eggs hatch when you get close.");
     DialogSetVisible(d,AS_Me(p),false);
-    as_hudSlot[p]=0;as_prevSlot[p]=0;as_kClips[p]= -1;as_kItems[p]= -1;as_kAmmo[p]= -1;
+    as_hudSlot[p]=0;as_prevSlot[p]=0;as_kClips[p]= -1;as_kItems[p]= -1;as_kAmmo[p]= -1;as_kTint[p]=0;as_kGren[p]=0;as_kStatus[p]="";as_kHurt[p]=100.0;
     AS_HudView(p);
 }
 void AS_HudView (int p) {
@@ -465,14 +470,20 @@ void AS_HudUpdate (int p) {
         AS_SetArt(as_cRing[p],p,"hp"+AS_Two(k));as_kRing[p]=k;
     }
     if(as_kGhost[p]!=as_kRing[p] && as_now>=as_ghostUntil[p]) {as_kGhost[p]=as_kRing[p];AS_SetArt(as_cRingGhost[p],p,"hp"+AS_Two(as_kRing[p]));}
-    if(as_infestUntil[p]>as_now && as_alive[p]) {AS_SetTint(as_cRing[p],p,AS_HUD_INFEST_TINT());}
-    else {AS_SetTint(as_cRing[p],p,AS_HUD_HP_TINT());}
+    key=1;
+    if(as_infestUntil[p]>as_now && as_alive[p]) {key=2;}
     if(f<0.6 && as_alive[p]) {
         if(f<0.33) {v=Sin(as_now*360.0)*0.5+0.5;}
         else {v=Sin(as_now*180.0)*0.5+0.5;}
         AS_SetTint(as_cRingBg[p],p,AS_Rgb(255,155+FixedToInt(100.0*v),155+FixedToInt(100.0*v)));
+        key+=10;
     }
-    else {AS_SetTint(as_cRingBg[p],p,AS_Full());}
+    if(key!=as_kTint[p]) {
+        if(key%10==2) {AS_SetTint(as_cRing[p],p,AS_HUD_INFEST_TINT());}
+        else {AS_SetTint(as_cRing[p],p,AS_HUD_HP_TINT());}
+        if(key<10) {AS_SetTint(as_cRingBg[p],p,AS_Full());}
+        as_kTint[p]=key;
+    }
     if(AS_PortraitOf(p)!=as_kFace[p]) {as_kFace[p]=AS_PortraitOf(p);AS_SetArt(as_cFace[p],p,"face_"+as_kFace[p]);}
     cls=AS_ClassOf(p);
     if(!as_alive[p]) {cls="dead";}
@@ -507,7 +518,7 @@ void AS_HudUpdate (int p) {
         else if(none) {AS_Text(as_cLow[p],p,"- NO AMMO -");}
         else {AS_Text(as_cLow[p],p,"- LOW AMMO -");}
     }
-    if(w==1) {AS_Text(as_cGren[p],p,IntToString(MinI(as_grenades[p],9)));}
+    if(w==1 && as_kGren[p]!=MinI(as_grenades[p],9)+1) {as_kGren[p]=MinI(as_grenades[p],9)+1;AS_Text(as_cGren[p],p,IntToString(MinI(as_grenades[p],9)));}
     // Clips: up to five, filled for those left; more than five is one clip and the count.
     clips=as_reserve[p][w]/MaxI(1,as_gun[w].mag);
     maxClips=as_gun[w].reserve/MaxI(1,as_gun[w].mag);
@@ -533,14 +544,15 @@ void AS_HudUpdate (int p) {
     // Reloading: AS's fast-reload bar, its marker running along.
     if(as_reloadEnd[p]>0.0) {
         f=AS_Clamp((as_now-as_reloadStart[p])/MaxF(0.1,as_reloadEnd[p]-as_reloadStart[p]),0.0,1.0);
-        AS_Show(as_cRelBg[p],p,true);AS_Show(as_cRelMark[p],p,true);
-        AS_Place(as_cRelMark[p],p,AS_HUD_RELOAD_X+FixedToInt(IntToFixed(AS_HUD_RELOAD_W-4)*f),AS_HUD_RELOAD_Y+2);
+        k=AS_HUD_RELOAD_X+FixedToInt(IntToFixed(AS_HUD_RELOAD_W-4)*f);
+        if(as_kRel[p]==0) {AS_Show(as_cRelBg[p],p,true);AS_Show(as_cRelMark[p],p,true);}
+        if(as_kRel[p]!=k+1) {AS_Place(as_cRelMark[p],p,k,AS_HUD_RELOAD_Y+2);as_kRel[p]=k+1;}
     }
-    else {AS_Show(as_cRelBg[p],p,false);AS_Show(as_cRelMark[p],p,false);}
+    else if(as_kRel[p]!=0) {AS_Show(as_cRelBg[p],p,false);AS_Show(as_cRelMark[p],p,false);as_kRel[p]=0;}
     s="";
     if(!as_alive[p]) {s="<c val=\"FF5040\">KIA  -  redeploying</c>";}
     else if(as_god[p]) {s="<c val=\"8CC8FF\">GOD MODE</c>";}
-    AS_Text(as_cStatus[p],p,s);
+    if(s!=as_kStatus[p]) {as_kStatus[p]=s;AS_Text(as_cStatus[p],p,s);}
     AS_SquadHud(p);
     if(as_level>=0) {AS_MissionHud(p);}
     if(as_tick%4==0) {AS_MapHud(p);}
@@ -559,6 +571,8 @@ void AS_HurtPulse (int p) {
     if(t<0.6) {a=40.0+60.0*t/0.6;}
     if(as_alive[p] && as_hp[p]<30.0) {a=MinF(a,70.0+20.0*Sin(as_now*360.0));}
     if(!as_alive[p]) {a=30.0;}
+    if(a==as_kHurt[p]) {return;}
+    as_kHurt[p]=a;
     DialogSetTransparency(as_dHurt[p],a);
 }
 

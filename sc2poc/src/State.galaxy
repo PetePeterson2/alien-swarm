@@ -123,6 +123,10 @@ unit[5] as_camUnit;         // what the camera is following
 // ---- weapons ----------------------------------------------------------
 // Numbers from Alien Swarm's scripts/asw_weapon_*.txt (clip, base_damage,
 // fire_rate, reload_time, num_pellets) and cfg/skill.cfg (sk_max_* reserves).
+// Fire intervals are whole 1/16 s steps (the rifle 0.07 -> 0.0625, the autogun
+// 0.1 -> 0.125 with 9 damage for the same 70 a second): an interval between
+// steps fires on one step, then two, then one, and the gun limps audibly.
+// The minigun fires several rounds a step and needs none of this.
 struct AS_Gun {
     string name;
     int mag;
@@ -144,16 +148,16 @@ AS_Gun[11] as_gun;
 
 void AS_GunsInit () {
     int i;
-    i=1; as_gun[i].name="22A3-1 ASSAULT RIFLE"; as_gun[i].mag=98; as_gun[i].reserve=490; as_gun[i].damage=5.0; as_gun[i].rate=0.07; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=3.5; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,214,140"; as_gun[i].snd="Marine_AttackLaunch"; as_gun[i].recoilSlow=0.9;
-    i=2; as_gun[i].name="AUTOGUN"; as_gun[i].mag=250; as_gun[i].reserve=250; as_gun[i].damage=7.0; as_gun[i].rate=0.1; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=4.0; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,190,110"; as_gun[i].snd="RaynorGatlingGunAttackLaunch"; as_gun[i].recoilSlow=0.8;
+    i=1; as_gun[i].name="22A3-1 ASSAULT RIFLE"; as_gun[i].mag=98; as_gun[i].reserve=490; as_gun[i].damage=5.0; as_gun[i].rate=0.0625; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=3.5; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,214,140"; as_gun[i].snd="Marine_AttackLaunch"; as_gun[i].recoilSlow=0.9;
+    i=2; as_gun[i].name="AUTOGUN"; as_gun[i].mag=250; as_gun[i].reserve=250; as_gun[i].damage=9.0; as_gun[i].rate=0.125; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=4.0; as_gun[i].range=22.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,190,110"; as_gun[i].snd="RaynorGatlingGunAttackLaunch"; as_gun[i].recoilSlow=0.8;
     i=3; as_gun[i].name="SHOTGUN"; as_gun[i].mag=4; as_gun[i].reserve=32; as_gun[i].damage=25.0; as_gun[i].rate=1.0; as_gun[i].reload=1.3; as_gun[i].pellets=7; as_gun[i].spread=20.0; as_gun[i].range=11.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,220,160"; as_gun[i].snd="Marauder_AttackLaunch"; as_gun[i].recoilSlow=0.9;
-    i=4; as_gun[i].name="FLAMER"; as_gun[i].mag=40; as_gun[i].reserve=200; as_gun[i].damage=4.0; as_gun[i].rate=0.1; as_gun[i].reload=2.2; as_gun[i].pellets=1; as_gun[i].spread=9.0; as_gun[i].range=6.0; as_gun[i].kind=1; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,150,60"; as_gun[i].snd="Firebat_Attack"; as_gun[i].recoilSlow=0.85;
-    i=5; as_gun[i].name="TWIN PISTOLS"; as_gun[i].mag=24; as_gun[i].reserve=240; as_gun[i].damage=14.0; as_gun[i].rate=0.12; as_gun[i].reload=1.0; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=20.0; as_gun[i].kind=0; as_gun[i].semi=true; as_gun[i].pierce=0; as_gun[i].tint="255,230,170"; as_gun[i].snd="Reaper_AttackLaunch"; as_gun[i].recoilSlow=1.0;
-    i=6; as_gun[i].name="RAILGUN"; as_gun[i].mag=1; as_gun[i].reserve=72; as_gun[i].damage=75.0; as_gun[i].rate=0.4; as_gun[i].reload=1.3; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=2; as_gun[i].semi=false; as_gun[i].pierce=20; as_gun[i].tint="110,200,255"; as_gun[i].snd="Ghost_SnipeLaunch"; as_gun[i].recoilSlow=1.0;
+    i=4; as_gun[i].name="FLAMER"; as_gun[i].mag=40; as_gun[i].reserve=200; as_gun[i].damage=4.0; as_gun[i].rate=0.125; as_gun[i].reload=2.2; as_gun[i].pellets=1; as_gun[i].spread=9.0; as_gun[i].range=6.0; as_gun[i].kind=1; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,150,60"; as_gun[i].snd="Firebat_Attack"; as_gun[i].recoilSlow=0.85;
+    i=5; as_gun[i].name="TWIN PISTOLS"; as_gun[i].mag=24; as_gun[i].reserve=240; as_gun[i].damage=14.0; as_gun[i].rate=0.125; as_gun[i].reload=1.0; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=20.0; as_gun[i].kind=0; as_gun[i].semi=true; as_gun[i].pierce=0; as_gun[i].tint="255,230,170"; as_gun[i].snd="Reaper_AttackLaunch"; as_gun[i].recoilSlow=1.0;
+    i=6; as_gun[i].name="RAILGUN"; as_gun[i].mag=1; as_gun[i].reserve=72; as_gun[i].damage=75.0; as_gun[i].rate=0.375; as_gun[i].reload=1.3; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=2; as_gun[i].semi=false; as_gun[i].pierce=20; as_gun[i].tint="110,200,255"; as_gun[i].snd="Ghost_SnipeLaunch"; as_gun[i].recoilSlow=1.0;
     i=7; as_gun[i].name="MINIGUN"; as_gun[i].mag=250; as_gun[i].reserve=250; as_gun[i].damage=7.0; as_gun[i].rate=0.04; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=6.0; as_gun[i].range=22.0; as_gun[i].kind=5; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,200,120"; as_gun[i].snd="RaynorGatlingGunAttackLaunch"; as_gun[i].recoilSlow=0.55;
-    i=8; as_gun[i].name="GRENADE LAUNCHER"; as_gun[i].mag=6; as_gun[i].reserve=18; as_gun[i].damage=80.0; as_gun[i].rate=0.9; as_gun[i].reload=3.2; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=16.0; as_gun[i].kind=3; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,170,80"; as_gun[i].snd="Raynor_TossGrenadeLaunch"; as_gun[i].recoilSlow=1.0;
+    i=8; as_gun[i].name="GRENADE LAUNCHER"; as_gun[i].mag=6; as_gun[i].reserve=18; as_gun[i].damage=80.0; as_gun[i].rate=0.875; as_gun[i].reload=3.2; as_gun[i].pellets=1; as_gun[i].spread=2.0; as_gun[i].range=16.0; as_gun[i].kind=3; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="255,170,80"; as_gun[i].snd="Raynor_TossGrenadeLaunch"; as_gun[i].recoilSlow=1.0;
     i=9; as_gun[i].name="TESLA CANNON"; as_gun[i].mag=20; as_gun[i].reserve=260; as_gun[i].damage=6.0; as_gun[i].rate=0.25; as_gun[i].reload=2.2; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=9.0; as_gun[i].kind=4; as_gun[i].semi=false; as_gun[i].pierce=0; as_gun[i].tint="140,200,255"; as_gun[i].snd="Archon_AttackLaunch"; as_gun[i].recoilSlow=0.9;
-    i=10; as_gun[i].name="SNIPER RIFLE"; as_gun[i].mag=12; as_gun[i].reserve=60; as_gun[i].damage=65.0; as_gun[i].rate=1.2; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=2; as_gun[i].tint="255,255,230"; as_gun[i].snd="RaynorSnipeSound"; as_gun[i].recoilSlow=1.0;
+    i=10; as_gun[i].name="SNIPER RIFLE"; as_gun[i].mag=12; as_gun[i].reserve=60; as_gun[i].damage=65.0; as_gun[i].rate=1.25; as_gun[i].reload=2.0; as_gun[i].pellets=1; as_gun[i].spread=0.0; as_gun[i].range=40.0; as_gun[i].kind=0; as_gun[i].semi=false; as_gun[i].pierce=2; as_gun[i].tint="255,255,230"; as_gun[i].snd="RaynorSnipeSound"; as_gun[i].recoilSlow=1.0;
 }
 
 // ---- aliens -----------------------------------------------------------
@@ -196,6 +200,21 @@ fixed[96] as_aStuckAt;
 fixed[96] as_aHitAng;                 // direction the last hit travelled (gore sprays that way)
 fixed[96] as_aLastDmg;                // size of the last hit (big ones blow aliens apart)
 int as_alive2;                         // aliens alive (eggs and biomass not counted)
+// Where each alien stands, read once per step (AS_AlienCache): traces, aim assist,
+// flame and the marines' collision read these instead of asking the engine per test.
+fixed[96] as_aX;
+fixed[96] as_aY;
+int as_bioCount;                       // biomass growths standing (AS_Free tests them)
+// Hit feedback (src/Aliens.galaxy): the over-bright flash, the stagger, the damage number.
+fixed[96] as_aFlashUntil;              // flashing until then (0 none); then it fades back
+fixed[96] as_aFlinchUntil;             // staggered: no orders until then
+fixed[96] as_aFlinchNext;              // earliest next stagger, so a stream of fire cannot pin it
+fixed[96] as_aTagDmg;                  // damage not yet shown as a number
+fixed[96] as_aTagAt;                   // when the number shows
+int[96] as_aTagBy;                     // the marine it is shown to
+int[96] as_aTagKind;                   // 0 bullet, 1 fire, 2 blast, 3 shock, 4 armour turned it
+bool[5] as_numbers;                    // damage numbers on (N toggles)
+fixed as_shotLead;                     // how long ago, within this step, the shot being fired was due
 
 string[13] as_kindUnit;
 string[13] as_kindDie;

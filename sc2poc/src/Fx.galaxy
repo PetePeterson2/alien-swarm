@@ -7,7 +7,7 @@ const int AS_FXN = 192;
 unit[192] as_fx;
 int[192] as_fxLife;
 int[192] as_fxBorn;
-fixed[192] as_fxFacing;
+string[192] as_fxRot;          // a streak's rotation message, built once and sent again each step ("" for sprites)
 int as_fxNext;
 
 // Lay an authored effect mesh's +X along `facing`. A unit's actor takes SetRotation
@@ -15,18 +15,25 @@ int as_fxNext;
 // forward is the level vector to the right of the direction. libNtve's
 // MakeModelFaceAngle sends forward = the direction itself, which drew every tracer
 // and the laser sight a quarter turn off their line.
+string AS_AimMsg (fixed facing) {
+    return libNtve_gf_SetRotation(Sin(facing),0.0-Cos(facing),0.0,0.0,0.0,1.0);
+}
 void AS_AimFx (unit u, fixed facing) {
-    ActorSend(libNtve_gf_MainActorofUnit(u),libNtve_gf_SetRotation(Sin(facing),0.0-Cos(facing),0.0,0.0,0.0,1.0));
-}// A short-lived effect unit. z is the height above the deck; s* are scale multipliers.
+    ActorSend(libNtve_gf_MainActorofUnit(u),AS_AimMsg(facing));
+}
+// A short-lived effect unit. z is the height above the deck; s* are scale multipliers.
+// Only streaks (tracers, arcs) are turned: the flash, burst, flame and ring meshes look
+// the same at any facing, and building a rotation message per sprite per step was the
+// costliest thing a burst of fire did.
 unit AS_FxUnit (string kind, fixed x, fixed y, fixed z, fixed facing, fixed sx, fixed syz, string tint, int life) {
     int i=as_fxNext;
     as_fxNext=(as_fxNext+1)%AS_FXN;
     if(as_fx[i]!=null) {UnitRemove(as_fx[i]);as_fx[i]=null;}
     if(x<0.5 || y<0.5 || x>IntToFixed(AS_W)-0.5 || y>IntToFixed(AS_H)-0.5) {return null;}
     UnitCreate(1,kind,c_unitCreateIgnorePlacement,0,Point(x,y),facing-90.0);
-    as_fx[i]=UnitLastCreated();as_fxLife[i]=life;as_fxBorn[i]=as_tick;as_fxFacing[i]=facing;
+    as_fx[i]=UnitLastCreated();as_fxLife[i]=life;as_fxBorn[i]=as_tick;as_fxRot[i]="";
     // Facing on the actor as well: the unit's own facing alone did not turn the meshes.
-    AS_AimFx(as_fx[i],facing);
+    if(kind=="ASFxTracer" || kind=="ASFxArc") {as_fxRot[i]=AS_AimMsg(facing);ActorSend(libNtve_gf_MainActorofUnit(as_fx[i]),as_fxRot[i]);}
     UnitSetHeight(as_fx[i],z,0.0);
     UnitSetScale(as_fx[i],sx*100.0,syz*100.0,syz*100.0);
     if(tint!="") {ActorSend(libNtve_gf_MainActorofUnit(as_fx[i]),"SetTintColor "+tint);}
@@ -38,7 +45,7 @@ void AS_FxPulse () {
         // A unit made this step has not been drawn yet: it starts counting next step.
         if(as_fx[i]==null || as_fxBorn[i]==as_tick) {continue;}
         // Streaks (rail beams, arcs) hold their line only if the rotation is sent again.
-        AS_AimFx(as_fx[i],as_fxFacing[i]);
+        if(as_fxRot[i]!="") {ActorSend(libNtve_gf_MainActorofUnit(as_fx[i]),as_fxRot[i]);}
         as_fxLife[i]-=1;
         if(as_fxLife[i]==1) {ActorSend(libNtve_gf_MainActorofUnit(as_fx[i]),"SetOpacity 0 0.0625");}
         if(as_fxLife[i]<=0) {UnitRemove(as_fx[i]);as_fx[i]=null;}
@@ -161,10 +168,12 @@ fixed[64] as_puffAge;
 fixed[64] as_puffLife;
 int[64] as_puffBy;
 int as_puffNext;
-void AS_Puff (int p, fixed x, fixed y, fixed angle, fixed speed, fixed life) {
+// lead: how long ago in this step the puff left the nozzle, so a stream spreads evenly.
+void AS_Puff (int p, fixed x, fixed y, fixed angle, fixed speed, fixed life, fixed lead) {
     int i=as_puffNext;
     as_puffNext=(as_puffNext+1)%AS_PUFFS;
     if(as_puff[i]!=null) {UnitRemove(as_puff[i]);}
+    if(lead>0.0 && !AS_Solid(x+Cos(angle)*speed*lead,y+Sin(angle)*speed*lead)) {x+=Cos(angle)*speed*lead;y+=Sin(angle)*speed*lead;}
     UnitCreate(1,"ASFxFlame",c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
     as_puff[i]=UnitLastCreated();
     UnitSetHeight(as_puff[i],0.55,0.0);UnitSetScale(as_puff[i],30.0,30.0,30.0);
@@ -191,8 +200,8 @@ void AS_PuffPulse () {
         // Everything the flame touches burns.
         for(j=0;j<AS_MAXALIEN;j+=1) {
             if(as_a[j]==null) {continue;}
-            if(AbsF(PointGetX(UnitGetPosition(as_a[j]))-nx)>r+as_aRadius[j] || AbsF(PointGetY(UnitGetPosition(as_a[j]))-ny)>r+as_aRadius[j]) {continue;}
-            if(DistanceBetweenPoints(UnitGetPosition(as_a[j]),Point(nx,ny))<r+as_aRadius[j]) {
+            if(AbsF(as_aX[j]-nx)>r+as_aRadius[j] || AbsF(as_aY[j]-ny)>r+as_aRadius[j]) {continue;}
+            if((as_aX[j]-nx)*(as_aX[j]-nx)+(as_aY[j]-ny)*(as_aY[j]-ny)<(r+as_aRadius[j])*(r+as_aRadius[j])) {
                 AS_HurtAlien(j,as_gun[4].damage*AS_DT*4.0,1,as_puffBy[i],as_puffX[i]-as_puffVX[i],as_puffY[i]-as_puffVY[i]);
                 if(as_a[j]!=null) {as_aBurnUntil[j]=as_now+4.0;as_aBurnBy[j]=as_puffBy[i];}
             }
