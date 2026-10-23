@@ -13,7 +13,7 @@ const int AS_KIND_HIVE = 7;
 const int AS_KIND_LIFT = 8;       // no ceiling over the lift and its bridges
 const int AS_PANEL_WINDOW = 8;    // KIT_WALLS index of the window panel
 int[@W@][@H@] as_kitMark;         // scratch: 1 a tile covers the cell, 2 a pathing block does
-bool[@W@][@H@] as_kitNear;        // hull cell within three of the deck: gets a cap
+bool[@W@][@H@] as_kitNear;        // hull cell within five of the deck: gets a cap
 bool[@W@][@H@] as_kitEdge;        // collision cell touching the deck: gets a pathing blocker
 bool[@W@][@H@] as_kitFloorDone;   // scratch: the cell has its floor plating
 string[16] as_kitPanels;        // per kind: the wall panels it draws from, one digit each
@@ -282,13 +282,13 @@ void AS_KitPathStages () {
 }
 void AS_KitBuildRest (timer t, int gen) {
     int x;int y;int i;int j;
-    // Caps go on hull cells within three of the deck, as the baked hull does.
+    // Caps go on hull cells within five of the deck, so the bare terrain stays out of the camera's view.
     for(y=0;y<AS_H;y+=1) {
         for(x=0;x<AS_W;x+=1) {
             if(!AS_Floor(x,y)) {continue;}
-            for(i=MaxI(0,x-3);i<=MinI(AS_W-1,x+3);i+=1) {for(j=MaxI(0,y-3);j<=MinI(AS_H-1,y+3);j+=1) {as_kitNear[i][j]=true;}}
+            for(i=MaxI(0,x-5);i<=MinI(AS_W-1,x+5);i+=1) {for(j=MaxI(0,y-5);j<=MinI(AS_H-1,y+5);j+=1) {as_kitNear[i][j]=true;}}
         }
-        if(y%16==15) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
+        if(y%4==3) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
     }
     for(y=0;y<AS_H;y+=4) {
         for(x=0;x<AS_W;x+=4) {AS_KitTiles(x,y,0);AS_KitTiles(x,y,1);AS_KitTiles(x,y,2);}
