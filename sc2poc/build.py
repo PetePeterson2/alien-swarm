@@ -34,6 +34,7 @@ LEVELS = [('deck', 'DISTRESS BEACON', 'USCSS HALCYON DRIFT  //  DECK 3',
            'Distress beacon traced to deck 3. Get the reactor running again. Press H for controls.'),
           ('cargo', 'CARGO ELEVATOR', 'COLONY LANDING BAY',
            'Take the freight elevator down to the colony. Press H for controls.')]
+FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 
 
@@ -167,7 +168,15 @@ def level_galaxy(n, solid, room, floor, MW, MH):
         out.append('    AS_DeckRow(%d,"%s");' % (y, row))
     out += ['}', 'void AS_KitProps%d () {' % n]
     for model, x, y, rot, scale, rad in L.PROPS:
-        out.append('    AS_KitProp("%s",%.2f,%.2f,%.1f,%.3f);' % (model, x, y, rot, scale))
+        # Flat stock decals would lie under the floor plating: blood becomes goo, the rest goes.
+        if model == 'BloodSplats':
+            out.append('    AS_KitDecal("KDGoo",%.2f,%.2f,%.1f);' % (x, y, rot))
+        elif model == 'DOM_Crate':
+            out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % ('KPCrateG' if int(x + y) % 3 else 'KPCrateM', x, y, rot))
+        elif model not in FLAT_PROPS:
+            out.append('    AS_KitProp("%s",%.2f,%.2f,%.1f,%.3f);' % (model, x, y, rot, scale))
+    for piece, x, y, rot in L.decal_spots(floor, room, solid):
+        out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % (piece, x, y, rot))
     out += ['}', 'void AS_LevelData%d () {' % n, '    int i;']
     out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (L.SPAWN + (L.SPAWN_FACING,)))
     for i, (x, y) in enumerate(tour_spots(solid)):
@@ -386,7 +395,7 @@ def compose(qa, demo=False, auto=False, start=-1):
         levels.append(level_galaxy(n, solid, room, floor, *MAP_SIZE))
         maps.append((floor, np.array([[L.in_void(x, y) for x in range(L.W)] for y in range(L.H)])))
         missions.append(mission_galaxy(n))
-        props |= {p[0] for p in L.PROPS}
+        props |= {p[0] for p in L.PROPS if p[0] not in FLAT_PROPS}
         floors.add(L.FLOOR)
         if L.LIFT is not None:
             pieces.update(elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR))
@@ -427,7 +436,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     models = L.kit_pieces()
     textures = shipkit.hull_textures()
     textures.update(elevator.textures())
-    shipkit.pack_textures(files, textures)
+    shipkit.pack_textures(files, textures, shipkit.multiply_textures())
     emissive = {k for k, (d, e) in textures.items() if e is not None}
     for name, model in sorted(models.items()):
         files['Base.SC2Assets/Derelict/%s.m3' % name] = shipkit.write_m3(name, model.export(emissive))

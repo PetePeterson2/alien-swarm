@@ -84,7 +84,6 @@ AMMO = [(22.0, 30.5), (46.0, 32.0), (66.5, 12.0), (60.5, 42.0), (25.0, 38.0)]
 PROPS = [
     # Docking bay: the dropship, crates, deck markings.
     ('Hercules', 13.5, 15.0, 30.0, 0.75, 1.6),
-    ('BattleStation_Line_Decals', 20.0, 15.0, 0.0, 1.0, 0.0),
     ('DOM_Crate', 25.5, 20.0, 15.0, 0.9, 0.7), ('DOM_Crate', 26.5, 18.5, 80.0, 0.9, 0.7),
     ('StarshipContainers', 25.5, 10.5, 0.0, 0.6, 1.0),
     ('SpacePlatformCautionLights', 9.0, 15.0, 90.0, 1.0, 0.0),
@@ -94,7 +93,7 @@ PROPS = [
     # Crew mess: tables, a cabinet, signs of a last stand.
     ('ValhallaTable', 10.0, 40.0, 0.0, 0.8, 0.8), ('ValhallaTable', 10.0, 46.0, 90.0, 0.8, 0.8),
     ('ValhallaTable', 21.0, 46.0, 30.0, 0.8, 0.8), ('CastanarTable', 21.5, 40.0, 0.0, 0.8, 0.0),
-    ('ValhallaCabinet', 7.0, 48.5, 90.0, 0.8, 0.0), ('BloodSplats', 13.0, 38.5, 0.0, 1.2, 0.0),
+    ('ValhallaCabinet', 7.0, 48.5, 90.0, 0.8, 0.0),
     ('DOM_CeilingDebris_Beams', 19.0, 37.5, 70.0, 0.8, 0.0), ('SpacePlatformWallDebris', 7.5, 43.0, 0.0, 0.8, 0.0),
     ('ZergCarcasses', 15.0, 47.0, 0.0, 0.7, 0.0),
     # Reactor core.
@@ -102,7 +101,6 @@ PROPS = [
     ('SpacePlatformGenerator', 36.5, 42.0, 90.0, 0.7, 0.0), ('SpacePlatformGenerator', 55.5, 42.0, 270.0, 0.7, 0.0),
     ('ElectricalArcs', 44.0, 39.5, 0.0, 0.8, 0.0), ('ElectricalArcs', 48.5, 44.5, 0.0, 0.8, 0.0),
     ('SpacePlatformSteamVent', 40.0, 32.0, 0.0, 0.8, 0.0), ('SpacePlatformSteamVent', 52.0, 52.0, 0.0, 0.8, 0.0),
-    ('DOM_Ground_Grate', 46.0, 36.0, 0.0, 1.0, 0.0), ('DOM_Ground_Grate', 46.0, 48.0, 0.0, 1.0, 0.0),
     ('MoebiusLabConsoles', 35.5, 38.0, 90.0, 0.7, 0.0), ('MoebiusLabConsoles', 56.5, 46.0, 270.0, 0.7, 0.0),
     # Service way and lift.
     ('SpacePlatformSteamVent', 38.0, 15.0, 0.0, 0.7, 0.0), ('DOM_Fire_Large', 58.5, 16.5, 0.0, 0.5, 0.0),
@@ -316,7 +314,7 @@ def _lit(x, y):
 
 def kit_pieces():
     """{piece name: ShipModel}: AS<name> catalog ids, Derelict/<name>.m3 meshes."""
-    from tools.shipkit import ShipModel, NO_SHADOW_CAST
+    from tools.shipkit import ShipModel, NO_SHADOW_CAST, UNLIT, MULTIPLY
     out = {}
     Z = WALL_H
     for t, tex in enumerate(KIT_WALLS):
@@ -324,6 +322,16 @@ def kit_pieces():
             m = out.setdefault('KW%d%s' % (t, part), ShipModel('KW%d%s' % (t, part), (0, 0, 0)))
             u0, u1 = (x0 + 1) / 2.0, (x1 + 1) / 2.0
             m.quad((tex, False, 0), (x0, 0, 0), (x1, 0, 0), (x1, 0, Z), (x0, 0, Z), [(u0, 1.0), (u1, 1.0), (u1, 0.0), (u0, 0.0)])
+            # A pale lip along the top edge, so every wall reads as a solid edge against the dark hull top.
+            m.quad(('wall_trim', False, NO_SHADOW_CAST), (x0, 0, Z + 0.012), (x1, 0, Z + 0.012), (x1, LIP, Z + 0.012), (x0, LIP, Z + 0.012),
+                   [(u0, 0.0), (u1, 0.0), (u1, 1.0), (u0, 1.0)])
+            # The contact shadow at its foot (multiplied over the deck).
+            m.quad(('decal_shadow', False, UNLIT, MULTIPLY), (x0, -SHADOW, 0.016), (x1, -SHADOW, 0.016), (x1, 0, 0.016), (x0, 0, 0.016),
+                   [(u0, 1.0), (u1, 1.0), (u1, 0.0), (u0, 0.0)])
+    floor_pieces(out)
+    decal_pieces(out)
+    from tools import propart
+    propart.pieces(out)
     for size in (4, 2, 1):
         # Lit panels sit at fixed spots of the 4x4 pattern, so a tile is only placed where its corner's
         # position mod 4 matches what it was authored for: 4x4 at 0, 2x2 at 0 or 2, 1x1 anywhere.
@@ -343,6 +351,125 @@ def kit_pieces():
         m.quad(('cap', False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
                [(0, 0), (0.5 * size, 0), (0.5 * size, 0.5 * size), (0, 0.5 * size)])
     return out
+
+
+LIP = 0.16                  # wall-top lip depth into the hull
+SHADOW = 0.55               # contact shadow depth out over the deck
+FLOOR_Z = 0.004             # the floor plating sits just over the terrain
+FLOOR_PATTERNS = 4          # 4x4 floor pieces per room kind
+
+
+def _floor_pick(kind, pattern, bx, by):
+    """Which of the kind's floors (tools/deckart.py KIND_FLOORS) covers 2x2 block (bx, by) of a 4x4 pattern."""
+    from tools.deckart import KIND_FLOORS
+    main, second, accent = KIND_FLOORS[kind]
+    if pattern == 3 and (bx, by) == (1, 1):
+        return accent
+    h = (pattern * 7 + bx * 3 + by * 5 + pattern * bx * 11) % 9
+    return second if h in (2, 6) else main
+
+
+def floor_pieces(out):
+    """KF<k><p> (4x4, pattern p), KF<k>T (2x2), KF<k>S<px><py> (1x1 at x%2, y%2): floor plating per room kind k.
+    Floor textures repeat every two units, so uv is world position / 2 and the pieces join without seams."""
+    from tools.shipkit import ShipModel
+    from tools.deckart import KIND_FLOORS
+    z = FLOOR_Z
+
+    def cell(m, tex, x, y, gx, gy):
+        m.quad((tex, False, 0), (x, y, z), (x + 1, y, z), (x + 1, y + 1, z), (x, y + 1, z),
+               [(gx / 2, 1 - gy / 2), ((gx + 1) / 2, 1 - gy / 2), ((gx + 1) / 2, 1 - (gy + 1) / 2), (gx / 2, 1 - (gy + 1) / 2)])
+    for kind in KIND_FLOORS:
+        k = KIT_KINDS.index(kind)
+        for p in range(FLOOR_PATTERNS):
+            name = 'KF%d%d' % (k, p)
+            m = out[name] = ShipModel(name, (0, 0, 0))
+            for x in range(4):
+                for y in range(4):
+                    cell(m, _floor_pick(kind, p, x // 2, y // 2), x, y, x, y)
+        name = 'KF%dT' % k
+        m = out[name] = ShipModel(name, (0, 0, 0))
+        for x in range(2):
+            for y in range(2):
+                cell(m, KIND_FLOORS[kind][0], x, y, x, y)
+        for px in range(2):
+            for py in range(2):
+                name = 'KF%dS%d%d' % (k, px, py)
+                m = out[name] = ShipModel(name, (0, 0, 0))
+                cell(m, KIND_FLOORS[kind][0], 0, 0, px, py)
+
+
+# Decal pieces, origin at their centre, laid by the script (AS_KitDecal) from each level's decal_spots.
+DECAL_PIECES = {
+    'KDHaz': ('decal_hazard', 1.0, 0.36, False),      # name: texture, length, width, multiplied
+    'KDWarn': ('decal_warning', 1.0, 1.0, False),
+    'KDGrime1': ('decal_grime1', 2.4, 2.4, True),
+    'KDGrime2': ('decal_grime2', 1.8, 1.8, True),
+    'KDScorch': ('decal_scorch', 2.0, 2.0, True),
+    'KDGoo': ('decal_goo', 2.2, 2.2, True),
+}
+
+
+def decal_pieces(out):
+    from tools.shipkit import ShipModel, NO_SHADOW_CAST, UNLIT, MULTIPLY
+    for name, (tex, ln, wd, mul) in DECAL_PIECES.items():
+        m = out[name] = ShipModel(name, (0, 0, 0))
+        z = 0.02 if mul else 0.008
+        key = (tex, False, UNLIT, MULTIPLY) if mul else (tex, False, NO_SHADOW_CAST)
+        a, b = ln / 2, wd / 2
+        m.quad(key, (-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+
+
+def decal_spots(floor, room, solid, seed=7):
+    """(piece, x, y, facing) for every decal of the level in use: hazard paint across each doorway
+    (where a corridor meets a room), a warning sign beside a few, and grime, scorches and alien goo."""
+    import random
+    rng = random.Random(seed * 7919 + W * 31 + H)
+    spots = []
+    corridor = ('hall', 'duct')
+
+    def kind(x, y):
+        return kind_at(room, x, y) if 0 <= x < W and 0 <= y < H and floor[y, x] and not in_void(x, y) else None
+
+    def door(a, b):
+        return a and b and a != b and 'lift' not in (a, b) and 'hive' not in (a, b) and ((a in corridor) != (b in corridor))
+    for y in range(1, H):
+        for x in range(W):
+            a, b = kind(x, y - 1), kind(x, y)
+            if door(a, b):
+                spots.append(('KDHaz', x + 0.5, y + 0.18 if b in corridor else y - 0.18, 0.0))
+    for x in range(1, W):
+        for y in range(H):
+            a, b = kind(x - 1, y), kind(x, y)
+            if door(a, b):
+                spots.append(('KDHaz', x + 0.18 if b in corridor else x - 0.18, y + 0.5, 90.0))
+    # Grime everywhere, goo near the hives and labs, scorches where the fighting was.
+    open_cells = [(x, y) for y in range(H) for x in range(W) if kind(x, y) and kind(x, y) != 'lift' and not solid[y, x]]
+    for x, y in rng.sample(open_cells, len(open_cells) // 36):
+        k = kind(x, y)
+        if k in ('hive', 'lab') and rng.random() < 0.6:
+            piece = 'KDGoo'
+        elif rng.random() < 0.18:
+            piece = 'KDScorch'
+        else:
+            piece = rng.choice(['KDGrime1', 'KDGrime2'])
+        spots.append((piece, x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
+    # Barrels and crate stacks tucked into the rooms' corners (cells with hull on two sides).
+    for x, y in open_cells:
+        if kind(x, y) not in ('bay', 'cargo', 'reactor', 'mess', 'lab'):
+            continue
+        n = [solid[y + dy, x + dx] if 0 <= x + dx < W and 0 <= y + dy < H else True for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0))]
+        if sum(n) == 2 and ((n[0] or n[2]) and (n[1] or n[3])) and rng.random() < 0.55:
+            ox = 0.12 if n[3] else -0.12
+            oy = 0.12 if n[0] else -0.12
+            piece = rng.choice(['KPBarrels', 'KPBarrels', 'KPCrateStack', 'KPBarrel', 'KPCrateM'])
+            spots.append((piece, x + 0.5 + ox, y + 0.5 + oy, rng.choice([0.0, 90.0, 180.0, 270.0]) + rng.uniform(-12, 12)))
+    # A warning sign in a few of the big rooms, clear of the walls.
+    rooms = [(x, y) for x, y in open_cells if kind(x, y) in ('bay', 'cargo', 'reactor') and not any(
+        solid[y + dy, x + dx] for dx in (-2, 0, 2) for dy in (-2, 0, 2) if 0 <= x + dx < W and 0 <= y + dy < H)]
+    for x, y in rng.sample(rooms, min(len(rooms), 3)):
+        spots.append(('KDWarn', x + 0.5, y + 0.5, rng.choice([0.0, 90.0, 180.0, 270.0])))
+    return spots
 
 
 def deck_rows(floor, room):

@@ -15,11 +15,14 @@ const int AS_PANEL_WINDOW = 8;    // KIT_WALLS index of the window panel
 int[@W@][@H@] as_kitMark;         // scratch: 1 a tile covers the cell, 2 a pathing block does
 bool[@W@][@H@] as_kitNear;        // hull cell within three of the deck: gets a cap
 bool[@W@][@H@] as_kitEdge;        // collision cell touching the deck: gets a pathing blocker
+bool[@W@][@H@] as_kitFloorDone;   // scratch: the cell has its floor plating
 string[16] as_kitPanels;        // per kind: the wall panels it draws from, one digit each
 int as_kitWalls;
 int as_kitTiles;
 int as_kitCaps;
 int as_kitProps;
+int as_kitFloors;
+int as_kitDecals;
 int as_kitBlockers;
 int as_kitLeaks;                // hull cells aliens can still walk on
 int as_kitShut;                 // deck cells aliens can no longer walk on
@@ -146,6 +149,48 @@ void AS_KitTiles (int x0, int y0, int want) {
     }
 }
 
+// ---- floor plating and decals -------------------------------------------
+// Deck cells of every kind but the hive (its terrain carries the creep) and the lift get plating
+// (tools/level.py floor_pieces): aligned 4x4 pieces in one of four patterns, then 2x2, then single cells.
+int AS_KitFloorKind (int x, int y) {
+    int k;
+    if(x<0 || y<0 || x>=AS_W || y>=AS_H || as_kitFloorDone[x][y]) {return -1;}
+    k=as_cell[x][y];
+    if(k<0 || k>=AS_KIND_HIVE) {return -1;}
+    return k;
+}
+bool AS_KitFloorFits (int x, int y, int n, int k) {
+    int i;int j;
+    for(i=0;i<n;i+=1) {for(j=0;j<n;j+=1) {if(AS_KitFloorKind(x+i,y+j)!=k) {return false;}}}
+    return true;
+}
+void AS_KitFloorTile (int x, int y, int n, int k) {
+    int i;int j;string piece;
+    for(i=0;i<n;i+=1) {for(j=0;j<n;j+=1) {as_kitFloorDone[x+i][y+j]=true;}}
+    if(n==4) {piece="KF"+IntToString(k)+IntToString((x/4*7+y/4*13+(x/4)*(y/4))%4);}
+    else if(n==2) {piece="KF"+IntToString(k)+"T";}
+    else {piece="KF"+IntToString(k)+"S"+IntToString(x%2)+IntToString(y%2);}
+    AS_KitPiece(piece,IntToFixed(x),IntToFixed(y));
+    as_kitFloors+=1;
+}
+void AS_KitFloors (int x0, int y0) {
+    int i;int j;int a;int b;int k=AS_KitFloorKind(x0,y0);
+    if(k>=0 && AS_KitFloorFits(x0,y0,4,k)) {AS_KitFloorTile(x0,y0,4,k);return;}
+    for(i=0;i<4;i+=2) {
+        for(j=0;j<4;j+=2) {
+            k=AS_KitFloorKind(x0+i,y0+j);
+            if(k>=0 && AS_KitFloorFits(x0+i,y0+j,2,k)) {AS_KitFloorTile(x0+i,y0+j,2,k);continue;}
+            for(a=0;a<2;a+=1) {for(b=0;b<2;b+=1) {k=AS_KitFloorKind(x0+i+a,y0+j+b);if(k>=0) {AS_KitFloorTile(x0+i+a,y0+j+b,1,k);}}}
+        }
+    }
+}
+// A decal (tools/level.py decal_spots): hazard paint, signs, grime, scorches and goo, turned counter-clockwise.
+void AS_KitDecal (string piece, fixed x, fixed y, fixed rot) {
+    actor a=AS_KitPiece(piece,x,y);
+    AS_KitTurn(a,rot);
+    as_kitDecals+=1;
+}
+
 // ---- alien pathing ----------------------------------------------------
 // PathingModify changes nothing on this map, whichever way it is called (tried in the client,
 // 2026-10-22: add unpathable, remove ground, add building). Stock pathing blocker units do the
@@ -239,6 +284,11 @@ void AS_KitBuildRest (timer t, int gen) {
         for(x=0;x<AS_W;x+=4) {AS_KitTiles(x,y,0);AS_KitTiles(x,y,1);AS_KitTiles(x,y,2);}
         Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}
     }
+    for(x=0;x<AS_W;x+=1) {for(y=0;y<AS_H;y+=1) {as_kitFloorDone[x][y]=false;}}
+    for(y=0;y<AS_H;y+=4) {
+        for(x=0;x<AS_W;x+=4) {AS_KitFloors(x,y);}
+        if(y%8==4) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
+    }
     // Walls in bays: south and north faces along each row, east and west faces up each column.
     for(y=0;y<AS_H;y+=1) {
         for(x=0;x<AS_W;x+=2) {
@@ -257,7 +307,8 @@ void AS_KitBuildRest (timer t, int gen) {
     AS_KitProps();
     as_kitSecs=TimerGetElapsed(t);as_kitBuilt=true;
     as_kitReport="KIT built in "+FixedToString(as_kitSecs,2)+" s real: "+IntToString(as_kitWalls)+" walls, "+IntToString(as_kitTiles)+" ceiling, "
-        +IntToString(as_kitCaps)+" caps, "+IntToString(as_kitProps)+" props = "+IntToString(as_kitWalls+as_kitTiles+as_kitCaps+as_kitProps)
+        +IntToString(as_kitCaps)+" caps, "+IntToString(as_kitFloors)+" floor, "+IntToString(as_kitDecals)+" decals, "+IntToString(as_kitProps)+" props = "
+        +IntToString(as_kitWalls+as_kitTiles+as_kitCaps+as_kitFloors+as_kitDecals+as_kitProps)
         +" actors.<n/>Pathing: "+IntToString(as_kitBlockers)+" blocker units, "+IntToString(as_kitLeaks)+" edge leaks, "
         +IntToString(as_kitShut)+" deck cells shut.";
     if(!as_kitScriptPath) {as_kitReport=as_kitReport+" (unused: painted pathing build)";}
@@ -272,7 +323,7 @@ void AS_KitClear () {
     for(i=0;i<MinI(as_kitActorN,AS_KIT_ACTORS);i+=1) {ActorSend(as_kitActor[i],"Destroy");as_kitActor[i]=null;}
     for(i=0;i<as_kitUnitN;i+=1) {if(as_kitUnit[i]!=null) {UnitRemove(as_kitUnit[i]);}as_kitUnit[i]=null;}
     as_kitActorN=0;as_kitUnitN=0;
-    as_kitWalls=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
+    as_kitWalls=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitFloors=0;as_kitDecals=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
     as_kitReport="";as_kitStages="";as_probeReport="";
     AS_ProbeStop();
 }

@@ -105,23 +105,24 @@ int[64] as_lampFlicker;
 bool[64] as_lampOn;
 fixed[64] as_lampNext;
 int as_lampCount;
+// Room lamps throw Alien Swarm's wide pools: the stock large omni light of their colour, scaled up
+// (tried: the map's own M3 point lights drew nothing in the client, 2026-10-23).
 string AS_LightUnit (string kind) {
-    if(kind=="white") {return "ASLightWhite";}
-    if(kind=="cold") {return "ASLightCold";}
-    if(kind=="red") {return "ASLightRed";}
-    if(kind=="green") {return "ASLightGreen";}
-    if(kind=="orange") {return "ASLightOrange";}
-    if(kind=="purple") {return "ASLightPurple";}
-    if(kind=="whitebig") {return "ASLightWhitebig";}
-    if(kind=="redbig") {return "ASLightRedbig";}
-    if(kind=="orangebig") {return "ASLightOrangebig";}
-    return "ASLightYellow";
+    if(kind=="red" || kind=="redbig") {return "ASLightRedbig";}
+    if(kind=="orange" || kind=="orangebig") {return "ASLightOrangebig";}
+    if(kind=="cold") {return "ASLightColdbig";}
+    if(kind=="green") {return "ASLightGreenbig";}
+    if(kind=="purple") {return "ASLightPurplebig";}
+    if(kind=="yellow") {return "ASLightYellowbig";}
+    return "ASLightWhitebig";
 }
 void AS_Lamp (fixed x, fixed y, string kind, int flicker) {
     if(as_lampCount>=AS_LAMPS) {return;}
     UnitCreate(1,AS_LightUnit(kind),c_unitCreateIgnorePlacement,0,Point(x,y),270.0);
+    UnitSetHeight(UnitLastCreated(),2.1,0.0);
+    if(StringContains(kind,"big",c_stringEnd,c_stringCase)) {ActorSend(libNtve_gf_MainActorofUnit(UnitLastCreated()),"SetScale 2.2");}
+    else {ActorSend(libNtve_gf_MainActorofUnit(UnitLastCreated()),"SetScale 1.7");}
     as_lamp[as_lampCount]=UnitLastCreated();
-    UnitSetHeight(as_lamp[as_lampCount],2.1,0.0);
     as_lampFlicker[as_lampCount]=flicker;as_lampOn[as_lampCount]=true;
     as_lampNext[as_lampCount]=RandomFixed(0.5,4.0);
     as_lampCount+=1;

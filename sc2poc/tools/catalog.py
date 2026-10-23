@@ -48,7 +48,9 @@ PROJECTILES = [('ASGrenade', 'TossGrenadeWeapon', 0.9), ('ASBile', 'RavagerCorro
 # Lights: units carrying omni light models, hidden and shown by the script for flicker.
 LIGHT_MODELS = {'white': 'LightOmniWhite', 'cold': 'LightOmniCyan', 'red': 'LightOmniRed', 'green': 'LightOmniGreen',
                 'orange': 'LightOmniOrange', 'purple': 'LightOmniPurple', 'whitebig': 'LightOmniWhiteLarge',
-                'redbig': 'LightOmniRedLarge', 'orangebig': 'LightOmniOrangeLarge', 'yellow': 'LightOmniYellow'}
+                'redbig': 'LightOmniRedLarge', 'orangebig': 'LightOmniOrangeLarge', 'yellow': 'LightOmniYellow',
+                'coldbig': 'LightOmniCyanLarge', 'greenbig': 'LightOmniGreenLarge', 'purplebig': 'LightOmniPurpleLarge',
+                'yellowbig': 'LightOmniYellowLarge'}
 # One-shot effects: id, model, scale, seconds before the safety removal.
 ONESHOTS = [
     ('ASDieDrone', 'ZerglingDeath', 1.25, 6), ('ASDieUber', 'PrimalZerglingDeath', 1.35, 6),
@@ -194,19 +196,22 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         child(a, 'Model', value=model)
         child(a, 'On', Terms='ActorCreation', Send='AnimPlay Stand Stand PlayForever')
         child(a, 'FogVisibility', value='Visible')
-    # Lighting presets: L cycles them in game (src/Main.galaxy).
+    # Lighting presets: L cycles them in game (src/Main.galaxy). Alien Swarm's look: a cool, readable
+    # ambient (nothing is pitch black), a key light for the unit shadows, lamps doing the drama, bloom on
+    # anything bright (lamps, screens, grates, muzzle flashes), and a saturated picture (Colorize would tint it all one hue: off).
     presets = [
-        # id, parent, ambient, exposure, key colour, key strength, fill strength
-        ('ASDerelict', 'StarshipDark', '0.050,0.058,0.072', '1.05', '0.55,0.66,0.80', '0.30', '0.10'),
-        ('ASAlarm', 'StarshipDark', '0.090,0.020,0.020', '1.05', '0.90,0.25,0.20', '0.30', '0.06'),
-        ('ASPowered', 'Starship', '0.32,0.34,0.38', '1.20', '0.85,0.90,1.00', '0.80', '0.35'),
-        ('ASBlackout', 'StarshipDark', '0.012,0.012,0.018', '1.00', '0.30,0.35,0.45', '0.08', '0.02'),
+        # id, parent, ambient, exposure, key colour, key strength, fill strength, bloom threshold
+        ('ASDerelict', 'StarshipDark', '0.18,0.20,0.25', '1.30', '0.62,0.72,0.90', '0.42', '0.14', '0.85'),
+        ('ASAlarm', 'StarshipDark', '0.22,0.07,0.06', '1.20', '0.95,0.32,0.24', '0.50', '0.08', '0.80'),
+        ('ASPowered', 'Starship', '0.36,0.38,0.43', '1.30', '0.90,0.94,1.00', '0.85', '0.32', '1.00'),
+        ('ASBlackout', 'StarshipDark', '0.05,0.05,0.07', '1.10', '0.30,0.35,0.45', '0.12', '0.03', '0.70'),
     ]
-    for ident, parent, ambient, exposure, key, mult, fill in presets:
+    for ident, parent, ambient, exposure, key, mult, fill, bloom in presets:
         light = child(cat['Light'], 'CLight', id=ident, parent=parent)
         tod = child(light, 'ToDInfoArray', index=0, Id=ident, AmbientColor=ambient, Colorize=0)
         for name, value in [('HDRExposure', exposure), ('HDRAmbientMultiplier', '1.0'), ('HDRDiffuseMultiplier', '1.0'),
-                            ('ColorizationBlend', '0')]:
+                            ('HDRBloomThreshold', bloom), ('HDRWhitePoint', '1.6'), ('HDREmisMultiplier', '1.7'),
+                            ('HDRSpecMultiplier', '1.0'), ('ColorizationBlend', '0')]:
             child(tod, 'Param', index=name, value=value)
         child(tod, 'DirectionalLight', index='Key', Color=key, ColorMultiplier=mult, Direction='-0.35,-0.45,0.82')
         child(tod, 'DirectionalLight', index='Fill', Color='0.45,0.55,0.70', ColorMultiplier=fill, Direction='0.5,0.5,0.70')

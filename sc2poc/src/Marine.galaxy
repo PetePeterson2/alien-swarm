@@ -11,8 +11,8 @@
 const fixed AS_MARINE_R = 0.33;
 const fixed AS_RUN = 3.0;
 const fixed AS_TOP_PITCH = 60.0;
-const fixed AS_TOP_FOV = 40.0;
-const fixed AS_TOP_DIST = 24.0;
+const fixed AS_TOP_FOV = 48.0;
+const fixed AS_TOP_DIST = 18.0;
 const fixed AS_TP_DIST = 3.4;
 const fixed AS_TP_HEIGHT = 1.45;
 const fixed AS_TP_FOV = 68.0;

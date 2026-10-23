@@ -21,6 +21,8 @@ sys.path.insert(0, str(ROOT / 'tools/m3-reader'))
 CONTAINER = ROOT / 'tools/template/container.m3'
 TEX_DIR = 'Derelict\\'
 NO_SHADOW_CAST = 0x20
+UNLIT = 0x4 | 0x8 | 0x10 | 0x20 | 0x40 | 0x80     # tools/fx.py's: unshaded, two-sided, no shadows, no hit test
+MULTIPLY = 4
 
 
 # ------------------------------------------------------------------ DDS
@@ -224,24 +226,30 @@ def tex_plain(rgb, size=16):
 
 
 def hull_textures():
-    """name -> (diffuse, emissive or None)."""
-    t = {}
-    for i, (kind, tone) in enumerate([('plain', (70, 80, 86)), ('plain', (78, 80, 76)), ('pipes', (70, 78, 84)),
-                                      ('vent', (66, 74, 80)), ('screen', (70, 78, 84)), ('light', (72, 80, 86)),
-                                      ('alarm', (70, 76, 80))]):
-        t['wall_%s%d' % (kind, i)] = tex_wall(kind, 100 + i, tone)
-    t['wall_hive'] = tex_hive_wall(200)
-    t['cap'] = (tex_cap(), None)
+    """name -> (diffuse, emissive or None): wall bays, trim and caps (tools/wallart.py), the floors and
+    decals (tools/deckart.py), and the ceilings seen from the third-person camera."""
+    from tools import wallart, deckart, propart
+    t = wallart.textures()
+    t.update(deckart.textures())
+    t.update(propart.textures())
     t['ceiling'] = tex_ceiling()
     t['ceiling_dark'] = (tex_ceiling(7)[0], None)
     return t
+
+
+def multiply_textures():
+    """name -> image: decals multiplied over the deck (white leaves it alone)."""
+    from tools import deckart
+    return {k: f() for k, f in deckart.MUL_DECALS.items()}
 
 
 def texture_path(name):
     return TEX_DIR + name + '.dds'
 
 
-def pack_textures(files, textures):
+def pack_textures(files, textures, multiply=None):
+    for name, image in (multiply or {}).items():
+        files['Base.SC2Assets/' + (TEX_DIR + name + '.dds').replace('\\', '/')] = dds_bytes(image)
     for name, (diffuse, emissive) in textures.items():
         files['Base.SC2Assets/' + (TEX_DIR + name + '.dds').replace('\\', '/')] = dds_bytes(diffuse)
         if emissive is not None:
@@ -273,11 +281,13 @@ class ShipModel:
 
     def export(self, emissive):
         out = []
-        for (tex, two, flags), d in self.parts.items():
+        for key, d in self.parts.items():
+            tex, two, flags = key[:3]
+            blend = key[3] if len(key) > 3 else 0
             if not d['pos']:
                 continue
             out.append((texture_path(tex), texture_path(tex + '_e') if tex in emissive else '', two, flags,
-                        np.array(d['pos']) - self.origin, np.array(d['nrm']), np.array(d['uv']), np.array(d['tri'])))
+                        np.array(d['pos']) - self.origin, np.array(d['nrm']), np.array(d['uv']), np.array(d['tri']), blend))
         return out
 
 
@@ -316,14 +326,15 @@ def write_m3(name, parts, path=None):
     blobs, faces, regions, objects, materials, references, everything = [], [], [], [], [], [], []
     first = 0
     chunks = []
-    for tex, etex, two, flags, pos, normal, uv, tri in parts:
+    for tex, etex, two, flags, pos, normal, uv, tri, *rest in parts:
+        blend = rest[0] if rest else 0
         tri = np.asarray(tri, int)
         if len(pos) <= 60000:
-            chunks.append((tex, etex, two, flags, pos, normal, uv, tri)); continue
+            chunks.append((tex, etex, two, flags, pos, normal, uv, tri, blend)); continue
         for k in range(0, len(tri), 20000):
             t = tri[k:k + 20000]; used = np.unique(t); remap = np.full(len(pos), -1); remap[used] = np.arange(len(used))
-            chunks.append((tex, etex, two, flags, pos[used], normal[used], uv[used], remap[t]))
-    for index, (tex, etex, two, flags, pos, normal, uv, tri) in enumerate(chunks):
+            chunks.append((tex, etex, two, flags, pos[used], normal[used], uv[used], remap[t], blend))
+    for index, (tex, etex, two, flags, pos, normal, uv, tri, blend) in enumerate(chunks):
         pos = np.asarray(pos, '<f4'); n = len(pos)
         assert 0 < n <= 65535 and tri.min() >= 0 and tri.max() < n
         uv = np.asarray(uv, float)
@@ -348,6 +359,7 @@ def write_m3(name, parts, path=None):
         mat.name = 'AS%s_%d' % (name, index)
         mat.flags = (mat.flags | 8) if two else (mat.flags & ~8)
         mat.flags |= flags
+        mat.blendMode = blend
         for key, value in mat.__dict__.items():
             if key.endswith('Layer'):
                 for layer in value:
@@ -381,3 +393,4 @@ def write_m3(name, parts, path=None):
     m3.saveAndInvalidateModel(model, str(out))
     m3.loadModel(str(out))
     return out.read_bytes()
+
