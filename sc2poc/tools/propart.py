@@ -218,7 +218,20 @@ def tex_reactor_top(seed=52):
     return _img(a), _img(emis)
 
 
+def tex_pipe(seed=53, col=(196, 156, 40)):
+    """A painted pipe, unrolled around its circumference (rows): a lit top, a shaded underside, and a dark
+    coupling band every unit along it."""
+    w, h = 256, 64
+    shade = 0.45 + 0.75 * np.sin(np.linspace(0, np.pi, h))[:, None] * np.ones((1, w))
+    a = np.array(col, float)[None, None] * shade[..., None] * (0.9 + 0.15 * _noise(0, 16, seed, 2, (h, w))[..., None])
+    for x in (0, w // 2):
+        a[:, x:x + 10] = np.array((70, 72, 74))[None, None] * shade[:, :1, None]
+    return _img(a)
+
+
 TEXTURES = {
+    'prop_pipe_yellow': lambda: (tex_pipe(), None),
+    'prop_pipe_grey': lambda: (tex_pipe(54, (130, 136, 140)), None),
     'prop_reactor': tex_reactor,
     'prop_reactor_top': tex_reactor_top,
     'prop_locker': lambda: (tex_locker(), None),
@@ -328,13 +341,26 @@ def _blob(m, w, d, y0=None):
            [(0, 1), (1, 1), (1, 0), (0, 0)])
 
 
+def _pipe(m, tex, y, z, r, x0=-1.0, x1=1.0, n=8):
+    """A pipe along x from x0 to x1, its axis at (y, z), radius r."""
+    import math as _m
+    for i in range(n):
+        t0, t1 = 2 * _m.pi * i / n, 2 * _m.pi * (i + 1) / n
+        a0 = (y + r * _m.cos(t0), z + r * _m.sin(t0)); a1 = (y + r * _m.cos(t1), z + r * _m.sin(t1))
+        m.quad((tex, False, 0), (x0, a1[0], a1[1]), (x1, a1[0], a1[1]), (x1, a0[0], a0[1]), (x0, a0[0], a0[1]),
+               [(0, (i + 1) / n), (1, (i + 1) / n), (1, i / n), (0, i / n)])
+
+
 DOOR_WIDTHS = range(1, 13)
 
 
 def pieces(out):
-    """KPAmmo (the ammo supply case, the ASAmmo unit's model), KPLockers and KPConsole (against a wall facing -Y), KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
+    """KPPipes (two pipes two units long, high along a wall facing -Y), KPAmmo (the ammo supply case, the ASAmmo unit's model), KPLockers and KPConsole (against a wall facing -Y), KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
     from tools.shipkit import ShipModel
     m = out['KPCol'] = ShipModel('KPCol', (0, 0, 0)); _column(m)
+    m = out['KPPipes'] = ShipModel('KPPipes', (0, 0, 0))
+    _pipe(m, 'prop_pipe_yellow', -0.14, 2.18, 0.09)
+    _pipe(m, 'prop_pipe_grey', -0.32, 2.26, 0.07)
     m = out['KPReactor'] = ShipModel('KPReactor', (0, 0, 0))
     _drum(m, 'prop_reactor', 'prop_reactor_top', 1.55, 2.5, 0.9)
     _drum(m, 'prop_column', 'prop_reactor_top', 1.75, 2.5, 0.18)

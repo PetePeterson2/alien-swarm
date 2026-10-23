@@ -582,6 +582,11 @@ def decal_spots(floor, room, solid, seed=7):
             if run and len(run) <= 12 and all(not (0 <= yy < H) or not floor[yy, cx] for yy in (run[0] - 1, run[-1] + 1)):
                 spots.append(('KPDoor%d' % len(run), float(x), (run[0] + run[-1] + 1) / 2.0, 90.0))
             run = []
+    # Pipe runs high along the corridors' walls that face the camera (south), two units a piece.
+    for y in range(1, H):
+        for x in range(1, W - 1, 2):
+            if all(kind(x + i, y - 1) in corridor and not floor[y, x + i] and not in_void(x + i, y) for i in (0, 1)):
+                spots.append(('KPPipes', x + 1.0, float(y), 0.0))
     # Dashed running lights along the corridors' walls, every other cell.
     for y in range(1, H - 1):
         for x in range(1, W - 1):
