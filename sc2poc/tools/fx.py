@@ -159,6 +159,16 @@ def build():
         save('splat%d.dds' % k, rgb)
         # Its glow, added over the darkened deck: Alien Swarm's alien blood is a vivid yellow-green.
         save('splatglow%d.dds' % k, cover[..., None] ** 1.5 * np.array((50, 54, 4)))
+    # Blast scorch: a sooty star burst multiplied over the deck.
+    rng = np.random.default_rng(71)
+    size3 = 256
+    yy3, xx3 = np.mgrid[0:size3, 0:size3].astype(np.float32)
+    rr = np.hypot(xx3 - 128, yy3 - 128) / 128; aa = np.arctan2(yy3 - 128, xx3 - 128)
+    spikes = 0.55 + 0.35 * np.abs(np.sin(aa * 7 + 1.3)) ** 3 + 0.1 * np.sin(aa * 23)
+    ragged = np.asarray(Image.fromarray((rng.random((32, 32)) * 255).astype(np.uint8)).resize((size3, size3), Image.Resampling.BICUBIC)).astype(np.float32) / 255
+    soot = np.clip((spikes - rr) * 2.2, 0, 1) * (0.7 + 0.5 * ragged)
+    soot = np.clip(soot, 0, 1)
+    save('scorch.dds', 255 * (1 - soot[..., None] * (1 - np.array((0.16, 0.14, 0.13)))[None, None]))
     models = {}
     t = []; streak(t, 0.035); models['Tracer'] = (t, 'tracer.dds')
     t = []; streak(t, 0.012); models['Laser'] = (t, 'laser.dds')
@@ -170,6 +180,7 @@ def build():
     for k in (1, 2):
         t = []; quad(t, (-1, 1, .03), (1, 1, .03), (1, -1, .03), (-1, -1, .03)); models['Splat%d' % k] = (t, 'splat%d.dds' % k, MULTIPLY)
         t = []; quad(t, (-1, 1, .034), (1, 1, .034), (1, -1, .034), (-1, -1, .034)); models['SplatGlow%d' % k] = (t, 'splatglow%d.dds' % k, ADD)
+    t = []; quad(t, (-1, 1, .028), (1, 1, .028), (1, -1, .028), (-1, -1, .028)); models['Scorch'] = (t, 'scorch.dds', MULTIPLY)
     for name, spec in models.items():
         tris, tex = spec[0], spec[1]
         blend = spec[2] if len(spec) > 2 else ADD

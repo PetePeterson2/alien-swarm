@@ -383,6 +383,7 @@ void AS_Explode (int p, fixed x, fixed y, fixed radius, fixed dmg) {
     AS_Burst(x,y,0.6,radius*1.1,"255,160,60",3);
     AS_Ring(x,y,radius,"255,150,60",4);
     AS_FxUnit("ASLightOrangebig",x,y,1.2,0.0,1.0,1.0,"",4);
+    AS_Scorch(x,y,MinF(2.2,radius*0.75));
     AS_Sound("Ravager_CorrosiveBile_Explosion",x,y,100.0,0.05);
     for(j=0;j<AS_MAXALIEN;j+=1) {
         if(as_a[j]==null) {continue;}

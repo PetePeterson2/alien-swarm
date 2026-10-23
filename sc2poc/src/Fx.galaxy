@@ -242,6 +242,18 @@ void AS_Splat (fixed x, fixed y, fixed facing, fixed size) {
     UnitSetScale(as_splatGlow[i],size*100.0,size*100.0,100.0);
     as_splatUntil[i]=as_now+RandomFixed(35.0,50.0);as_splatFading[i]=false;
 }
+// A blast's scorch mark: the splat pool's next slot, without the glow.
+void AS_Scorch (fixed x, fixed y, fixed size) {
+    int i=as_splatNext;
+    as_splatNext=(as_splatNext+1)%AS_SPLATS;
+    if(as_splat[i]!=null) {UnitRemove(as_splat[i]);as_splat[i]=null;}
+    if(as_splatGlow[i]!=null) {UnitRemove(as_splatGlow[i]);as_splatGlow[i]=null;}
+    if(AS_Solid(x,y)) {return;}
+    UnitCreate(1,"ASFxScorch",c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
+    as_splat[i]=UnitLastCreated();
+    UnitSetScale(as_splat[i],size*100.0,size*100.0,100.0);
+    as_splatUntil[i]=as_now+RandomFixed(40.0,55.0);as_splatFading[i]=false;
+}
 void AS_SplatPulse () {
     int i=as_tick%AS_SPLATS;
     if(as_splat[i]==null || as_now<as_splatUntil[i]) {return;}
