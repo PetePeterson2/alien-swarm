@@ -551,19 +551,12 @@ def deck_rows(floor, room):
 
 
 def generic_masks(W=W, H=H):
-    """Terrain for a level-agnostic map: plates everywhere with rust and wreckage patches, nothing per room."""
-    from tools.shipkit import _noise
+    """Terrain for a level-agnostic map. The kit plates every deck cell, so the terrain only shows in the hull
+    beyond the wall caps, where Alien Swarm shows black: dark plates everywhere."""
     M = 8
-    masks = np.zeros((8, H * M, W * M), np.float32)
-    masks[PLATES] = 1.0
-    rust = np.clip((_noise(0, 120, 31, 4, (H * M, W * M)) - 0.58) * 4, 0, 1)
-    wreck = np.clip((_noise(0, 90, 32, 4, (H * M, W * M)) - 0.62) * 4, 0, 1)
-    masks *= (1 - 0.8 * rust)[None]; masks[RUST] += 0.8 * rust
-    masks *= (1 - 0.7 * wreck)[None]; masks[WRECK] += 0.7 * wreck
-    masks = masks / (masks.sum(0) + 1e-6)[None]
-    q = np.rint(masks * 15).astype(np.uint8)
-    dominant = np.full((H, W), PLATES, np.uint8)
-    return q, dominant
+    masks = np.zeros((8, H * M, W * M), np.uint8)
+    masks[DARK] = 15
+    return masks, np.full((H, W), DARK, np.uint8)
 
 
 # Terrain layers: index -> texture (all stock).
