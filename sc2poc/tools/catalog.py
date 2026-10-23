@@ -204,7 +204,7 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
     presets = [
         # id, parent, ambient, exposure, key colour, key strength, fill strength, bloom threshold
         ('ASDerelict', 'StarshipDark', '0.14,0.16,0.21', '1.30', '0.62,0.72,0.90', '0.36', '0.12', '0.85'),
-        ('ASAlarm', 'StarshipDark', '0.22,0.07,0.06', '1.20', '0.95,0.32,0.24', '0.50', '0.08', '0.80'),
+        ('ASAlarm', 'StarshipDark', '0.20,0.09,0.08', '1.25', '0.90,0.40,0.34', '0.44', '0.10', '0.80'),
         ('ASPowered', 'Starship', '0.36,0.38,0.43', '1.30', '0.90,0.94,1.00', '0.85', '0.32', '1.00'),
         ('ASBlackout', 'StarshipDark', '0.05,0.05,0.07', '1.10', '0.30,0.35,0.45', '0.12', '0.03', '0.70'),
     ]

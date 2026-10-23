@@ -256,6 +256,8 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **Pipe runs** (yellow and grey, KPPipes) high along the corridors' camera-facing walls.
 - **Painted arrows** down the middle of each corridor (KNArrow); cables thinned to one per 240 open cells.
 - **Alien blood** splats carry an added yellow-green glow layer (ASFxSplatGlow1/2, laid and faded with each splat), so the goo reads as vividly as AS's.
+- **EMERGENCY lighting** (the swarm alarm) is a red cast that keeps the room readable instead of flooding it red; the alarm lamps carry the rest.
+- **Lab accents** are glowing blue grates.
 - **Blasts leave scorch marks** (ASFxScorch, multiplied, in the splat pool; `AS_Scorch` from `AS_Explode`).
 
 Totals after the second pass: Distress Beacon's kit is 2,896 actors and Cargo Elevator's 3,151, each built in 2.6 s with 0 pathing leaks; the map is 7.3 MB. Autopilot campaign runs after the second pass: 44.3/238.6 s, 44.8/225.6 s, 45.0/237.8 s (Distress Beacon/Cargo Elevator), CAMPAIGN COMPLETE each time, no script errors.
