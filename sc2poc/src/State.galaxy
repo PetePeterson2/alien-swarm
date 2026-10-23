@@ -58,6 +58,7 @@ int[48] as_routeWait;                  // 0 walk on, 1 until the door is open, 2
 int as_routeAt;
 int as_logN;
 fixed[5] as_dmgTaken;
+fixed[5] as_ffDealt;                   // blast damage a marine has done to the rest of the squad
 sound as_amb;                          // the ambience bed (Main starts it, the mission swaps it below the lift)
 sound as_rideSnd;                      // the lift's running rumble
 

@@ -383,7 +383,10 @@ void AS_Explode (int p, fixed x, fixed y, fixed radius, fixed dmg) {
     for(j=1;j<=AS_PLAYERS;j+=1) {
         if(!AS_Person(j) || !as_alive[j]) {continue;}
         d=DistanceBetweenPoints(UnitGetPosition(as_m[j]),Point(x,y));
-        if(d<radius) {AS_HurtMarine(j,dmg*0.2*(1.0-d/radius),x,y,4.0);}
+        if(d<radius) {
+            if(p>=1 && p<=AS_PLAYERS && j!=p) {as_ffDealt[p]+=dmg*0.2*(1.0-d/radius);}
+            AS_HurtMarine(j,dmg*0.2*(1.0-d/radius),x,y,4.0);
+        }
     }
     for(j=1;j<=AS_PLAYERS;j+=1) {
         if(AS_Person(j) && as_alive[j] && DistanceBetweenPoints(UnitGetPosition(as_m[j]),Point(x,y))<12.0) {CameraShakeStart(j,c_cameraPositionBoth,c_cameraDirectionXYZ,0.06,3.0,40.0,0.25);}

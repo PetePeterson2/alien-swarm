@@ -150,7 +150,14 @@ A side-by-side of the bottom-left HUD against an Alien Swarm capture lines up on
 - the result panel bottom right: a centred MISSION COMPLETE header, the squad table with names in the graph's colours, and the next line;
 - a bottom strip naming the next mission, or CAMPAIGN COMPLETE.
 
-Checked in the client (`dist/screens/hud-debrief.jpg`). AS's graph tabs (friendly fire, health, ammo) and its READY/SUMMARY/STATS buttons are not reproduced: the campaign moves on by itself, with no lobby step.
+Additions after AS:
+- **Graph tabs:** FRIENDLY FIRE, KILLS, HEALTH and AMMO, each a logged series.
+  - FRIENDLY FIRE is the blast damage a marine has done to squadmates (`as_ffDealt`, counted in Weapons' explosion splash).
+  - AMMO is the gun in hand's rounds as a percent of a full load.
+- **READY button:** the next mission starts once every player has clicked READY, or after 15 s. The bottom strip counts down ("STARTING IN N") and says how many players it's still waiting for.
+- AS's SUMMARY/STATS page switch is not reproduced: this one page carries both.
+
+Checked in the client (`dist/screens/hud-debrief.jpg`, `hud-debrief-tabs.jpg`): the HEALTH tab redrew the graph, and READY started Cargo Elevator at once.
 
 **Portraits are cosmetics (2026-10-23).**
 - **Keys:** each marine wears a portrait key `<model>_<skin>` from `tools/hudart.py` PORTRAITS. A model is a renderer (only `marine` so far, in PORTRAIT_MODELS); a skin is a style (armour, stripe, visor glass, trim).

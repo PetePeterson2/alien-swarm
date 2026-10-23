@@ -158,7 +158,7 @@ void AS_LevelBegin (int n) {
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(!AS_Person(p)) {continue;}
         as_respawnPt[p]=null;as_respawnAt[p]=0.0;
-        as_kills[p]=0;as_shotsFired[p]=0;as_shotsHit[p]=0;as_dmgTaken[p]=0.0;as_deaths[p]=0;
+        as_kills[p]=0;as_ffDealt[p]=0.0;as_shotsFired[p]=0;as_shotsHit[p]=0;as_dmgTaken[p]=0.0;as_deaths[p]=0;
         as_botGoalPt[p]=null;as_botLast[p]=null;as_botFoe[p]= -1;
         AS_GiveLoadout(p);AS_BotLoadout(p);
         AS_MarineSpawn(p);
@@ -195,9 +195,14 @@ void AS_MissionWon () {
     TriggerExecute(TriggerCreate("AS_NextT"),false,false);
 }
 bool AS_NextT (bool testConds, bool runActions) {
-    int p;int n=as_level+1;
+    int p;int n=as_level+1;fixed waited=0.0;
     if(n<AS_LEVELS) {
-        Wait(AS_NEXT_WAIT,c_timeGame);
+        // The debrief stays up until every player is READY, or the wait runs out (AS's forcing-ready countdown).
+        AS_ReadyReset();
+        while(waited<AS_NEXT_WAIT && !AS_AllReady()) {
+            AS_DebriefCountdown(FixedToInt(AS_NEXT_WAIT-waited+0.99));
+            Wait(0.25,c_timeGame);waited+=0.25;
+        }
         AS_LevelEnd();
         // A moment for the removals to go through before the next deck goes up in the same place.
         Wait(0.5,c_timeGame);

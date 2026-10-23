@@ -120,6 +120,17 @@ int[5][256] as_cGraph;               // per marine 2*AS_DEB_PTS segments: a leve
 int[5][7] as_cDebAxis;
 int[5][5] as_cDebLegend;
 int[5][256] as_killLog;
+int[5][256] as_hpLog;                // health, percent
+int[5][256] as_ammoLog;              // the gun in hand's rounds, percent of a full load
+int[5][256] as_ffLog;                // friendly fire done so far
+int[5] as_debTab;                    // the graph shown: 0 friendly fire, 1 kills, 2 health, 3 ammo
+int[5][4] as_cDebTab;
+int[5][4] as_cDebTabImg;
+int[5] as_cDebReady;
+int[5] as_cDebReadyImg;
+bool[5] as_ready;
+trigger as_debTabTrig;
+trigger as_debReadyTrig;
 int as_killLogN;
 fixed as_killLogEvery = 2.0;
 fixed as_killLogNext;
@@ -334,7 +345,15 @@ void AS_HudCreate (int p) {
     // The kills graph: one step line per marine in its colour, the time along the bottom, the most kills up the side.
     AS_Art(d,40,96,1420,268,"black75",AS_Full());
     AS_Art(d,40,96,1420,2,"white",AS_Rgb(64,112,150));AS_Art(d,40,362,1420,2,"white",AS_Rgb(64,112,150));
-    AS_Lbl(d,60,100,300,30,"ASFrame","KILLS");
+    if(as_debTabTrig==null) {as_debTabTrig=TriggerCreate("AS_DebTabT");as_debReadyTrig=TriggerCreate("AS_DebReadyT");}
+    for(k=0;k<4;k+=1) {
+        as_cDebTabImg[p][k]=AS_Art(d,60+186*k,104,180,36,"buttonoff",AS_Full());
+        libNtve_gf_CreateDialogItemButton(d,180,36,c_anchorTopLeft,60+186*k,104,StringToText(""),StringToText(AS_GraphName(k)),"");
+        as_cDebTab[p][k]=DialogControlLastCreated();
+        AS_DebButton(as_cDebTab[p][k],"ASTab");
+        TriggerAddEventDialogControl(as_debTabTrig,p,as_cDebTab[p][k],c_triggerControlEventTypeClick);
+    }
+    as_debTab[p]=1;
     AS_Art(d,AS_DEB_GX,AS_DEB_GY+AS_DEB_GH,AS_DEB_GW,2,"white",AS_Rgb(64,112,150));
     AS_Art(d,AS_DEB_GX+AS_DEB_GW,AS_DEB_GY,2,AS_DEB_GH,"white",AS_Rgb(64,112,150));
     for(k=0;k<5;k+=1) {as_cDebAxis[p][k]=AS_Lbl(d,AS_DEB_GX+AS_DEB_GW*k/4-50,AS_DEB_GY+AS_DEB_GH+4,100,26,"ASSmallC","");}
@@ -357,6 +376,11 @@ void AS_HudCreate (int p) {
     as_cDebCol[p][4]=AS_Lbl(d,1350,466,90,220,"ASBodyR","");
     as_cDebNext[p]=AS_Lbl(d,650,800,780,110,"ASBody","");
     as_cDebFoot[p]=AS_Lbl(d,0,948,1500,72,"ASBtn","");
+    as_cDebReadyImg[p]=AS_Art(d,1240,958,220,52,"button",AS_Full());
+    libNtve_gf_CreateDialogItemButton(d,220,52,c_anchorTopLeft,1240,958,StringToText(""),StringToText("READY"),"");
+    as_cDebReady[p]=DialogControlLastCreated();
+    AS_DebButton(as_cDebReady[p],"ASBtn");
+    TriggerAddEventDialogControl(as_debReadyTrig,p,as_cDebReady[p],c_triggerControlEventTypeClick);
     DialogSetVisible(d,AS_Me(p),false);
     // Kit comparison readout, top right.
     d=AS_Panel(p,760,130,c_anchorTopRight,20,20);
@@ -666,11 +690,36 @@ void AS_KillLogPulse () {
     if(as_killLogStart!=as_missionStart) {as_killLogStart=as_missionStart;as_killLogN=0;as_killLogEvery=2.0;as_killLogNext=as_now;}
     if(as_missionEnd>0.0 || as_now<as_killLogNext) {return;}
     if(as_killLogN>=256) {
-        for(i=0;i<128;i+=1) {for(q=1;q<=AS_PLAYERS;q+=1) {as_killLog[q][i]=as_killLog[q][2*i];}}
+        for(i=0;i<128;i+=1) {
+            for(q=1;q<=AS_PLAYERS;q+=1) {
+                as_killLog[q][i]=as_killLog[q][2*i];as_hpLog[q][i]=as_hpLog[q][2*i];
+                as_ammoLog[q][i]=as_ammoLog[q][2*i];as_ffLog[q][i]=as_ffLog[q][2*i];
+            }
+        }
         as_killLogN=128;as_killLogEvery*=2.0;
     }
-    for(q=1;q<=AS_PLAYERS;q+=1) {as_killLog[q][as_killLogN]=as_kills[q];}
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        as_killLog[q][as_killLogN]=AS_GraphNow(1,q);as_hpLog[q][as_killLogN]=AS_GraphNow(2,q);
+        as_ammoLog[q][as_killLogN]=AS_GraphNow(3,q);as_ffLog[q][as_killLogN]=AS_GraphNow(0,q);
+    }
     as_killLogN+=1;as_killLogNext=as_now+as_killLogEvery;
+}
+// A marine's value for graph `kind` now, and at log sample i.
+int AS_GraphNow (int kind, int q) {
+    int w=as_slot[q];
+    if(kind==0) {return FixedToInt(as_ffDealt[q]);}
+    if(kind==1) {return as_kills[q];}
+    if(kind==2) {
+        if(!as_alive[q]) {return 0;}
+        return FixedToInt(100.0*AS_Clamp(as_hp[q]/as_hpMax[q],0.0,1.0));
+    }
+    return (as_mag[q][w]+as_reserve[q][w])*100/MaxI(1,as_gun[w].mag+as_gun[w].reserve);
+}
+int AS_GraphAt (int kind, int q, int i) {
+    if(kind==0) {return as_ffLog[q][i];}
+    if(kind==1) {return as_killLog[q][i];}
+    if(kind==2) {return as_hpLog[q][i];}
+    return as_ammoLog[q][i];
 }
 color AS_SquadColour (int q) {
     if(q==1) {return AS_Rgb(70,130,255);}if(q==2) {return AS_Rgb(235,70,60);}if(q==3) {return AS_Rgb(80,210,80);}
@@ -678,14 +727,24 @@ color AS_SquadColour (int q) {
 }
 // The kills graph on player p's debrief.
 void AS_DebriefGraph (int p) {
-    int q;int i;int top=1;int a;int b;int x0;int x1;int y0;int y1;int c;fixed secs=MaxF(1.0,as_missionEnd-as_missionStart);
-    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q)) {top=MaxI(top,as_kills[q]);}}
+    int q;int i;int top=1;int a;int b;int x0;int x1;int y0;int y1;int c;int k=as_debTab[p];fixed secs=MaxF(1.0,as_missionEnd-as_missionStart);
+    if(k>=2) {top=100;}
+    else {
+        for(q=1;q<=AS_PLAYERS;q+=1) {
+            if(!AS_Person(q)) {continue;}
+            top=MaxI(top,AS_GraphNow(k,q));
+            for(i=0;i<as_killLogN;i+=1) {top=MaxI(top,AS_GraphAt(k,q,i));}
+        }
+    }
+    for(i=0;i<4;i+=1) {
+        if(i==k) {AS_SetArt(as_cDebTabImg[p][i],p,"button");}else {AS_SetArt(as_cDebTabImg[p][i],p,"buttonoff");}
+    }
     for(q=1;q<=AS_PLAYERS;q+=1) {
         c=(q-1)*2*AS_DEB_PTS;
         for(i=0;i<AS_DEB_PTS;i+=1) {
             if(!AS_Person(q) || as_killLogN<1) {AS_Show(as_cGraph[p][c+2*i],p,false);AS_Show(as_cGraph[p][c+2*i+1],p,false);continue;}
-            a=as_killLog[q][i*(as_killLogN-1)/AS_DEB_PTS];
-            if(i+1<AS_DEB_PTS) {b=as_killLog[q][(i+1)*(as_killLogN-1)/AS_DEB_PTS];}else {b=as_kills[q];}
+            a=AS_GraphAt(k,q,i*(as_killLogN-1)/AS_DEB_PTS);
+            if(i+1<AS_DEB_PTS) {b=AS_GraphAt(k,q,(i+1)*(as_killLogN-1)/AS_DEB_PTS);}else {b=AS_GraphNow(k,q);}
             x0=AS_DEB_GX+AS_DEB_GW*i/AS_DEB_PTS;x1=AS_DEB_GX+AS_DEB_GW*(i+1)/AS_DEB_PTS;
             y0=AS_DEB_GY+AS_DEB_GH-AS_DEB_GH*a/top;y1=AS_DEB_GY+AS_DEB_GH-AS_DEB_GH*b/top;
             AS_Place(as_cGraph[p][c+2*i],p,x0,y0-1);DialogControlSetSize(as_cGraph[p][c+2*i],AS_Me(p),x1-x0+3,3);
@@ -697,7 +756,48 @@ void AS_DebriefGraph (int p) {
         else {AS_Text(as_cDebLegend[p][q],p,"");}
     }
     for(i=0;i<5;i+=1) {AS_Text(as_cDebAxis[p][i],p,AS_Clock(secs*IntToFixed(i)/4.0));}
-    AS_Text(as_cDebAxis[p][5],p,IntToString(top));
+    if(k>=2) {AS_Text(as_cDebAxis[p][5],p,"100%");}else {AS_Text(as_cDebAxis[p][5],p,IntToString(top));}
+}
+// The graph's tabs, clicked on the debrief.
+bool AS_DebTabT (bool testConds, bool runActions) {
+    int p=EventPlayer();int c=EventDialogControl();int i;
+    if(!AS_Person(p)) {return true;}
+    for(i=0;i<4;i+=1) {if(c==as_cDebTab[p][i]) {as_debTab[p]=i;AS_DebriefGraph(p);}}
+    return true;
+}
+// READY: when every player has clicked it the next mission starts (src/Campaign.galaxy AS_NextT).
+bool AS_DebReadyT (bool testConds, bool runActions) {
+    int p=EventPlayer();
+    if(!AS_Person(p) || as_ready[p]) {return true;}
+    as_ready[p]=true;AS_SetArt(as_cDebReadyImg[p],p,"buttonhi");
+    return true;
+}
+void AS_ReadyReset () {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        as_ready[p]=false;
+        if(as_cDebReadyImg[p]!=0) {AS_SetArt(as_cDebReadyImg[p],p,"button");}
+    }
+}
+// Every player with a HUD has clicked READY (never, in the autopilot, so it waits the full time).
+bool AS_AllReady () {
+    int p;int n=0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || as_dStrip[p]==0 || as_bot[p]) {continue;}
+        if(!as_ready[p]) {return false;}
+        n+=1;
+    }
+    return n>0;
+}
+void AS_DebriefCountdown (int secs) {
+    int p;int q;int wait=0;string s;
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && as_dStrip[q]!=0 && !as_bot[q] && !as_ready[q]) {wait+=1;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || as_dDebrief[p]==0) {continue;}
+        s="NEXT MISSION  //  "+as_levelTitle[as_level+1]+"      STARTING IN "+IntToString(secs);
+        if(as_ready[p] && wait>0) {s=s+"  //  WAITING FOR "+IntToString(wait);}
+        AS_Text(as_cDebFoot[p],p,s);
+    }
 }
 int AS_ObjDoneCount (int sig) {
     int k;int n=0;int s=sig%100000;
@@ -769,6 +869,16 @@ void AS_MapHud (int p) {
 }
 
 // ---- mission HUD --------------------------------------------------------
+string AS_GraphName (int k) {
+    if(k==0) {return "FRIENDLY FIRE";}if(k==1) {return "KILLS";}if(k==2) {return "HEALTH";}return "AMMO";
+}
+// A debrief button: AS art drawn as an image under it, the button itself clear with a pale hover
+// (SC2 slices a button's own image as a border; see the mission menu in src/Campaign.galaxy).
+void AS_DebButton (int c, string style) {
+    DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,PlayerGroupAll(),AS_Ui("clear"));
+    DialogControlSetPropertyAsString(c,c_triggerControlPropertyHoverImage,PlayerGroupAll(),AS_Ui("hover"));
+    DialogControlSetPropertyAsString(c,c_triggerControlPropertyStyle,PlayerGroupAll(),style);
+}
 string AS_Clock (fixed secs) {
     int t=FixedToInt(secs);string sec=IntToString(t%60);
     if(t%60<10) {sec="0"+sec;}
@@ -825,6 +935,7 @@ void AS_Debrief (int p, string next) {
     AS_Text(as_cDebNext[p],p,next);
     if(as_level+1<AS_LEVELS) {AS_Text(as_cDebFoot[p],p,"NEXT MISSION  //  "+as_levelTitle[as_level+1]);}
     else {AS_Text(as_cDebFoot[p],p,"CAMPAIGN COMPLETE");}
+    AS_Show(as_cDebReady[p],p,as_level+1<AS_LEVELS);AS_Show(as_cDebReadyImg[p],p,as_level+1<AS_LEVELS);
     AS_DebriefGraph(p);
     DialogSetVisible(as_dDebriefBg[p],AS_Me(p),true);
     DialogSetVisible(as_dDebrief[p],AS_Me(p),true);

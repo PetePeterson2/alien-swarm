@@ -240,7 +240,8 @@ def font_styles():
             ('ASTagMe', reg, 17, 'Center', '255,255,255,0', False), ('ASTagMate', reg, 17, 'Center', '255,0,144,188', False),
             ('ASTagAI', reg, 17, 'Center', white, False), ('ASDebTitle', reg, 32, 'Left', steel, False),
             ('ASDebPlace', reg, 24, 'Right', steel, False), ('ASPanelHead', reg, 24, 'Center', white, False),
-            ('ASSmallC', reg, 17, 'Center', steel, False), ('ASDebPlace2', reg, 24, 'Left', white, False)]:
+            ('ASSmallC', reg, 17, 'Center', steel, False), ('ASDebPlace2', reg, 24, 'Left', white, False),
+            ('ASTab', reg, 17, 'Center', steel, False)]:
         child(root, 'Style', name=name, template='ModCenterSize20', font=font, height=size, vjustify='Middle', hjustify=align,
               styleflags='Shadow | Glow | InlineJustification' if lit else 'Shadow | InlineJustification',
               textcolor=color, highlightcolor=color, disabledcolor=color, glowcolor=glow if lit else '0,0,0,0',
