@@ -514,7 +514,7 @@ KIND_FLOORS = {
     'mess': ('floor_tile', 'floor_tile2', 'floor_tile'),
     'reactor': ('floor_reactor', 'floor_plate2', 'floor_grate_blue'),
     'cargo': ('floor_brown', 'floor_plate', 'floor_hatch'),
-    'lab': ('floor_lab', 'floor_lab', 'floor_tile2'),
+    'lab': ('floor_lab', 'floor_lab', 'floor_grate_blue'),
     'hive': ('floor_hive', 'floor_plate2', 'floor_hive2'),
 }
 
