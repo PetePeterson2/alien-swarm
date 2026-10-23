@@ -129,6 +129,19 @@ PROPS = [
 ]
 
 
+# ---- the mission (mission 1, DISTRESS BEACON: src/Mission.galaxy) ---------
+# Down the service way to the reactor, hold its console until the power comes back
+# (a swarm comes while you do), then back to the dropship.
+CONSOLE = (36.8, 38.0)             # where marines stand to restore power, beside the reactor consoles
+EXTRACT = (16, 9, 27, 21)          # the dropship's side of the bay: everyone alive inside ends the mission
+ZONES = [('reactor', (34, 30, 58, 54))]
+CHECKPOINTS = [SPAWN, (44.0, 24.0)]
+# The autopilot's way through: x, y, wait (1 until the power is back).
+ROUTE = [
+    (24.0, 16.0, 0), (30.0, 16.0, 0), (44.0, 16.0, 0), (44.0, 24.0, 0), (44.0, 31.0, 0), (42.0, 38.0, 0), (CONSOLE[0], CONSOLE[1], 1),
+    (42.0, 38.0, 0), (44.0, 31.0, 0), (44.0, 24.0, 0), (44.0, 16.0, 0), (30.0, 16.0, 0), (21.5, 15.0, 0),
+]
+
 # Mission levels (tools/cargo.py) carry the same data plus the elevator and mission tables.
 LEVEL = 'deck'
 VOID = None
@@ -136,16 +149,24 @@ LIFT = None
 WINDOWS = []
 
 
+_DECK = None
+
+
 def use(name):
-    """Swap in another level's data (build.py --level): every upper-case name of tools/<name>.py."""
-    global LEVEL
-    if name == 'deck':
-        return
-    import importlib
-    mod = importlib.import_module('tools.' + name)
-    for key, value in vars(mod).items():
-        if key.isupper() or key == 'shaft_columns':
-            globals()[key] = value
+    """Swap in a level's data: every upper-case name of tools/<name>.py, or the deck's own back again."""
+    global LEVEL, _DECK
+    if _DECK is None:
+        _DECK = {k: v for k, v in globals().items() if k.isupper() and not k.startswith(('KIT_', '_'))}
+    for key in [k for k in globals() if k.isupper() and not k.startswith(('KIT_', '_')) and k not in _DECK]:
+        del globals()[key]
+    globals().update(_DECK)
+    globals().pop('shaft_columns', None)
+    if name != 'deck':
+        import importlib
+        mod = importlib.import_module('tools.' + name)
+        for key, value in vars(mod).items():
+            if key.isupper() or key == 'shaft_columns':
+                globals()[key] = value
     LEVEL = name
 
 
@@ -280,11 +301,13 @@ def hull_meshes(floor, room):
 # origin at the bay's midpoint on the face and turned by the script in 90-degree
 # steps. Ceiling and cap tiles are 4x4, 2x2 and 1x1, origin at their south-west
 # corner, uv'd from world position mod 4 so the three sizes join without seams.
-KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive']
+KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive',
+             'wall_window']
 # Room kinds as the script numbers them, and the wall panels each draws from (indexes into KIT_WALLS).
-KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive']
+# A lift cell (the elevator platform and its bridges) gets no ceiling; the camera looks down the shaft.
+KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift']
 KIT_PANELS = {'bay': [0, 0, 2, 5, 3, 6], 'hall': [0, 2, 3, 1, 5, 2], 'duct': [2, 3, 2, 1], 'mess': [1, 1, 4, 5, 0],
-              'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7]}
+              'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7], 'lift': [0]}
 
 
 def _lit(x, y):
@@ -323,14 +346,18 @@ def kit_pieces():
 
 
 def deck_rows(floor, room):
-    """The deck for the kit loader: one string per row, '#' hull, else the room kind's digit (KIT_KINDS)."""
-    rows = []
-    for y in range(H):
-        rows.append(''.join(str(KIT_KINDS.index(kind_at(room, x, y))) if floor[y, x] else '#' for x in range(W)))
-    return rows
+    """The deck for the kit loader: one string per row, the room kind's digit (KIT_KINDS) on the deck, else
+    '#' hull, 'w' hull showing a window panel (WINDOWS), 'v' the drop round a lift (no wall, no cap)."""
+    def cell(x, y):
+        if floor[y, x]:
+            return str(KIT_KINDS.index(kind_at(room, x, y)))
+        if in_void(x, y):
+            return 'v'
+        return 'w' if (x, y) in WINDOWS else '#'
+    return [''.join(cell(x, y) for x in range(W)) for y in range(H)]
 
 
-def generic_masks():
+def generic_masks(W=W, H=H):
     """Terrain for a level-agnostic map: plates everywhere with rust and wreckage patches, nothing per room."""
     from tools.shipkit import _noise
     M = 8

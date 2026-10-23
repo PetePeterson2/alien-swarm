@@ -19,12 +19,9 @@ void AS_Populate (int r, int kind, int count) {
     int k;point q;
     for(k=0;k<count;k+=1) {q=AS_RoomPoint(r);AS_SpawnNear(kind,PointGetX(q),PointGetY(q),false);}
 }
-// The deck as the marines find it.
-void AS_DirectorInit () {
+// The deck as the marines find it: sleepers by the kind of room (the deck's mission, AS_MissionPopulate).
+void AS_PopulateByKind () {
     int r;
-    as_nextHorde=as_now+50.0;
-    // A mission places its own sleepers (AS_MissionPopulate).
-    if(as_mission) {return;}
     for(r=0;r<as_roomCount;r+=1) {
         if(as_roomKind[r]=="mess") {AS_Populate(r,AS_DRONE,4);AS_Populate(r,AS_BUZZER,2);}
         if(as_roomKind[r]=="reactor") {AS_Populate(r,AS_DRONE,5);AS_Populate(r,AS_RANGER,2);AS_Populate(r,AS_BOOMER,1);}
@@ -34,6 +31,10 @@ void AS_DirectorInit () {
         if(as_roomKind[r]=="hall" && RandomInt(0,1)==0) {AS_Populate(r,AS_DRONE,2);}
         if(as_roomKind[r]=="duct") {AS_Populate(r,AS_PARASITE,2);}
     }
+}
+// A new level: no horde running or due, the wave count from the start.
+void AS_DirectorInit () {
+    as_hordeLeft=0;as_hordeUntil=0.0;as_wave=0;
     as_nextHorde=as_now+50.0;
 }
 // A vent out of sight of the marines and not too far from them.
@@ -41,8 +42,8 @@ int AS_PickVent () {
     int v;int p;int best= -1;fixed score;fixed bestScore= -1000.0;fixed d;fixed nearest;point mq;bool seen;
     for(v=0;v<as_ventCount;v+=1) {
         nearest=1000.0;seen=false;
-        // The two levels of a mission do not join: only vents on the squad's own level.
-        if(as_mission && (PointGetX(as_vent[v])>93.0)!=as_lowerLevel) {continue;}
+        // The cargo elevator's two levels do not join: only vents on the squad's own level.
+        if(as_level==AS_LV_CARGO && (PointGetX(as_vent[v])>93.0)!=as_lowerLevel) {continue;}
         for(p=1;p<=AS_PLAYERS;p+=1) {
             if(!AS_Person(p) || !as_alive[p]) {continue;}
             mq=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(mq,as_vent[v]);

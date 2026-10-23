@@ -29,7 +29,6 @@ void AS_Select (int p, int slot) {
     as_slot[p]=slot;as_reloadEnd[p]=0.0;as_spin[p]=0.0;
     as_nextShot[p]=MaxF(as_nextShot[p],as_now+0.3);
     as_semiReady[p]=true;
-    AS_Message(p,"<c val=\"FFBA40\">"+as_gun[slot].name+"</c>");
 }
 void AS_Reload (int p) {
     int w=as_slot[p];
@@ -473,4 +472,12 @@ void AS_FlarePulse () {
         // A flare sputters.
         if(RandomInt(0,7)==0) {UnitSetScale(as_flare[i],RandomFixed(80.0,115.0),RandomFixed(80.0,115.0),RandomFixed(80.0,115.0));}
     }
+}
+// Everything a marine left about the deck, cleared between levels.
+void AS_WeaponsClear () {
+    int i;
+    for(i=0;i<AS_BULLETS;i+=1) {if(as_bu[i]!=null) {UnitRemove(as_bu[i]);as_bu[i]=null;}}
+    for(i=0;i<32;i+=1) {if(as_lob[i]!=null) {UnitRemove(as_lob[i]);as_lob[i]=null;}}
+    for(i=0;i<AS_SENTRIES;i+=1) {if(as_sentry[i]!=null) {UnitRemove(as_sentry[i]);as_sentry[i]=null;}}
+    for(i=0;i<16;i+=1) {if(as_flare[i]!=null) {UnitRemove(as_flare[i]);as_flare[i]=null;}}
 }

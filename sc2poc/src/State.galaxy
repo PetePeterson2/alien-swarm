@@ -16,8 +16,24 @@ const int AS_WEAPONS = 10;
 bool as_qa = false;
 bool as_demo = false;                  // scripted firing range for screenshots (build.py --demo)
 string as_runId = "unset";
-bool as_mission;                       // a mission level (tools/cargo.py): src/Mission.galaxy runs it
+bool as_mission = true;                // every level is a mission now: src/Mission.galaxy runs it
 bool as_lowerLevel;                    // the squad has ridden down: the director uses the lower level's vents
+
+// ---- the campaign (src/Campaign.galaxy) -------------------------------
+// Every level is in the map; one is built at a time from its strings (build.py LEVELS).
+const int AS_LEVELS = @LEVELS@;
+const int AS_LV_DECK = 0;              // mission 1, DISTRESS BEACON (tools/level.py)
+const int AS_LV_CARGO = 1;             // mission 2, CARGO ELEVATOR (tools/cargo.py)
+int as_level = -1;                     // the level being played, -1 in the level menu
+bool as_levelReady;                    // a level is built and running (false in the menu and between levels)
+int as_startLevel = -1;                // QA builds start here without the menu (build.py --start, --auto)
+string as_bankName = "HalcyonDrift";   // each marine's progress (build.py rewrites this line for QA builds)
+string[8] as_levelTitle;
+string[8] as_levelPlace;
+string[8] as_levelBrief;
+fixed as_spawnX;                       // where the level's squad deploys
+fixed as_spawnY;
+fixed as_spawnFacing;
 const fixed AS_RESPAWN = 10.0;         // a downed marine's wait in a mission
 int[5] as_deaths;
 bool[5] as_bot;                        // an AI marine (src/Bots.galaxy)

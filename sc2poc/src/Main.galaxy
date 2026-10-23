@@ -1,5 +1,6 @@
 // =====================================================================
-// Entry point: players, lighting, UI, input triggers and the 16 Hz pulse.
+// Entry point: players, lighting, UI, input triggers and the 16 Hz pulse;
+// then the campaign (src/Campaign.galaxy) picks and builds the first level.
 // =====================================================================
 
 // Demo build only: player 1 fires each gun in turn in six directions at sleeping drones.
@@ -26,6 +27,8 @@ void AS_DemoPulse () {
 bool AS_Pulse (bool testConds, bool runActions) {
     int p;
     as_now+=AS_DT;as_tick+=1;
+    // In the level menu, and for the moment between one level and the next, nothing else runs.
+    if(!as_levelReady) {AS_CampaignPulse();return true;}
     AS_DemoPulse();
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(!AS_Person(p)) {continue;}
@@ -34,6 +37,7 @@ bool AS_Pulse (bool testConds, bool runActions) {
         if(as_dCenter[p]!=0) {AS_HurtPulse(p);}
         if(as_tick%2==0 && as_dCenter[p]!=0) {AS_HudUpdate(p);}
     }
+    if(as_tick%2==1) {AS_NameTagsPulse();}
     AS_BulletPulse();AS_AlienPulse();AS_LobPulse();AS_PuffPulse();AS_SentryPulse();AS_FlarePulse();AS_FxPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();AS_KitPulse();AS_MissionPulse();
     return true;
 }
@@ -48,7 +52,7 @@ void AS_CycleLight (int p) {
 }
 bool AS_KeyDownT (bool testConds, bool runActions) {
     int p=EventPlayer();int k=EventKeyPressed();bool ctrl=EventKeyControl();int n= -1;
-    if(!AS_Person(p)) {return true;}
+    if(!AS_Person(p) || !as_levelReady) {return true;}
     if(k==c_keyW) {AS_KeyMove(p,0,true);return true;}
     if(k==c_keyA) {AS_KeyMove(p,1,true);return true;}
     if(k==c_keyS) {AS_KeyMove(p,2,true);return true;}
@@ -64,6 +68,10 @@ bool AS_KeyDownT (bool testConds, bool runActions) {
     if(ctrl && k==c_keyL) {AS_SkipAhead(p);return true;}
     if(ctrl && k==c_keyJ) {AS_DevSpawn(p,AS_RIPPER);return true;}
     if(ctrl && k==c_keyK) {AS_KillAll();return true;}
+    // QA: 25 damage to yourself, to see the health ring lose it.
+    if(ctrl && k==c_keyH && as_qa) {AS_HurtMarine(p,25.0,PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p]))+1.0,0.0);return true;}
+    // QA: the current gun down to its last few rounds, to see the HUD's LOW AMMO / NO AMMO.
+    if(ctrl && k==c_keyR && as_qa) {as_reserve[p][as_slot[p]]=0;as_mag[p][as_slot[p]]=MinI(as_mag[p][as_slot[p]],5);return true;}
     // Kit comparison (src/Kit.galaxy): room tour, pathing probe, prop turn, wall mirror.
     if(ctrl && k==c_keyN) {AS_Tour(p);return true;}
     if(ctrl && k==c_keyP) {AS_ProbeRun();AS_Message(p,"Probe walking");return true;}
@@ -79,6 +87,7 @@ bool AS_KeyDownT (bool testConds, bool runActions) {
     if(k==c_keyL) {AS_CycleLight(p);}
     if(k==c_keyT) {as_director=!as_director;AS_Message(p,"Director toggled");}
     if(k==c_keyH) {AS_HelpToggle(p);}
+    if(k==c_keyTab) {AS_ObjToggle(p);}
     return true;
 }
 bool AS_KeyUpT (bool testConds, bool runActions) {
@@ -92,7 +101,7 @@ bool AS_KeyUpT (bool testConds, bool runActions) {
 }
 bool AS_MouseDownT (bool testConds, bool runActions) {
     int p=EventPlayer();
-    if(!AS_Person(p)) {return true;}
+    if(!AS_Person(p) || !as_levelReady) {return true;}
     if(as_bot[p]) {return true;}
     if(EventMouseClickedButton()==c_mouseButtonLeft) {as_trigger[p]=true;}
     else if(EventMouseClickedButton()==c_mouseButtonRight) {as_trigger2[p]=true;AS_Secondary(p);}
@@ -111,7 +120,7 @@ bool AS_MouseMoveT (bool testConds, bool runActions) {
 }
 bool AS_WheelT (bool testConds, bool runActions) {
     int p=EventPlayer();
-    if(!AS_Person(p) || as_view[p]!=0) {return true;}
+    if(!AS_Person(p) || as_view[p]!=0 || !as_levelReady) {return true;}
     as_zoom[p]=AS_Clamp(as_zoom[p]-EventMouseWheelSpin()*1.5,12.0,40.0);
     CameraSetValue(p,c_cameraValueDistance,as_zoom[p],0.2,-1,0.0);
     return true;
@@ -125,10 +134,11 @@ void AS_KeyEvents (trigger t, bool down) {
     TriggerAddEventKeyPressed(t,c_playerAny,c_keyD,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
     if(!down) {return;}
     for(k=c_keyA;k<=c_keyZ;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
+    TriggerAddEventKeyPressed(t,c_playerAny,c_keyTab,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
 }
 void AS_Init () {
     int p;int q;trigger t;
-    AS_GunsInit();AS_KindsInit();AS_LevelInit();AS_MissionData();
+    AS_GunsInit();AS_KindsInit();
     as_lightId[0]="ASDerelict";as_lightName[0]="DERELICT";as_lightId[1]="ASBlackout";as_lightName[1]="BLACKOUT";
     as_lightId[2]="ASAlarm";as_lightName[2]="EMERGENCY";as_lightId[3]="ASPowered";as_lightName[3]="POWER RESTORED";
     GameSetSpeedValue(c_gameSpeedNormal);GameSetSpeedLocked(true);
@@ -146,9 +156,6 @@ void AS_Init () {
         AS_GiveLoadout(p);AS_BotLoadout(p);
         if(!as_bot[p] || (as_auto && p==1)) {AS_HudCreate(p);}
         if(as_auto && p==1) {as_god[p]=true;}
-        AS_MarineSpawn(p);
-        if(as_mission) {AS_Announce(p,"CARGO ELEVATOR","Take the freight elevator down to the colony. Press H for controls.");}
-        else {AS_Announce(p,"HALCYON DRIFT","Distress beacon traced to deck 3. Find out what happened. Press H for controls.");}
     }
     t=TriggerCreate("AS_KeyDownT");AS_KeyEvents(t,true);
     t=TriggerCreate("AS_KeyUpT");AS_KeyEvents(t,false);
@@ -156,7 +163,6 @@ void AS_Init () {
     t=TriggerCreate("AS_MouseUpT");TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonLeft,false);TriggerAddEventMouseClicked(t,c_playerAny,c_mouseButtonRight,false);
     t=TriggerCreate("AS_MouseMoveT");TriggerAddEventMouseMoved(t,c_playerAny);
     t=TriggerCreate("AS_WheelT");TriggerAddEventMouseWheel(t,c_playerAny);
-    AS_DirectorInit();AS_MissionInit();
-    SoundPlay(SoundLink("Ambience_HybridLabInner",-1),PlayerGroupAll(),45.0,0.0);as_amb=SoundLastPlayed();
+    AS_CampaignInit();
     t=TriggerCreate("AS_Pulse");TriggerAddEventTimePeriodic(t,AS_DT,c_timeGame);
 }

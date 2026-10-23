@@ -65,10 +65,10 @@ bool AS_LineClear (fixed x0, fixed y0, fixed x1, fixed y1) {
 // ---- spawning ---------------------------------------------------------
 point[5] as_respawnPt;
 void AS_MarineSpawn (int p) {
-    point q=Point(@spawnX@+IntToFixed((p-1)%2)*1.2,@spawnY@+IntToFixed((p-1)/2)*1.2);
+    point q=Point(as_spawnX+IntToFixed((p-1)%2)*1.2,as_spawnY+IntToFixed((p-1)/2)*1.2);
     if(as_respawnPt[p]!=null) {q=as_respawnPt[p];}
     if(as_m[p]==null) {
-        UnitCreate(1,"ASMarine",c_unitCreateIgnorePlacement,p,q,@spawnFacing@);
+        UnitCreate(1,"ASMarine",c_unitCreateIgnorePlacement,p,q,as_spawnFacing);
         as_m[p]=UnitLastCreated();
     }
     else {
@@ -76,7 +76,7 @@ void AS_MarineSpawn (int p) {
         libNtve_gf_ShowHideUnit(as_m[p],true);
     }
     as_hp[p]=100.0;as_hpMax[p]=100.0;as_alive[p]=true;as_infestUntil[p]=0.0;
-    as_aim[p]=@spawnFacing@;as_mvX[p]=0.0;as_mvY[p]=0.0;as_knockX[p]=0.0;as_knockY[p]=0.0;
+    as_aim[p]=as_spawnFacing;as_mvX[p]=0.0;as_mvY[p]=0.0;as_knockX[p]=0.0;as_knockY[p]=0.0;
     UnitSetPropertyFixed(as_m[p],c_unitPropLife,100.0);
     if(as_torch[p]==null) {
         UnitCreate(1,"ASFlashlight",c_unitCreateIgnorePlacement,0,q,as_aim[p]);as_torch[p]=UnitLastCreated();
@@ -258,7 +258,7 @@ void AS_MarineDie (int p) {
     AS_Fx("ASDieMarine",PointGetX(here),PointGetY(here),0.0,as_aim[p]);
     AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);
     libNtve_gf_ShowHideUnit(as_m[p],false);libNtve_gf_ShowHideUnit(as_muzzle[p],false);
-    UnitSetPosition(as_m[p],Point(@spawnX@,@spawnY@),false);
+    UnitSetPosition(as_m[p],Point(as_spawnX,as_spawnY),false);
     AS_TorchShow(p);
     if(as_mission) {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying beside your squad in 10 seconds");}
     else {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying in 4 seconds");}
@@ -269,6 +269,8 @@ void AS_MarinePulse (int p) {
         if(as_now>=as_respawnAt[p] && AS_CanRespawn(p)) {
             if(as_mission) {as_respawnPt[p]=AS_RespawnPoint(p);}
             AS_MarineSpawn(p);
+            AS_Log("p"+IntToString(p)+" redeployed at "+AS_Where(p));
+            return;
         }
         return;
     }

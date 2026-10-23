@@ -153,6 +153,7 @@ WINDOWS = [(22, y) for y0 in (43, 47, 51, 55) for y in (y0, y0 + 1)]
 # Security door across the door passage: cells, and which way its halves slide (x).
 DOOR = (16, 63, 20, 64)
 DOOR_PANEL = (21.0, 60.6)          # the console marines stand at to override it
+CONSOLE = DOOR_PANEL               # the mission's console (src/Mission.galaxy as_doorPanel)
 LIFT_PANEL = (86.0, 100.6)         # the elevator controls at the platform's north rail
 EXTRACT = (104, 22, 118, 34)       # the transit platform: everyone alive inside ends the mission
 

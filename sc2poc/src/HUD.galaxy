@@ -1,49 +1,139 @@
 // =====================================================================
-// HUD: the marine panel (health, offhand items), the weapon panel (ammo,
-// reload), the weapon bar 1..0, the mission line, announcements, the
-// crosshair of the third-person view, the damage vignette and the H help.
+// HUD, after Alien Swarm's own (asw_hud_master and the rest of its HUD code). Positions are its
+// scripts/HudLayout.res times 2.5 (tools/hudlayout.py, written here as AS_HUD_*), the art is
+// tools/hudart.py's (Derelict\UI\*.dds):
+//   bottom left     the marine: the weapon in hand (white) and the last one (blue) above; the round
+//                   portrait in its 270-degree health ring with the class medallion; weapon name,
+//                   bullets in the clip, rifle grenades, clips left, LOW AMMO / NO AMMO; the sentry,
+//                   medkit and flare with their keys and counts; the reload bar while reloading
+//   along the bottom  the rest of the squad: name, class, health, ammo, clips, medkits
+//   top left        the objectives, shown when they change (TAB keeps them up), "Objective complete!"
+//   bottom centre   the use panel: overrides, countdowns, the medkit when infested
+//   bottom right    the minimap: the level from above, the squad, aliens and the objective
+//   under each marine  name and health bar
+//   centre          announcements and notices, the third-person crosshair; the debrief and H help
 // Dialogs are per player and shown only to that player.
 // =====================================================================
 
 const string AS_WHITE = "Derelict\\UI\\white.dds";
 const string AS_VIGNETTE = "Derelict\\UI\\vignette.dds";
+const string AS_UI = "Derelict\\UI\\";
 
-int[5] as_dMarine;
-int[5] as_dWeapon;
-int[5] as_dTop;
-int[5] as_dCenter;
-int[5] as_dHelp;
 int[5] as_dHurt;
-int[5] as_dBar;
-int[5] as_cHpFill;
-int[5] as_cHpText;
-int[5] as_cStatus;
-int[5] as_cItems;
+int[5] as_dStrip;           // the marine and the squad, bottom left
+int[5] as_dObj;             // objectives, top left
+int[5] as_dUse;             // use panel, bottom centre
+int[5] as_dMap;             // minimap, bottom right
+int[5] as_dCenter;          // announcements
+int[5] as_dMsg;             // notices
+int[5] as_dCross;
+int[5] as_dHelp;
+int[5] as_dDebrief;
+// The marine.
+int[5] as_cGun1;
+int[5] as_cGun2;
+int[5] as_cFace;
+int[5] as_cRingBg;
+int[5] as_cRingGhost;
+int[5] as_cRing;
+int[5] as_cCls;
 int[5] as_cGunName;
+int[5] as_cLow;
+int[5] as_cBulIcon;
 int[5] as_cAmmo;
-int[5] as_cReserve;
-int[5] as_cReload;
-int[5] as_cReloadBg;
-int[5] as_cExtra;
-int[5] as_cTop1;
-int[5] as_cTop2;
-int[5] as_cTop3;
+int[5] as_cGrenIcon;
+int[5] as_cGren;
+int[5][5] as_cClip;
+int[5] as_cClipN;
+int[5][3] as_cItem;
+int[5][3] as_cItemKey;
+int[5][3] as_cItemN;
+int[5] as_cStatus;
+int[5] as_cRelBg;
+int[5] as_cRelMark;
+// The squad: three panels, filled with the other marines in slot order.
+int[5][3] as_cSqName;
+int[5][3] as_cSqBg;
+int[5][3] as_cSqCls;
+int[5][3] as_cSqHpBg;
+int[5][3] as_cSqHp;
+int[5][36] as_cSqTick;      // panel*12 + tick
+int[5][15] as_cSqClip;      // panel*5 + clip
+int[5][3] as_cSqClipN;
+int[5][3] as_cSqItem;
+int[5][3] as_cSqItemN;
+int[5][3] as_sqWho;
+int[5][3] as_sqKey;
+// Objectives.
+int[5] as_cObjBar;
+int[5] as_cObjHead;
+int[5][5] as_cObjTick;
+int[5][5] as_cObjText;
+int[5] as_cObjDone;
+fixed[5] as_objShowUntil;
+fixed[5] as_objFade;        // the dialog's transparency, 100 hidden
+bool[5] as_objPinned;
+int as_objSig = -1;
+int as_objWatchTick = -1;
+fixed as_objDoneAt = -100.0;
+int[5] as_objPrev;
+// The use panel.
+int[5] as_cUseKey;
+int[5] as_cUseKeyT;
+int[5] as_cUseText;
+int[5] as_cUseBar;
+int[5] as_cUseBarBg;
+bool[5] as_useOn;
+// The minimap.
+int[5] as_cMap;
+int[5][5] as_cBlipM;
+int[5][24] as_cBlipA;
+int[5] as_cBlipObj;
+int[5] as_cBlipSelf;
+int[5] as_mapLevel;
+fixed[8] as_mmX0;
+fixed[8] as_mmY0;
+fixed[8] as_mmSize;
+// Centre.
+int[5] as_cBand;
 int[5] as_cBig;
 int[5] as_cSmall;
 int[5] as_cMsg;
 int[5] as_cCross;
-int[5][11] as_cSlot;
 int[5] as_cQa;              // kit comparison readout, top right (src/Kit.galaxy)
-int[5] as_cObj;             // mission objectives, under the mission line
-int[5] as_dProg;            // centre progress bar: door override, lift countdown, ride depth
-int[5] as_cProg;
-int[5] as_cProgText;
-int[5] as_cSquad;           // the rest of the squad, right side
-int[5] as_dDebrief;
-int[5] as_cDebrief;
+int[5] as_cDebTitle;
+int[5] as_cDebPlace;
+int[5] as_cDebTime;
+int[5][5] as_cDebCol;
+int[5] as_cDebNext;
 fixed[5] as_msgUntil;
 fixed[5] as_bigUntil;
+// What is on screen, so a control is only touched when it changes.
+int[5] as_kRing;
+int[5] as_kGhost;
+fixed[5] as_ghostUntil;
+string[5] as_kCls;
+int[5] as_hudSlot;
+int[5] as_prevSlot;
+int[5] as_kClips;
+int[5] as_kItems;
+int[5] as_kAmmo;
+// Names under the marines: a dialog per viewer and marine, following the marine.
+int[5][5] as_dTag;
+int[5][5] as_cTagName;
+int[5][5] as_cTagHp;
+int[5][5] as_cTagHpDk;
+unit[5][5] as_tagUnit;
+int[5][5] as_tagKey;
+bool[5] as_tagsOff;
+bool[5] as_hudOn;
+string[5] as_portrait;      // a cosmetic portrait key "<model>_<skin>" (tools/hudart.py PORTRAITS), "" for the slot's default
+string[5] as_kFace;           // the marine strip and minimap appear with the first level         // the debrief is up: the names would draw over it
 
+// ---- helpers ----------------------------------------------------------
+string AS_Ui (string name) {return AS_UI+name+".dds";}
+color AS_Rgb (int r, int g, int b) {return Color(IntToFixed(r)/2.55,IntToFixed(g)/2.55,IntToFixed(b)/2.55);}
+color AS_Full () {return Color(100.0,100.0,100.0);}
 int AS_Label (int d, int p, int anchor, int x, int y, int w, int h, string style, string s) {
     int c=DialogControlCreate(d,c_triggerControlTypeLabel);
     DialogControlSetSize(c,PlayerGroupAll(),w,h);
@@ -61,105 +151,206 @@ int AS_Image (int d, int anchor, int x, int y, int w, int h, string image, color
     DialogControlSetPropertyAsColor(c,c_triggerControlPropertyColor,PlayerGroupAll(),tint);
     return c;
 }
+// HUD art at the top left of a dialog.
+int AS_Art (int d, int x, int y, int w, int h, string name, color tint) {return AS_Image(d,c_anchorTopLeft,x,y,w,h,AS_Ui(name),tint);}
+int AS_Lbl (int d, int x, int y, int w, int h, string style, string s) {return AS_Label(d,0,c_anchorTopLeft,x,y,w,h,style,s);}
 void AS_Text (int c, int p, string s) {
     DialogControlSetPropertyAsText(c,c_triggerControlPropertyText,AS_Me(p),StringToText(s));
 }
+void AS_Show (int c, int p, bool on) {DialogControlSetVisible(c,AS_Me(p),on);}
+void AS_SetArt (int c, int p, string name) {DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,AS_Me(p),AS_Ui(name));}
+void AS_SetTint (int c, int p, color k) {DialogControlSetPropertyAsColor(c,c_triggerControlPropertyColor,AS_Me(p),k);}
+void AS_SetStyle (int c, int p, string style) {DialogControlSetPropertyAsString(c,c_triggerControlPropertyStyle,AS_Me(p),style);}
+void AS_Place (int c, int p, int x, int y) {DialogControlSetPosition(c,AS_Me(p),c_anchorTopLeft,x,y);}
 int AS_Panel (int p, int w, int h, int anchor, int x, int y) {
     int d=DialogCreate(w,h,anchor,x,y,false);
     DialogSetImageVisible(d,false);
     DialogSetVisible(d,AS_Me(p),true);
     return d;
 }
-string AS_SlotShort (int w) {
-    if(w==1) {return "RIFLE";}if(w==2) {return "AUTOGUN";}if(w==3) {return "SHOTGUN";}if(w==4) {return "FLAMER";}
-    if(w==5) {return "PISTOLS";}if(w==6) {return "RAILGUN";}if(w==7) {return "MINIGUN";}if(w==8) {return "GRENADES";}
-    if(w==9) {return "TESLA";}return "SNIPER";
+string AS_Two (int n) {
+    if(n<10) {return "0"+IntToString(n);}
+    return IntToString(n);
 }
+string AS_Three (int n) {
+    if(n<10) {return "00"+IntToString(n);}
+    if(n<100) {return "0"+IntToString(n);}
+    return IntToString(n);
+}
+// The weapon names AS prints on the HUD.
+string AS_GunTitle (int w) {
+    if(w==1) {return "Assault Rifle";}if(w==2) {return "Autogun";}if(w==3) {return "Shotgun";}if(w==4) {return "Flamer";}
+    if(w==5) {return "Twin Pistols";}if(w==6) {return "Railgun";}if(w==7) {return "Minigun";}if(w==8) {return "Grenade Launcher";}
+    if(w==9) {return "Tesla Cannon";}return "Sniper Rifle";
+}
+// Each slot wears one of AS's four class medallions.
+string AS_ClassOf (int q) {
+    int k=(q-1)%4;
+    if(k==0) {return "officer";}if(k==1) {return "sw";}if(k==2) {return "medic";}return "tech";
+}
+string AS_PortraitOf (int q) {
+    if(as_portrait[q]!="" && AS_HudPortraitKnown(as_portrait[q])) {return as_portrait[q];}
+    return AS_HudPortraitDefault(q);
+}
+text AS_MarineName (int q) {
+    if(as_bot[q] && !(as_auto && q==1)) {return StringToText("Marine "+IntToString(q));}
+    return PlayerName(q);
+}
+
+// ---- building it ------------------------------------------------------
 void AS_HudCreate (int p) {
-    int d;int w;
+    int d;int k;int i;int x;int y;int ix;
+    color blue=AS_HUD_INACTIVE();
+    AS_HudMaps();
     // Damage vignette, underneath everything.
     d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);
     AS_Image(d,c_anchorCenter,0,0,2400,1200,AS_VIGNETTE,Color(100.0,8.0,4.0));
     DialogSetTransparency(d,100.0);DialogSetVisible(d,AS_Me(p),true);as_dHurt[p]=d;
-    // Marine panel, bottom left.
-    d=AS_Panel(p,420,140,c_anchorBottomLeft,24,24);as_dMarine[p]=d;
-    AS_Image(d,c_anchorTopLeft,0,0,420,140,AS_WHITE,Color(4.0,6.0,8.0));
-    AS_Label(d,p,c_anchorTopLeft,16,8,380,28,"ASHead","MARINE "+IntToString(p)+"  //  SPECIAL WEAPONS");
-    AS_Image(d,c_anchorTopLeft,16,44,300,22,AS_WHITE,Color(18.0,8.0,8.0));
-    as_cHpFill[p]=AS_Image(d,c_anchorTopLeft,16,44,300,22,AS_WHITE,Color(30.0,85.0,45.0));
-    as_cHpText[p]=AS_Label(d,p,c_anchorTopLeft,326,40,90,30,"ASHealth","100");
-    as_cStatus[p]=AS_Label(d,p,c_anchorTopLeft,16,72,390,26,"ASSmall","");
-    as_cItems[p]=AS_Label(d,p,c_anchorTopLeft,16,100,400,28,"ASBody","");
-    // Weapon panel, bottom right.
-    d=AS_Panel(p,440,140,c_anchorBottomRight,24,24);as_dWeapon[p]=d;
-    AS_Image(d,c_anchorTopLeft,0,0,440,140,AS_WHITE,Color(4.0,6.0,8.0));
-    as_cGunName[p]=AS_Label(d,p,c_anchorTopRight,16,8,400,30,"ASWeapon","");
-    as_cAmmo[p]=AS_Label(d,p,c_anchorTopRight,150,40,200,54,"ASAmmo","");
-    as_cReserve[p]=AS_Label(d,p,c_anchorTopRight,16,52,130,30,"ASAmmoS","");
-    as_cReloadBg[p]=AS_Image(d,c_anchorTopLeft,24,104,392,10,AS_WHITE,Color(14.0,14.0,16.0));
-    as_cReload[p]=AS_Image(d,c_anchorTopLeft,24,104,1,10,AS_WHITE,Color(100.0,72.0,24.0));
-    as_cExtra[p]=AS_Label(d,p,c_anchorTopLeft,24,112,400,26,"ASSmall","");
-    // Weapon bar, bottom centre.
-    d=AS_Panel(p,760,44,c_anchorBottom,0,28);as_dBar[p]=d;
-    for(w=1;w<=AS_WEAPONS;w+=1) {
-        as_cSlot[p][w]=AS_Label(d,p,c_anchorTopLeft,(w-1)*76,4,74,36,"ASSlot",IntToString(w%10)+" "+AS_SlotShort(w));
+    // The marine, bottom left (ASW_Hud_Master).
+    d=AS_Panel(p,AS_HUD_STRIP_W,AS_HUD_STRIP_H,c_anchorBottomLeft,0,0);as_dStrip[p]=d;DialogSetVisible(d,AS_Me(p),false);
+    x=AS_HUD_PX;y=AS_HUD_PY;
+    as_cGun2[p]=AS_Art(d,x,AS_HUD_GUN2_Y,AS_HUD_GUN_W,AS_HUD_GUN_H,"gun1",blue);AS_Show(as_cGun2[p],p,false);
+    as_cGun1[p]=AS_Art(d,x,AS_HUD_GUN1_Y,AS_HUD_GUN_W,AS_HUD_GUN_H,"gun1",AS_Full());
+    AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"plate",AS_Full());
+    AS_Art(d,x+AS_HUD_RING,y+AS_HUD_RING/2,AS_HUD_BAR_W,AS_HUD_RING-AS_HUD_RING/2,"black75",AS_Full());
+    as_cFace[p]=AS_Art(d,x+AS_HUD_FACE_X-AS_HUD_FACE_R,y+AS_HUD_FACE_Y-AS_HUD_FACE_R,2*AS_HUD_FACE_R,2*AS_HUD_FACE_R,"face_"+AS_PortraitOf(p),AS_Full());as_kFace[p]=AS_PortraitOf(p);
+    as_cRingBg[p]=AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"ringbg",AS_Full());
+    as_cRingGhost[p]=AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"hp"+AS_Two(AS_HUD_RING_N),AS_HUD_GHOST_TINT());
+    as_cRing[p]=AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"hp"+AS_Two(AS_HUD_RING_N),AS_HUD_HP_TINT());
+    as_kRing[p]=AS_HUD_RING_N;as_kGhost[p]=AS_HUD_RING_N;
+    as_cCls[p]=AS_Art(d,x+AS_HUD_CLS_X,y+AS_HUD_CLS_Y,AS_HUD_CLS,AS_HUD_CLS,"cls_"+AS_ClassOf(p),AS_Full());as_kCls[p]=AS_ClassOf(p);
+    as_cGunName[p]=AS_Lbl(d,x+AS_HUD_NAME_X,y+AS_HUD_NAME_Y,300,26,"ASSmall","");
+    as_cLow[p]=AS_Lbl(d,x+AS_HUD_LOW_X,y+AS_HUD_LOW_Y,300,30,"ASLow","");
+    as_cBulIcon[p]=AS_Art(d,x+AS_HUD_BUL_X,y+AS_HUD_BUL_Y,AS_HUD_ICON,AS_HUD_ICON,"bullets",AS_Full());
+    as_cAmmo[p]=AS_Lbl(d,x+AS_HUD_AMMO_X,y+AS_HUD_AMMO_Y-4,90,42,"ASLarge","");
+    as_cGrenIcon[p]=AS_Art(d,x+AS_HUD_GREN_X,y+AS_HUD_BUL_Y,AS_HUD_ICON,AS_HUD_ICON,"grenade",AS_Full());
+    as_cGren[p]=AS_Lbl(d,x+AS_HUD_GREN_TX,y+AS_HUD_AMMO_Y-4,40,42,"ASLarge","");
+    for(k=0;k<5;k+=1) {as_cClip[p][k]=AS_Art(d,x+AS_HUD_CLIP_X+AS_HUD_CLIP_GAP*k,y+AS_HUD_CLIP_Y,AS_HUD_CLIP,AS_HUD_CLIP,"clip1",AS_Full());}
+    as_cClipN[p]=AS_Lbl(d,x+AS_HUD_CLIP_X+AS_HUD_CLIP,y+AS_HUD_CLIP_Y,60,AS_HUD_CLIP,"ASSmall","");
+    for(i=0;i<3;i+=1) {
+        ix=x+AS_HUD_ITEM_X+AS_HUD_ITEM_GAP*i;
+        as_cItem[p][i]=AS_Art(d,ix,y+AS_HUD_ITEM_Y,AS_HUD_ITEM,AS_HUD_ITEM,"item_sentry",blue);
+        as_cItemKey[p][i]=AS_Lbl(d,ix,y+AS_HUD_ITEM_Y,AS_HUD_ITEM-4,28,"ASKeyR","");
+        as_cItemN[p][i]=AS_Lbl(d,ix,y+AS_HUD_ITEM_Y+AS_HUD_ITEM-24,AS_HUD_ITEM-4,24,"ASQtyR","");
     }
-    // Mission line, top left.
-    d=AS_Panel(p,700,100,c_anchorTopLeft,20,20);as_dTop[p]=d;
-    as_cTop1[p]=AS_Label(d,p,c_anchorTopLeft,0,0,700,30,"ASHead","USCSS HALCYON DRIFT  //  DECK 3  //  NO LIFE SIGNS");
-    as_cTop2[p]=AS_Label(d,p,c_anchorTopLeft,0,32,700,26,"ASBody","");
-    as_cTop3[p]=AS_Label(d,p,c_anchorTopLeft,0,60,700,26,"ASSmall","");
-    // Centre: announcements, notices, crosshair.
-    d=AS_Panel(p,1000,320,c_anchorCenter,0,-80);as_dCenter[p]=d;
-    as_cBig[p]=AS_Label(d,p,c_anchorTop,0,10,1000,60,"ASBig","");
-    as_cSmall[p]=AS_Label(d,p,c_anchorTop,0,72,1000,30,"ASHeadC","");
-    as_cMsg[p]=AS_Label(d,p,c_anchorBottom,0,20,1000,30,"ASBodyC","");
-    as_cCross[p]=AS_Label(d,p,c_anchorCenter,0,80,60,40,"ASCross","+");
-    // Mission: objectives under the mission line, a progress bar under the announcements, the squad on the right.
-    as_cObj[p]=AS_Label(as_dTop[p],p,c_anchorTopLeft,0,90,700,140,"ASBody","");
-    DialogSetSize(as_dTop[p],700,240);
-    d=AS_Panel(p,520,64,c_anchorTop,0,170);as_dProg[p]=d;
-    AS_Image(d,c_anchorTopLeft,0,30,520,14,AS_WHITE,Color(14.0,14.0,16.0));
-    as_cProg[p]=AS_Image(d,c_anchorTopLeft,0,30,1,14,AS_WHITE,Color(100.0,72.0,24.0));
-    as_cProgText[p]=AS_Label(d,p,c_anchorTopLeft,0,0,520,28,"ASHeadC","");
+    AS_SetArt(as_cItem[p][1],p,"item_medkit");AS_SetArt(as_cItem[p][2],p,"item_flare");
+    AS_Text(as_cItemKey[p][0],p,"Q");AS_Text(as_cItemKey[p][1],p,"E");AS_Text(as_cItemKey[p][2],p,"X");
+    as_cStatus[p]=AS_Lbl(d,x+AS_HUD_LOW_X,y+AS_HUD_LOW_Y-30,300,28,"ASSmall","");
+    as_cRelBg[p]=AS_Art(d,AS_HUD_RELOAD_X,AS_HUD_RELOAD_Y,AS_HUD_RELOAD_W,AS_HUD_RELOAD_H,"barbg",AS_Full());
+    as_cRelMark[p]=AS_Art(d,AS_HUD_RELOAD_X,AS_HUD_RELOAD_Y+2,4,AS_HUD_RELOAD_H-4,"tick",AS_Full());
+    AS_Show(as_cRelBg[p],p,false);AS_Show(as_cRelMark[p],p,false);
+    // The squad, along the bottom.
+    for(k=0;k<3;k+=1) {
+        x=AS_HUD_SQ_X+AS_HUD_SQ_GAP*k;y=AS_HUD_SQ_Y;
+        as_cSqName[p][k]=AS_Lbl(d,x+AS_HUD_SQ_NAME_X,y+AS_HUD_SQ_NAME_Y,AS_HUD_SQ_BG_W,26,"ASSmall","");
+        as_cSqBg[p][k]=AS_Art(d,x+AS_HUD_SQ_BG_X,y+AS_HUD_SQ_BG_Y,AS_HUD_SQ_BG_W,AS_HUD_SQ_BG_H,"teambg",AS_Full());
+        as_cSqCls[p][k]=AS_Art(d,x+AS_HUD_SQ_CLS_X,y+AS_HUD_SQ_CLS_Y,AS_HUD_SQ_CLS,AS_HUD_SQ_CLS,"cls_officer",AS_Full());
+        as_cSqHpBg[p][k]=AS_Art(d,x+AS_HUD_SQ_HP_X,y+AS_HUD_SQ_HP_Y,AS_HUD_SQ_HP_W,AS_HUD_SQ_HP_H,"tbar0",AS_Full());
+        as_cSqHp[p][k]=AS_Art(d,x+AS_HUD_SQ_HP_X,y+AS_HUD_SQ_HP_Y,AS_HUD_SQ_HP_W,AS_HUD_SQ_HP_H,"tbar1",AS_HUD_HP_TINT());
+        for(i=0;i<AS_HUD_SQ_TICKS;i+=1) {
+            as_cSqTick[p][k*12+i]=AS_Art(d,x+AS_HUD_SQ_AM_X+AS_HUD_SQ_TICK_GAP*i,y+AS_HUD_SQ_AM_Y,AS_HUD_SQ_TICK_W,AS_HUD_SQ_AM_H,"tick",AS_Rgb(200,200,200));
+        }
+        for(i=0;i<5;i+=1) {
+            as_cSqClip[p][k*5+i]=AS_Art(d,x+AS_HUD_SQ_CLIP_X+AS_HUD_SQ_CLIP_GAP*i,y+AS_HUD_SQ_CLIP_Y,AS_HUD_SQ_CLIP,AS_HUD_SQ_CLIP,"clip1",AS_Rgb(200,200,200));
+        }
+        as_cSqClipN[p][k]=AS_Lbl(d,x+AS_HUD_SQ_CLIP_X+AS_HUD_SQ_CLIP,y+AS_HUD_SQ_CLIP_Y-3,60,24,"ASSmall","");
+        as_cSqItem[p][k]=AS_Art(d,x+AS_HUD_SQ_ITEM_X,y+AS_HUD_SQ_ITEM_Y,AS_HUD_SQ_ITEM,AS_HUD_SQ_ITEM,"item_medkit",blue);
+        as_cSqItemN[p][k]=AS_Lbl(d,x+AS_HUD_SQ_ITEM_X,y+AS_HUD_SQ_ITEM_Y+AS_HUD_SQ_ITEM-20,AS_HUD_SQ_ITEM-2,22,"ASQtyR","");
+        as_sqWho[p][k]= -1;as_sqKey[p][k]= -1;
+        AS_SquadPanel(p,k,false);
+    }
+    // Objectives, top left (CASWHudObjective): hidden until they change.
+    d=AS_Panel(p,AS_HUD_OBJ_W,AS_HUD_OBJ_HEAD+6*AS_HUD_OBJ_ROW+60,c_anchorTopLeft,0,0);as_dObj[p]=d;
+    as_cObjBar[p]=AS_Art(d,AS_HUD_OBJ_X-6,AS_HUD_OBJ_Y-6,AS_HUD_OBJ_BAR_W,AS_HUD_OBJ_HEAD+12,"objbar",AS_Full());
+    as_cObjHead[p]=AS_Lbl(d,AS_HUD_OBJ_X,AS_HUD_OBJ_Y,AS_HUD_OBJ_BAR_W-60,AS_HUD_OBJ_HEAD,"ASObjHead"," Objectives");
+    for(k=0;k<5;k+=1) {
+        y=AS_HUD_OBJ_Y+AS_HUD_OBJ_HEAD+8+AS_HUD_OBJ_ROW*k;
+        as_cObjTick[p][k]=AS_Art(d,AS_HUD_OBJ_X,y,AS_HUD_OBJ_TICK,AS_HUD_OBJ_TICK,"obj0",AS_Full());
+        as_cObjText[p][k]=AS_Lbl(d,AS_HUD_OBJ_X+AS_HUD_OBJ_TICK+8,y-3,AS_HUD_OBJ_W-AS_HUD_OBJ_TICK-40,AS_HUD_OBJ_ROW,"ASObj","");
+    }
+    as_cObjDone[p]=AS_Lbl(d,AS_HUD_OBJ_X+AS_HUD_OBJ_TICK+8,0,400,AS_HUD_OBJ_ROW,"ASObjDone","");
+    as_objFade[p]=100.0;DialogSetTransparency(d,100.0);as_objPrev[p]= -1;
+    // The use panel, bottom centre (ASWHudUseArea).
+    d=AS_Panel(p,AS_HUD_USE_W,AS_HUD_USE_H,c_anchorBottom,0,AS_HUD_USE_B);as_dUse[p]=d;
+    AS_Art(d,0,0,AS_HUD_USE_W,AS_HUD_USE_H,"usebox",AS_Full());
+    as_cUseKey[p]=AS_Art(d,14,(AS_HUD_USE_H-AS_HUD_KEY)/2,AS_HUD_KEY,AS_HUD_KEY,"keycap",AS_Full());
+    as_cUseKeyT[p]=AS_Label(d,0,c_anchorTopLeft,14,(AS_HUD_USE_H-AS_HUD_KEY)/2,AS_HUD_KEY,AS_HUD_KEY,"ASKeyC","");
+    as_cUseText[p]=AS_Lbl(d,AS_HUD_KEY+30,12,AS_HUD_USE_W-AS_HUD_KEY-44,34,"ASUse","");
+    as_cUseBarBg[p]=AS_Art(d,AS_HUD_KEY+30,AS_HUD_USE_H-36,AS_HUD_USE_W-AS_HUD_KEY-46,16,"barbg",AS_Full());
+    as_cUseBar[p]=AS_Art(d,AS_HUD_KEY+32,AS_HUD_USE_H-34,1,12,"barfg",AS_HUD_BAR_TINT());
     DialogSetVisible(d,AS_Me(p),false);
-    d=AS_Panel(p,300,160,c_anchorRight,24,-120);
-    as_cSquad[p]=AS_Label(d,p,c_anchorTopRight,0,0,300,160,"ASSmallR","");
-    d=AS_Panel(p,760,420,c_anchorCenter,0,-40);as_dDebrief[p]=d;
-    AS_Image(d,c_anchorTopLeft,0,0,760,420,AS_WHITE,Color(3.0,4.0,6.0));
-    as_cDebrief[p]=AS_Label(d,p,c_anchorTopLeft,40,24,680,380,"ASBody","");
+    // The minimap, bottom right (ASWHudMinimap).
+    k=AS_HUD_MM+2*AS_HUD_MM_BORDER;
+    d=AS_Panel(p,k,k,c_anchorBottomRight,AS_HUD_MM_R-AS_HUD_MM_BORDER,AS_HUD_MM_B-AS_HUD_MM_BORDER);as_dMap[p]=d;DialogSetVisible(d,AS_Me(p),false);
+    AS_Art(d,0,0,k,k,"black75",AS_Full());
+    as_cMap[p]=AS_Art(d,AS_HUD_MM_BORDER,AS_HUD_MM_BORDER,AS_HUD_MM,AS_HUD_MM,"map0",AS_Full());as_mapLevel[p]= -1;
+    as_cBlipObj[p]=AS_Art(d,0,0,AS_HUD_BLIP_OBJ,AS_HUD_BLIP_OBJ,"blipobj",AS_Rgb(230,192,0));AS_Show(as_cBlipObj[p],p,false);
+    for(i=0;i<AS_HUD_BLIP_ALIENS;i+=1) {as_cBlipA[p][i]=AS_Art(d,0,0,AS_HUD_BLIP,AS_HUD_BLIP,"blip",AS_Rgb(255,40,24));AS_Show(as_cBlipA[p][i],p,false);}
+    for(i=1;i<=AS_PLAYERS;i+=1) {as_cBlipM[p][i]=AS_Art(d,0,0,AS_HUD_BLIP,AS_HUD_BLIP,"blip",AS_Rgb(0,200,0));AS_Show(as_cBlipM[p][i],p,false);}
+    as_cBlipSelf[p]=AS_Art(d,0,0,2*AS_HUD_BLIP,2*AS_HUD_BLIP,"blipring",AS_Rgb(60,255,60));AS_Show(as_cBlipSelf[p],p,false);
+    // Announcements across the middle, on a dark band (the mission complete message's backdrop).
+    d=AS_Panel(p,3200,170,c_anchorCenter,0,-150);as_dCenter[p]=d;
+    as_cBand[p]=AS_Image(d,c_anchorCenter,0,0,3200,150,AS_Ui("shade50"),AS_Rgb(35,41,57));AS_Show(as_cBand[p],p,false);
+    as_cBig[p]=AS_Label(d,p,c_anchorTop,0,22,1600,64,"ASBig","");
+    as_cSmall[p]=AS_Label(d,p,c_anchorTop,0,92,1600,34,"ASBigSub","");
+    // Notices (the overlay messages' black box).
+    d=AS_Panel(p,AS_HUD_MSG_W,AS_HUD_MSG_H,c_anchorTop,0,AS_HUD_MSG_Y);as_dMsg[p]=d;
+    AS_Art(d,0,0,AS_HUD_MSG_W,AS_HUD_MSG_H,"msgbox",AS_Full());
+    as_cMsg[p]=AS_Lbl(d,16,0,AS_HUD_MSG_W-32,AS_HUD_MSG_H,"ASNotice","");
+    DialogSetVisible(d,AS_Me(p),false);
+    d=AS_Panel(p,64,64,c_anchorCenter,0,0);as_dCross[p]=d;
+    as_cCross[p]=AS_Art(d,0,0,64,64,"cross",AS_Rgb(140,255,160));
+    // The debrief (the stats screen after a mission).
+    d=AS_Panel(p,1100,620,c_anchorCenter,0,-20);as_dDebrief[p]=d;
+    AS_Art(d,0,0,1100,620,"frame",AS_Full());
+    AS_Art(d,0,0,1100,56,"header",AS_Full());
+    as_cDebTitle[p]=AS_Lbl(d,28,6,520,44,"ASHead","MISSION COMPLETE");
+    as_cDebPlace[p]=AS_Lbl(d,540,6,532,44,"ASHeadR","");
+    as_cDebTime[p]=AS_Lbl(d,40,74,1020,30,"ASFrame","");
+    AS_Art(d,30,112,1040,2,"white",AS_Rgb(64,112,150));
+    as_cDebCol[p][0]=AS_Lbl(d,40,120,360,250,"ASBody","");
+    as_cDebCol[p][1]=AS_Lbl(d,400,120,140,250,"ASBodyR","");
+    as_cDebCol[p][2]=AS_Lbl(d,560,120,160,250,"ASBodyR","");
+    as_cDebCol[p][3]=AS_Lbl(d,740,120,180,250,"ASBodyR","");
+    as_cDebCol[p][4]=AS_Lbl(d,930,120,130,250,"ASBodyR","");
+    AS_Art(d,30,388,1040,2,"white",AS_Rgb(64,112,150));
+    as_cDebNext[p]=AS_Lbl(d,40,404,1020,190,"ASBody","");
     DialogSetVisible(d,AS_Me(p),false);
     // Kit comparison readout, top right.
     d=AS_Panel(p,760,130,c_anchorTopRight,20,20);
     as_cQa[p]=AS_Label(d,p,c_anchorTopRight,0,0,760,130,"ASSmallR","");
     // Help, toggled with H.
-    d=AS_Panel(p,640,600,c_anchorCenter,0,0);as_dHelp[p]=d;
-    AS_Image(d,c_anchorTopLeft,0,0,640,600,AS_WHITE,Color(3.0,4.0,6.0));
-    AS_Label(d,p,c_anchorTopLeft,30,20,580,30,"ASHeadC","CONTROLS");
-    AS_Label(d,p,c_anchorTopLeft,40,64,580,520,"ASBody",
-        "<c val=\"FFBA40\">WASD</c>  move  (screen-relative top-down, camera-relative in third person)<n/>"
-        +"<c val=\"FFBA40\">MOUSE</c>  aim 360 degrees  /  turn the camera in third person<n/>"
-        +"<c val=\"FFBA40\">LEFT MOUSE</c>  fire    <c val=\"FFBA40\">RIGHT MOUSE</c>  rifle grenade<n/>"
-        +"<c val=\"FFBA40\">R</c>  reload    <c val=\"FFBA40\">1 - 0</c>  weapons    <c val=\"FFBA40\">WHEEL</c>  zoom (top-down)<n/>"
-        +"<c val=\"FFBA40\">Q</c>  deploy sentry gun    <c val=\"FFBA40\">E</c>  medkit    <c val=\"FFBA40\">X</c>  throw flare<n/>"
-        +"<c val=\"FFBA40\">F</c>  flashlight    <c val=\"FFBA40\">V</c>  switch view: top-down / third person<n/>"
-        +"<c val=\"FFBA40\">L</c>  lighting preset    <c val=\"FFBA40\">T</c>  director on / off<n/><n/>"
-        +"<c val=\"FFBA40\">TESTING</c><n/>"
-        +"<c val=\"FFBA40\">CTRL + 1..9</c>  spawn at the cursor: drone, parasite, shieldbug, boomer,<n/>    buzzer, ranger, mortarbug, harvester, uber drone<n/>"
-        +"<c val=\"FFBA40\">CTRL + J</c>  spawn a ripper at the cursor<n/>"
-        +"<c val=\"FFBA40\">CTRL + 0</c>  send a horde now    <c val=\"FFBA40\">CTRL + G</c>  god mode    <c val=\"FFBA40\">CTRL + K</c>  kill all aliens<n/><n/>"
+    d=AS_Panel(p,800,660,c_anchorCenter,0,0);as_dHelp[p]=d;
+    AS_Art(d,0,0,800,660,"frame",AS_Full());
+    AS_Art(d,0,0,800,56,"header",AS_Full());
+    AS_Lbl(d,28,6,740,44,"ASHead","CONTROLS");
+    AS_Lbl(d,36,74,730,570,"ASBody",
+        "<c val=\"8CC8F0\">WASD</c>  move  (screen-relative top-down, camera-relative in third person)<n/>"
+        +"<c val=\"8CC8F0\">MOUSE</c>  aim  /  turn the camera in third person<n/>"
+        +"<c val=\"8CC8F0\">LEFT MOUSE</c>  fire    <c val=\"8CC8F0\">RIGHT MOUSE</c>  rifle grenade<n/>"
+        +"<c val=\"8CC8F0\">R</c>  reload    <c val=\"8CC8F0\">1 - 0</c>  weapons    <c val=\"8CC8F0\">WHEEL</c>  zoom (top-down)<n/>"
+        +"<c val=\"8CC8F0\">Q</c>  deploy sentry gun    <c val=\"8CC8F0\">E</c>  medkit    <c val=\"8CC8F0\">X</c>  throw flare<n/>"
+        +"<c val=\"8CC8F0\">TAB</c>  objectives    <c val=\"8CC8F0\">F</c>  flashlight    <c val=\"8CC8F0\">V</c>  top-down / third person<n/>"
+        +"<c val=\"8CC8F0\">L</c>  lighting preset    <c val=\"8CC8F0\">T</c>  director on / off<n/><n/>"
+        +"<c val=\"8CC8F0\">TESTING</c><n/>"
+        +"<c val=\"8CC8F0\">CTRL + 1..9</c>  spawn at the cursor: drone, parasite, shieldbug, boomer,<n/>    buzzer, ranger, mortarbug, harvester, uber drone<n/>"
+        +"<c val=\"8CC8F0\">CTRL + J</c>  spawn a ripper at the cursor<n/>"
+        +"<c val=\"8CC8F0\">CTRL + 0</c>  send a horde now    <c val=\"8CC8F0\">CTRL + G</c>  god mode    <c val=\"8CC8F0\">CTRL + K</c>  kill all aliens<n/>"
+        +"<c val=\"8CC8F0\">CTRL + L</c>  skip to the next stage    <c val=\"8CC8F0\">CTRL + R</c>  empty the gun's reserve    <c val=\"8CC8F0\">CTRL + H</c>  hurt yourself<n/><n/>"
         +"Shieldbugs shrug off fire from the front: flank them or use explosives.<n/>"
         +"Biomass only burns: use the flamer. Eggs hatch when you get close.");
     DialogSetVisible(d,AS_Me(p),false);
+    as_hudSlot[p]=0;as_prevSlot[p]=0;as_kClips[p]= -1;as_kItems[p]= -1;as_kAmmo[p]= -1;
     AS_HudView(p);
 }
 void AS_HudView (int p) {
-    if(as_dCenter[p]==0) {return;}
-    DialogControlSetVisible(as_cCross[p],AS_Me(p),as_view[p]==1);
+    if(as_dCross[p]==0) {return;}
+    DialogSetVisible(as_dCross[p],AS_Me(p),as_view[p]==1);
 }
 void AS_Message (int p, string s) {
-    if(!AS_Person(p) || as_dCenter[p]==0) {return;}
+    if(!AS_Person(p) || as_dMsg[p]==0) {return;}
     AS_Text(as_cMsg[p],p,s);as_msgUntil[p]=as_now+2.5;
+    DialogSetVisible(as_dMsg[p],AS_Me(p),true);
 }
 void AS_QaText (string s) {
     int p;
@@ -168,66 +359,133 @@ void AS_QaText (string s) {
 void AS_Announce (int p, string big, string small) {
     if(!AS_Person(p) || as_dCenter[p]==0) {return;}
     AS_Text(as_cBig[p],p,big);AS_Text(as_cSmall[p],p,small);as_bigUntil[p]=as_now+3.5;
+    AS_Show(as_cBand[p],p,true);
 }
 void AS_HelpToggle (int p) {
     as_help[p]=!as_help[p];
     DialogSetVisible(as_dHelp[p],AS_Me(p),as_help[p]);
 }
-string AS_ViewName (int p) {
-    if(as_view[p]==0) {return "TOP-DOWN";}
-    return "THIRD PERSON";
+// TAB: keep the objectives up, or let them fade.
+void AS_ObjToggle (int p) {
+    if(as_dObj[p]==0) {return;}
+    as_objPinned[p]=!as_objPinned[p];
+    if(!as_objPinned[p]) {as_objShowUntil[p]=as_now+1.0;}
 }
+void AS_DebriefHide (int p) {
+    if(as_dDebrief[p]!=0) {DialogSetVisible(as_dDebrief[p],AS_Me(p),false);}
+    as_tagsOff[p]=false;
+}
+void AS_NameTagsHide (int p) {
+    int q;
+    as_tagsOff[p]=true;
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(as_dTag[p][q]!=0) {DialogSetVisible(as_dTag[p][q],AS_Me(p),false);as_tagKey[p][q]= -2;}
+    }
+}
+
+// ---- every update (8 Hz) ------------------------------------------------
 void AS_HudUpdate (int p) {
-    int w=as_slot[p];int k;fixed f;string s;string col;
-    // Health.
+    int w=as_slot[p];int k;int n;int key;int clips;int maxClips;fixed f;string s;string cls;bool low;bool none;bool blink;fixed v;
+    AS_ObjWatch();
+    if(!as_hudOn[p]) {as_hudOn[p]=true;DialogSetVisible(as_dStrip[p],AS_Me(p),true);DialogSetVisible(as_dMap[p],AS_Me(p),true);}
+    // Health: the ring, the health just lost (white, catching up after a moment), the track pulsing red when low.
     f=AS_Clamp(as_hp[p]/as_hpMax[p],0.0,1.0);
-    DialogControlSetSize(as_cHpFill[p],AS_Me(p),MaxI(1,FixedToInt(300.0*f)),22);
-    if(f<0.3) {DialogControlSetPropertyAsColor(as_cHpFill[p],c_triggerControlPropertyColor,AS_Me(p),Color(90.0,20.0,15.0));}
-    else {DialogControlSetPropertyAsColor(as_cHpFill[p],c_triggerControlPropertyColor,AS_Me(p),Color(30.0,85.0,45.0));}
-    AS_Text(as_cHpText[p],p,IntToString(FixedToInt(MaxF(0.0,as_hp[p]))));
-    s="";
-    if(!as_alive[p]) {s="<c val=\"FF5040\">KIA  -  redeploying</c>";}
-    else if(as_infestUntil[p]>as_now) {s="<c val=\"90FF60\">INFESTED  -  "+FixedToString(as_infestUntil[p]-as_now,0)+" s  -  E to cure</c>";}
-    else if(as_god[p]) {s="<c val=\"8CC8FF\">GOD MODE</c>";}
-    AS_Text(as_cStatus[p],p,s);
-    AS_Text(as_cItems[p],p,"<c val=\"FFBA40\">Q</c> SENTRY x"+IntToString(as_sentries[p])+"    <c val=\"FFBA40\">E</c> MEDKIT x"+IntToString(as_medkits[p])+"    <c val=\"FFBA40\">X</c> FLARE x"+IntToString(as_flares[p]));
-    // Weapon.
-    AS_Text(as_cGunName[p],p,as_gun[w].name);
-    col="FFFFFF";if(as_mag[p][w]*4<=as_gun[w].mag) {col="FF6050";}
-    AS_Text(as_cAmmo[p],p,"<c val=\""+col+"\">"+IntToString(as_mag[p][w])+"</c>");
-    AS_Text(as_cReserve[p],p,"/ "+IntToString(as_reserve[p][w]));
+    if(!as_alive[p]) {f=0.0;}
+    k=FixedToInt(f*IntToFixed(AS_HUD_RING_N)+0.5);
+    if(f>0.0 && k==0) {k=1;}
+    if(k!=as_kRing[p]) {
+        if(k<as_kRing[p] && as_ghostUntil[p]<as_now) {as_ghostUntil[p]=as_now+1.2;}
+        if(k>as_kGhost[p]) {as_kGhost[p]=k;AS_SetArt(as_cRingGhost[p],p,"hp"+AS_Two(k));}
+        AS_SetArt(as_cRing[p],p,"hp"+AS_Two(k));as_kRing[p]=k;
+    }
+    if(as_kGhost[p]!=as_kRing[p] && as_now>=as_ghostUntil[p]) {as_kGhost[p]=as_kRing[p];AS_SetArt(as_cRingGhost[p],p,"hp"+AS_Two(as_kRing[p]));}
+    if(as_infestUntil[p]>as_now && as_alive[p]) {AS_SetTint(as_cRing[p],p,AS_HUD_INFEST_TINT());}
+    else {AS_SetTint(as_cRing[p],p,AS_HUD_HP_TINT());}
+    if(f<0.6 && as_alive[p]) {
+        if(f<0.33) {v=Sin(as_now*360.0)*0.5+0.5;}
+        else {v=Sin(as_now*180.0)*0.5+0.5;}
+        AS_SetTint(as_cRingBg[p],p,AS_Rgb(255,155+FixedToInt(100.0*v),155+FixedToInt(100.0*v)));
+    }
+    else {AS_SetTint(as_cRingBg[p],p,AS_Full());}
+    if(AS_PortraitOf(p)!=as_kFace[p]) {as_kFace[p]=AS_PortraitOf(p);AS_SetArt(as_cFace[p],p,"face_"+as_kFace[p]);}
+    cls=AS_ClassOf(p);
+    if(!as_alive[p]) {cls="dead";}
+    else if(as_infestUntil[p]>as_now) {cls="infested";}
+    if(cls!=as_kCls[p]) {
+        as_kCls[p]=cls;AS_SetArt(as_cCls[p],p,"cls_"+cls);
+        if(cls=="dead") {AS_SetTint(as_cFace[p],p,AS_Rgb(90,90,90));}else {AS_SetTint(as_cFace[p],p,AS_Full());}
+    }
+    // The weapon in hand above, and the one before it in blue.
+    if(w!=as_hudSlot[p]) {
+        if(as_hudSlot[p]>0) {as_prevSlot[p]=as_hudSlot[p];}
+        as_hudSlot[p]=w;
+        AS_SetArt(as_cGun1[p],p,"gun"+IntToString(w));
+        if(as_prevSlot[p]>0) {AS_SetArt(as_cGun2[p],p,"gun"+IntToString(as_prevSlot[p]));AS_Show(as_cGun2[p],p,true);}
+        AS_Text(as_cGunName[p],p,AS_GunTitle(w));
+        AS_Show(as_cGrenIcon[p],p,w==1);AS_Show(as_cGren[p],p,w==1);
+        as_kClips[p]= -1;as_kAmmo[p]= -1;
+    }
+    // Bullets in the clip; LOW AMMO / NO AMMO blinking over the portrait, the count blinking with it.
+    n=as_mag[p][w];
+    none=n==0 && as_reserve[p][w]==0;
+    low=as_reserve[p][w]<as_gun[w].mag;
+    blink=(FixedToInt(as_now*4.0)%2)==0 && as_reloadEnd[p]<=0.0 && as_alive[p];
+    key=n*4;
+    if(blink && (low || none)) {key+=1;}
+    if(none) {key+=2;}
+    if(key!=as_kAmmo[p]) {
+        as_kAmmo[p]=key;
+        if(blink && (low || none)) {AS_Text(as_cAmmo[p],p,"<c val=\"C81919\">"+AS_Three(n)+"</c>");}
+        else {AS_Text(as_cAmmo[p],p,AS_Three(n));}
+        if(!(blink && (low || none))) {AS_Text(as_cLow[p],p,"");}
+        else if(none) {AS_Text(as_cLow[p],p,"- NO AMMO -");}
+        else {AS_Text(as_cLow[p],p,"- LOW AMMO -");}
+    }
+    if(w==1) {AS_Text(as_cGren[p],p,IntToString(MinI(as_grenades[p],9)));}
+    // Clips: up to five, filled for those left; more than five is one clip and the count.
+    clips=as_reserve[p][w]/MaxI(1,as_gun[w].mag);
+    maxClips=as_gun[w].reserve/MaxI(1,as_gun[w].mag);
+    if(clips*100+maxClips!=as_kClips[p]) {
+        as_kClips[p]=clips*100+maxClips;
+        for(k=0;k<5;k+=1) {
+            if(clips>5) {
+                AS_Show(as_cClip[p][k],p,k==0);
+                if(k==0) {AS_SetArt(as_cClip[p][k],p,"clip1");AS_SetTint(as_cClip[p][k],p,AS_Full());}
+            }
+            else if(k<clips) {AS_Show(as_cClip[p][k],p,true);AS_SetArt(as_cClip[p][k],p,"clip1");AS_SetTint(as_cClip[p][k],p,AS_Full());}
+            else if(k<maxClips) {AS_Show(as_cClip[p][k],p,true);AS_SetArt(as_cClip[p][k],p,"clip0");AS_SetTint(as_cClip[p][k],p,AS_Rgb(128,128,128));}
+            else {AS_Show(as_cClip[p][k],p,false);}
+        }
+        if(clips>5) {AS_Text(as_cClipN[p],p,"x"+IntToString(clips));}else {AS_Text(as_cClipN[p],p,"");}
+    }
+    // The sentry, medkit and flare: blue, dark when there are none left.
+    key=as_sentries[p]*10000+as_medkits[p]*100+as_flares[p];
+    if(key!=as_kItems[p]) {
+        as_kItems[p]=key;
+        AS_HudItem(p,0,as_sentries[p]);AS_HudItem(p,1,as_medkits[p]);AS_HudItem(p,2,as_flares[p]);
+    }
+    // Reloading: AS's fast-reload bar, its marker running along.
     if(as_reloadEnd[p]>0.0) {
         f=AS_Clamp((as_now-as_reloadStart[p])/MaxF(0.1,as_reloadEnd[p]-as_reloadStart[p]),0.0,1.0);
-        DialogControlSetSize(as_cReload[p],AS_Me(p),MaxI(1,FixedToInt(392.0*f)),10);
-        AS_Text(as_cExtra[p],p,"<c val=\"FFBA40\">RELOADING</c>");
+        AS_Show(as_cRelBg[p],p,true);AS_Show(as_cRelMark[p],p,true);
+        AS_Place(as_cRelMark[p],p,AS_HUD_RELOAD_X+FixedToInt(IntToFixed(AS_HUD_RELOAD_W-4)*f),AS_HUD_RELOAD_Y+2);
     }
-    else {
-        DialogControlSetSize(as_cReload[p],AS_Me(p),1,10);
-        s="";
-        if(w==1) {s="RMB  rifle grenade x"+IntToString(as_grenades[p]);}
-        if(w==7) {s="SPIN  "+IntToString(FixedToInt(as_spin[p]*100.0))+"%";}
-        if(w==4) {s="burns aliens and biomass";}
-        if(w==6) {s="pierces every alien in line";}
-        if(w==9) {s="arcs to three targets, stuns";}
-        AS_Text(as_cExtra[p],p,s);
-    }
-    for(k=1;k<=AS_WEAPONS;k+=1) {
-        if(k==w) {DialogControlSetPropertyAsString(as_cSlot[p][k],c_triggerControlPropertyStyle,AS_Me(p),"ASSlotOn");}
-        else {DialogControlSetPropertyAsString(as_cSlot[p][k],c_triggerControlPropertyStyle,AS_Me(p),"ASSlot");}
-    }
-    if(as_mission) {AS_MissionHud(p);}
-    // Mission line.
-    s="KILLS "+IntToString(as_kills[p])+"    ALIENS "+IntToString(as_alive2)+"    WAVE "+IntToString(as_wave);
-    if(as_shotsFired[p]>0) {s=s+"    HITS "+IntToString(as_shotsHit[p]*100/as_shotsFired[p])+"%";}
-    if(as_hordeLeft>0 || as_hordeUntil>as_now) {s=s+"    <c val=\"FF5040\">SWARM INBOUND</c>";}
-    else if(as_director && !as_mission) {s=s+"    next swarm "+FixedToString(MaxF(0.0,as_nextHorde-as_now),0)+" s";}
-    AS_Text(as_cTop2[p],p,s);
-    s="<c val=\"FFBA40\">V</c> view: "+AS_ViewName(p)+"    <c val=\"FFBA40\">L</c> lights: "+as_lightName[as_light]+"    <c val=\"FFBA40\">T</c> director: ";
-    if(as_director) {s=s+"ON";}else {s=s+"OFF";}
-    s=s+"    <c val=\"FFBA40\">H</c> help";
-    AS_Text(as_cTop3[p],p,s);
-    if(as_msgUntil[p]>0.0 && as_now>as_msgUntil[p]) {as_msgUntil[p]=0.0;AS_Text(as_cMsg[p],p,"");}
-    if(as_bigUntil[p]>0.0 && as_now>as_bigUntil[p]) {as_bigUntil[p]=0.0;AS_Text(as_cBig[p],p,"");AS_Text(as_cSmall[p],p,"");}
+    else {AS_Show(as_cRelBg[p],p,false);AS_Show(as_cRelMark[p],p,false);}
+    s="";
+    if(!as_alive[p]) {s="<c val=\"FF5040\">KIA  -  redeploying</c>";}
+    else if(as_god[p]) {s="<c val=\"8CC8FF\">GOD MODE</c>";}
+    AS_Text(as_cStatus[p],p,s);
+    AS_SquadHud(p);
+    if(as_level>=0) {AS_MissionHud(p);}
+    if(as_tick%4==0) {AS_MapHud(p);}
+    AS_ObjHud(p);
+    if(as_msgUntil[p]>0.0 && as_now>as_msgUntil[p]) {as_msgUntil[p]=0.0;DialogSetVisible(as_dMsg[p],AS_Me(p),false);}
+    if(as_bigUntil[p]>0.0 && as_now>as_bigUntil[p]) {as_bigUntil[p]=0.0;AS_Text(as_cBig[p],p,"");AS_Text(as_cSmall[p],p,"");AS_Show(as_cBand[p],p,false);}
+}
+void AS_HudItem (int p, int i, int n) {
+    AS_Text(as_cItemN[p][i],p,"x"+IntToString(n));
+    if(n>0) {AS_SetTint(as_cItem[p][i],p,AS_HUD_INACTIVE());}
+    else {AS_SetTint(as_cItem[p][i],p,AS_Rgb(33,71,96));}
 }
 // The red edge of the screen when hurt, fading over half a second.
 void AS_HurtPulse (int p) {
@@ -238,59 +496,248 @@ void AS_HurtPulse (int p) {
     DialogSetTransparency(as_dHurt[p],a);
 }
 
-// ---- mission HUD ------------------------------------------------------
+// ---- the squad ----------------------------------------------------------
+void AS_SquadPanel (int p, int k, bool on) {
+    int i;
+    AS_Show(as_cSqName[p][k],p,on);AS_Show(as_cSqBg[p][k],p,on);AS_Show(as_cSqCls[p][k],p,on);AS_Show(as_cSqHpBg[p][k],p,on);
+    AS_Show(as_cSqHp[p][k],p,on);AS_Show(as_cSqClipN[p][k],p,on);AS_Show(as_cSqItem[p][k],p,on);AS_Show(as_cSqItemN[p][k],p,on);
+    for(i=0;i<AS_HUD_SQ_TICKS;i+=1) {AS_Show(as_cSqTick[p][k*12+i],p,on);}
+    for(i=0;i<5;i+=1) {AS_Show(as_cSqClip[p][k*5+i],p,on);}
+}
+void AS_SquadHud (int p) {
+    int q;int k=0;int i;int w;int ticks;int clips;int maxClips;int key;fixed f;bool alive;
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(q==p || !AS_Person(q) || k>=3) {continue;}
+        alive=as_alive[q];
+        if(as_sqWho[p][k]!=q) {
+            if(as_sqWho[p][k]<0) {AS_SquadPanel(p,k,true);}
+            as_sqWho[p][k]=q;as_sqKey[p][k]= -1;
+            DialogControlSetPropertyAsText(as_cSqName[p][k],c_triggerControlPropertyText,AS_Me(p),AS_MarineName(q));
+        }
+        w=as_slot[q];
+        f=AS_Clamp(as_hp[q]/as_hpMax[q],0.0,1.0);
+        if(!alive) {f=0.0;}
+        ticks=(as_mag[q][w]*AS_HUD_SQ_TICKS+as_gun[w].mag-1)/MaxI(1,as_gun[w].mag);
+        clips=as_reserve[q][w]/MaxI(1,as_gun[w].mag);
+        maxClips=as_gun[w].reserve/MaxI(1,as_gun[w].mag);
+        key=FixedToInt(f*100.0)*1000000+ticks*10000+MinI(clips,99)*100+MinI(maxClips,9)*10+as_medkits[q];
+        if(as_infestUntil[q]>as_now) {key= -key-1;}
+        if(key==as_sqKey[p][k]) {k+=1;continue;}
+        as_sqKey[p][k]=key;
+        if(alive) {AS_SetStyle(as_cSqName[p][k],p,"ASSmall");}else {AS_SetStyle(as_cSqName[p][k],p,"ASSmallDim");}
+        if(!alive) {AS_SetArt(as_cSqCls[p][k],p,"cls_dead");}
+        else if(as_infestUntil[q]>as_now) {AS_SetArt(as_cSqCls[p][k],p,"cls_infested");}
+        else {AS_SetArt(as_cSqCls[p][k],p,"cls_"+AS_ClassOf(q));}
+        AS_Show(as_cSqHp[p][k],p,f>0.0);
+        DialogControlSetSize(as_cSqHp[p][k],AS_Me(p),MaxI(1,FixedToInt(IntToFixed(AS_HUD_SQ_HP_W)*f)),AS_HUD_SQ_HP_H);
+        if(as_infestUntil[q]>as_now) {AS_SetTint(as_cSqHp[p][k],p,AS_HUD_INFEST_TINT());}else {AS_SetTint(as_cSqHp[p][k],p,AS_HUD_HP_TINT());}
+        for(i=0;i<AS_HUD_SQ_TICKS;i+=1) {
+            AS_Show(as_cSqTick[p][k*12+i],p,alive);
+            if(i<ticks) {AS_SetTint(as_cSqTick[p][k*12+i],p,AS_Rgb(200,200,200));}else {AS_SetTint(as_cSqTick[p][k*12+i],p,AS_Rgb(96,96,96));}
+        }
+        for(i=0;i<5;i+=1) {
+            if(!alive || (clips>5 && i>0) || (clips<=5 && i>=clips && i>=maxClips)) {AS_Show(as_cSqClip[p][k*5+i],p,false);continue;}
+            AS_Show(as_cSqClip[p][k*5+i],p,true);
+            if(clips>5 || i<clips) {AS_SetArt(as_cSqClip[p][k*5+i],p,"clip1");AS_SetTint(as_cSqClip[p][k*5+i],p,AS_Rgb(200,200,200));}
+            else {AS_SetArt(as_cSqClip[p][k*5+i],p,"clip0");AS_SetTint(as_cSqClip[p][k*5+i],p,AS_Rgb(96,96,96));}
+        }
+        if(alive && clips>5) {AS_Text(as_cSqClipN[p][k],p,"x"+IntToString(clips));}else {AS_Text(as_cSqClipN[p][k],p,"");}
+        AS_Show(as_cSqItem[p][k],p,alive);
+        if(alive) {AS_Text(as_cSqItemN[p][k],p,"x"+IntToString(as_medkits[q]));}else {AS_Text(as_cSqItemN[p][k],p,"");}
+        k+=1;
+    }
+    for(i=k;i<3;i+=1) {
+        if(as_sqWho[p][i]>=0) {as_sqWho[p][i]= -1;AS_SquadPanel(p,i,false);}
+    }
+}
+
+// ---- names under the marines (CASWHud3DMarineNames) ----------------------
+// Your own marine's name is yellow, other players' blue, AI marines' white; the bar is teal, orange
+// under half health, flashing red while infested.
+void AS_NameTagsPulse () {
+    int v;int q;int key;fixed f;int bw;color hi;color dk;
+    for(v=1;v<=AS_PLAYERS;v+=1) {
+        if(!AS_Person(v) || as_dStrip[v]==0 || as_tagsOff[v]) {continue;}
+        for(q=1;q<=AS_PLAYERS;q+=1) {
+            if(!AS_Person(q)) {continue;}
+            if(as_dTag[v][q]==0) {AS_NameTagMake(v,q);}
+            if(as_m[q]==null || !as_alive[q]) {
+                if(as_tagKey[v][q]!= -2) {as_tagKey[v][q]= -2;DialogSetVisible(as_dTag[v][q],AS_Me(v),false);}
+                continue;
+            }
+            if(as_tagUnit[v][q]!=as_m[q]) {
+                as_tagUnit[v][q]=as_m[q];as_tagKey[v][q]= -1;
+                DialogSetPositionRelativeToUnitWithAnchor(as_dTag[v][q],as_m[q],"Ref_Center",c_anchorTop,0,36);
+            }
+            f=AS_Clamp(as_hp[q]/as_hpMax[q],0.0,1.0);
+            key=FixedToInt(f*40.0);
+            if(as_infestUntil[q]>as_now) {key=100+(FixedToInt(as_now*4.0)%2);}
+            if(key==as_tagKey[v][q]) {continue;}
+            if(as_tagKey[v][q]<0) {DialogSetVisible(as_dTag[v][q],AS_Me(v),true);}
+            as_tagKey[v][q]=key;
+            hi=AS_Rgb(0,150,150);dk=AS_Rgb(0,75,75);
+            if(f<0.5) {hi=AS_Rgb(200,50,0);dk=AS_Rgb(100,25,0);}
+            if(key==100) {hi=AS_Rgb(255,0,0);dk=AS_Rgb(64,0,0);}
+            if(key==101) {hi=AS_Rgb(190,0,0);dk=AS_Rgb(48,0,0);}
+            bw=FixedToInt(70.0*f);
+            AS_Show(as_cTagHp[v][q],v,bw>0);
+            DialogControlSetSize(as_cTagHp[v][q],AS_Me(v),MaxI(1,bw),6);
+            AS_SetTint(as_cTagHp[v][q],v,hi);AS_SetTint(as_cTagHpDk[v][q],v,dk);
+        }
+    }
+}
+void AS_NameTagMake (int v, int q) {
+    int d=DialogCreate(240,48,c_anchorCenter,0,0,false);string style="ASTagAI";
+    DialogSetImageVisible(d,false);
+    if(q==v) {style="ASTagMe";}
+    else if(!as_bot[q]) {style="ASTagMate";}
+    as_cTagName[v][q]=AS_Lbl(d,0,0,240,26,style,"");
+    DialogControlSetPropertyAsText(as_cTagName[v][q],c_triggerControlPropertyText,AS_Me(v),AS_MarineName(q));
+    AS_Art(d,84,28,72,8,"shade50",AS_Full());
+    as_cTagHpDk[v][q]=AS_Art(d,85,29,70,6,"white",AS_Rgb(0,75,75));
+    as_cTagHp[v][q]=AS_Art(d,85,29,70,6,"white",AS_Rgb(0,150,150));
+    DialogSetVisible(d,AS_Me(v),false);
+    as_dTag[v][q]=d;as_tagKey[v][q]= -2;as_tagUnit[v][q]=null;
+}
+
+// ---- objectives -------------------------------------------------------
+// Once a tick for everyone: when the objectives change they come up for eight seconds, and a newly
+// finished one types out "Objective complete!" under the list.
+void AS_ObjWatch () {
+    int k;int sig;int m=1;
+    if(as_objWatchTick==as_tick) {return;}
+    as_objWatchTick=as_tick;
+    if(as_level<0) {return;}
+    sig=as_level*100000;
+    for(k=0;k<as_objCount;k+=1) {sig+=as_objState[k]*m;m*=3;}
+    if(sig==as_objSig) {return;}
+    // An objective finished since the last look (same level, a 1 became a 2)?
+    if(as_objSig>=0 && as_objSig/100000==as_level && AS_ObjDoneCount(sig)>AS_ObjDoneCount(as_objSig)) {as_objDoneAt=as_now;}
+    as_objSig=sig;
+    for(k=1;k<=AS_PLAYERS;k+=1) {as_objShowUntil[k]=as_now+8.0;}
+}
+int AS_ObjDoneCount (int sig) {
+    int k;int n=0;int s=sig%100000;
+    for(k=0;k<5;k+=1) {if(s%3==2) {n+=1;}s/=3;}
+    return n;
+}
+void AS_ObjHud (int p) {
+    int k;int row=0;int y;int letters;fixed t;string s;bool show;
+    if(as_level<0) {show=false;}
+    else {show=as_objPinned[p] || as_now<as_objShowUntil[p];}
+    if(show) {t=MaxF(0.0,as_objFade[p]-25.0);}
+    else {t=MinF(100.0,as_objFade[p]+12.5);}
+    if(t!=as_objFade[p]) {as_objFade[p]=t;DialogSetTransparency(as_dObj[p],t);}
+    if(t>=100.0) {return;}
+    if(as_objSig!=as_objPrev[p]) {
+        as_objPrev[p]=as_objSig;
+        for(k=0;k<5;k+=1) {
+            if(k>=as_objCount || as_objState[k]==0) {continue;}
+            AS_Show(as_cObjTick[p][row],p,true);AS_Show(as_cObjText[p][row],p,true);
+            if(as_objState[k]==2) {AS_SetArt(as_cObjTick[p][row],p,"obj1");}else {AS_SetArt(as_cObjTick[p][row],p,"obj0");}
+            AS_Text(as_cObjText[p][row],p,as_objName[k]);
+            row+=1;
+        }
+        for(k=row;k<5;k+=1) {AS_Show(as_cObjTick[p][k],p,false);AS_Show(as_cObjText[p][k],p,false);}
+        y=AS_HUD_OBJ_Y+AS_HUD_OBJ_HEAD+8+AS_HUD_OBJ_ROW*row+AS_HUD_OBJ_ROW/2;
+        AS_Place(as_cObjDone[p],p,AS_HUD_OBJ_X+AS_HUD_OBJ_TICK+8,y);
+    }
+    // "Objective complete!" a letter at a time, a cursor while typing, gone after a few seconds.
+    s="";
+    if(as_now-as_objDoneAt<5.0) {
+        letters=MinI(20,FixedToInt((as_now-as_objDoneAt)/0.06)+1);
+        s=StringSub("Objective complete! ",1,letters);
+        if(letters<20) {s=s+"_";}
+    }
+    AS_Text(as_cObjDone[p],p,s);
+}
+
+// ---- the minimap --------------------------------------------------------
+// Puts a blip at a world point, hidden when the point is off the level's square.
+void AS_Blip (int c, int p, fixed x, fixed y, int size) {
+    fixed u;fixed v;int n=as_mapLevel[p];
+    if(n<0) {AS_Show(c,p,false);return;}
+    u=(x-as_mmX0[n])/as_mmSize[n];v=1.0-(y-as_mmY0[n])/as_mmSize[n];
+    if(u<0.0 || u>1.0 || v<0.0 || v>1.0) {AS_Show(c,p,false);return;}
+    DialogControlSetPosition(c,AS_Me(p),c_anchorTopLeft,AS_HUD_MM_BORDER+FixedToInt(u*IntToFixed(AS_HUD_MM))-size/2,AS_HUD_MM_BORDER+FixedToInt(v*IntToFixed(AS_HUD_MM))-size/2);
+    AS_Show(c,p,true);
+}
+void AS_MapHud (int p) {
+    int q;int i;int n=0;point at;
+    if(as_level!=as_mapLevel[p]) {
+        as_mapLevel[p]=as_level;
+        if(as_level>=0) {AS_SetArt(as_cMap[p],p,"map"+IntToString(as_level));}
+    }
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(AS_Person(q) && as_alive[q] && as_m[q]!=null) {at=UnitGetPosition(as_m[q]);AS_Blip(as_cBlipM[p][q],p,PointGetX(at),PointGetY(at),AS_HUD_BLIP);}
+        else {AS_Show(as_cBlipM[p][q],p,false);}
+    }
+    if(as_alive[p] && as_m[p]!=null) {at=UnitGetPosition(as_m[p]);AS_Blip(as_cBlipSelf[p],p,PointGetX(at),PointGetY(at),2*AS_HUD_BLIP);}
+    else {AS_Show(as_cBlipSelf[p],p,false);}
+    for(i=0;i<AS_MAXALIEN && n<AS_HUD_BLIP_ALIENS;i+=1) {
+        if(as_a[i]==null || as_aKind[i]==AS_EGG || as_aKind[i]==AS_BIOMASS) {continue;}
+        at=UnitGetPosition(as_a[i]);
+        AS_Blip(as_cBlipA[p][n],p,PointGetX(at),PointGetY(at),AS_HUD_BLIP);
+        n+=1;
+    }
+    for(i=n;i<AS_HUD_BLIP_ALIENS;i+=1) {AS_Show(as_cBlipA[p][i],p,false);}
+    if(as_objAt!=null) {AS_Blip(as_cBlipObj[p],p,PointGetX(as_objAt),PointGetY(as_objAt),AS_HUD_BLIP_OBJ);}
+    else {AS_Show(as_cBlipObj[p],p,false);}
+}
+
+// ---- mission HUD --------------------------------------------------------
 string AS_Clock (fixed secs) {
     int t=FixedToInt(secs);string sec=IntToString(t%60);
     if(t%60<10) {sec="0"+sec;}
     return IntToString(t/60)+":"+sec;
 }
-void AS_Progress (int p, bool show, fixed f, string s) {
-    DialogSetVisible(as_dProg[p],AS_Me(p),show);
+// The use panel: a key cap when there is a key to press, the line, and the progress under it.
+// Without a key the line and the bar take the key cap's place.
+void AS_UsePanel (int p, bool show, string key, string s, fixed f) {
+    int x=AS_HUD_KEY+30;
+    if(show!=as_useOn[p]) {as_useOn[p]=show;DialogSetVisible(as_dUse[p],AS_Me(p),show);}
     if(!show) {return;}
-    DialogControlSetSize(as_cProg[p],AS_Me(p),MaxI(1,FixedToInt(520.0*AS_Clamp(f,0.0,1.0))),14);
-    AS_Text(as_cProgText[p],p,s);
+    if(key=="") {x=24;}
+    AS_Show(as_cUseKey[p],p,key!="");AS_Show(as_cUseKeyT[p],p,key!="");
+    AS_Text(as_cUseKeyT[p],p,key);
+    AS_Place(as_cUseText[p],p,x,12);AS_Text(as_cUseText[p],p,s);
+    AS_Place(as_cUseBarBg[p],p,x,AS_HUD_USE_H-36);AS_Place(as_cUseBar[p],p,x+2,AS_HUD_USE_H-34);
+    DialogControlSetSize(as_cUseBarBg[p],AS_Me(p),AS_HUD_USE_W-x-16,16);
+    AS_Show(as_cUseBarBg[p],p,f>=0.0);AS_Show(as_cUseBar[p],p,f>=0.0);
+    if(f>=0.0) {DialogControlSetSize(as_cUseBar[p],AS_Me(p),MaxI(1,FixedToInt(IntToFixed(AS_HUD_USE_W-x-20)*AS_Clamp(f,0.0,1.0))),12);}
 }
+void AS_Progress (int p, bool show, fixed f, string s) {AS_UsePanel(p,show,"",s,f);}
 void AS_MissionHud (int p) {
-    int k;string s="";string mark;int q;
-    AS_Text(as_cTop1[p],p,"CARGO ELEVATOR  //  COLONY LANDING BAY  //  "+AS_Clock(as_now-as_missionStart));
-    for(k=0;k<as_objCount;k+=1) {
-        if(as_objState[k]==0) {continue;}
-        if(as_objState[k]==2) {mark="<c val=\"6A8070\">[X]  "+as_objName[k]+"</c>";}
-        else {
-            mark="<c val=\"FFBA40\">[  ]</c>  "+as_objName[k];
-            if(as_objAt!=null) {mark=mark+"   <c val=\"8CFFA0\">"+AS_ObjBearing(p)+"</c>";}
-        }
-        s=s+mark+"<n/>";
-    }
-    AS_Text(as_cObj[p],p,s);
-    // Progress: the override, the countdown aboard, the depth on the way down.
-    if(as_stage==AS_ST_DOOR && as_hack>0.0) {AS_Progress(p,true,as_hack,"OVERRIDING SECURITY DOOR  "+IntToString(FixedToInt(as_hack*100.0))+"%");}
-    else if(as_stage==AS_ST_BOARD && as_boardAt>0.0) {AS_Progress(p,true,(as_now-as_boardAt)/5.0,"LIFT STARTING");}
-    else if(as_stage==AS_ST_ESCAPE && as_holdAt>0.0 && as_now<as_holdAt+AS_HOLD) {AS_Progress(p,true,(as_now-as_holdAt)/AS_HOLD,"TRANSIT CAR INBOUND  "+AS_Clock(as_holdAt+AS_HOLD-as_now));}
-    else if(as_stage==AS_ST_RIDE) {AS_Progress(p,true,as_scroll/AS_RIDE_LEN,"DESCENDING  -  DEPTH "+IntToString(FixedToInt(as_scroll*4.0))+" M");}
+    // Progress: the override, the countdown aboard, the transit car, the depth on the way down.
+    if(as_stage==AS_ST_DOOR && as_hack>0.0) {AS_Progress(p,true,as_hack,as_hackLabel+"  "+IntToString(FixedToInt(as_hack*100.0))+"%");}
+    else if(as_stage==AS_ST_BOARD && as_boardAt>0.0) {AS_Progress(p,true,(as_now-as_boardAt)/5.0,"Lift starting");}
+    else if(as_stage==AS_ST_ESCAPE && as_holdAt>0.0 && as_now<as_holdAt+AS_HOLD) {AS_Progress(p,true,(as_now-as_holdAt)/AS_HOLD,"Transit car inbound  "+AS_Clock(as_holdAt+AS_HOLD-as_now));}
+    else if(as_stage==AS_ST_RIDE) {AS_Progress(p,true,as_scroll/AS_RIDE_LEN,"Descending  -  depth "+IntToString(FixedToInt(as_scroll*4.0))+" m");}
+    else if(as_alive[p] && as_infestUntil[p]>as_now && as_medkits[p]>0) {AS_UsePanel(p,true,"E","<c val=\"90FF60\">Infested</c>  -  use a medkit",-1.0);}
     else {AS_Progress(p,false,0.0,"");}
-    // The rest of the squad.
-    s="";
-    for(q=1;q<=AS_PLAYERS;q+=1) {
-        if(q==p || !AS_Person(q)) {continue;}
-        if(as_alive[q]) {s=s+"MARINE "+IntToString(q)+"   "+IntToString(FixedToInt(MaxF(0.0,as_hp[q])))+" HP<n/>";}
-        else {s=s+"<c val=\"FF5040\">MARINE "+IntToString(q)+"   DOWN</c><n/>";}
-    }
-    AS_Text(as_cSquad[p],p,s);
 }
-void AS_Debrief (int p) {
-    int q;string s;int acc;
+// The squad's numbers for the level just won; `next` says what happens now.
+void AS_Debrief (int p, string next) {
+    int q;int acc;string c0;string c1;string c2;string c3;string c4;
     if(as_dDebrief[p]==0) {return;}
-    s="<c val=\"8CFFA0\">MISSION COMPLETE</c>  -  CARGO ELEVATOR<n/>Time "+AS_Clock(as_missionEnd-as_missionStart)+"<n/><n/>";
-    s=s+"<c val=\"FFBA40\">MARINE        KILLS      ACCURACY      DAMAGE TAKEN      DEATHS</c><n/>";
+    AS_Text(as_cDebPlace[p],p,as_levelTitle[as_level]);
+    AS_Text(as_cDebTime[p],p,as_levelPlace[as_level]+"    //    MISSION TIME  "+AS_Clock(as_missionEnd-as_missionStart));
+    c0="<c val=\"8CC8F0\">MARINE</c><n/>";c1="<c val=\"8CC8F0\">KILLS</c><n/>";c2="<c val=\"8CC8F0\">ACCURACY</c><n/>";
+    c3="<c val=\"8CC8F0\">DAMAGE TAKEN</c><n/>";c4="<c val=\"8CC8F0\">DEATHS</c><n/>";
     for(q=1;q<=AS_PLAYERS;q+=1) {
         if(!AS_Person(q)) {continue;}
         acc=0;
-        if(as_shotsFired[q]>0) {acc=as_shotsHit[q]*100/as_shotsFired[q];}
-        s=s+"MARINE "+IntToString(q)+"          "+IntToString(as_kills[q])+"            "+IntToString(acc)+"%              "
-            +IntToString(FixedToInt(as_dmgTaken[q]))+"                  "+IntToString(as_deaths[q])+"<n/>";
+        // Pellets and piercing shots can hit more than once a shot.
+        if(as_shotsFired[q]>0) {acc=MinI(100,as_shotsHit[q]*100/as_shotsFired[q]);}
+        c0=c0+"<n/>MARINE "+IntToString(q);
+        c1=c1+"<n/>"+IntToString(as_kills[q]);
+        c2=c2+"<n/>"+IntToString(acc)+"%";
+        c3=c3+"<n/>"+IntToString(FixedToInt(as_dmgTaken[q]));
+        c4=c4+"<n/>"+IntToString(as_deaths[q]);
     }
-    s=s+"<n/>The colony is below. Next: the surface bridge.<n/><n/><c val=\"6A8070\">Returning to the lobby in 30 seconds.</c>";
-    AS_Text(as_cDebrief[p],p,s);
+    AS_Text(as_cDebCol[p][0],p,c0);AS_Text(as_cDebCol[p][1],p,c1);AS_Text(as_cDebCol[p][2],p,c2);
+    AS_Text(as_cDebCol[p][3],p,c3);AS_Text(as_cDebCol[p][4],p,c4);
+    AS_Text(as_cDebNext[p],p,next);
     DialogSetVisible(as_dDebrief[p],AS_Me(p),true);
+    AS_NameTagsHide(p);
 }

@@ -85,7 +85,7 @@ point AS_RouteGoal () {
     to=Point(as_routeX[MinI(as_routeAt,as_routeN-1)],as_routeY[MinI(as_routeAt,as_routeN-1)]);
     if(as_routeAt>=as_routeN) {return to;}
     if(DistanceBetweenPoints(here,to)<0.9) {
-        if(as_routeWait[as_routeAt]==1 && !as_doorOpen) {return null;}
+        if(as_routeWait[as_routeAt]==1 && !as_hackDone) {return null;}
         if(as_routeWait[as_routeAt]==2 && as_ride<4) {return null;}
         as_routeAt+=1;AS_Log("route waypoint "+IntToString(as_routeAt)+"/"+IntToString(as_routeN));
         if(as_routeAt>=as_routeN) {return to;}

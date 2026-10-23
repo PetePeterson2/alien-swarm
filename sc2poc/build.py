@@ -1,8 +1,14 @@
 """Build HALCYON DRIFT: tools/ + src/ -> editor/AlienPOC.SC2Map (components) -> dist/AlienPOC.SC2Map.
 
+Every level (LEVELS) is in the one map: the terrain is a blank deck the size of the
+biggest, and the script builds the level being played from its strings with the hull
+kit (src/Kit.galaxy), tears it down when the mission is won and builds the next
+(src/Campaign.galaxy). Players pick where to start from what their banks have unlocked.
+
     py build.py              playable map (script errors hidden)
     py build.py --qa         script errors shown on screen
-    py build.py --kit        QA build whose deck is placed from strings at load (src/Kit.galaxy)
+    py build.py --start 1    QA build that skips the level menu and starts at level 1
+    py build.py --auto       QA autopilot: plays the whole campaign by itself
 
 The archive writer and MapInfo/terrain writers come from ../../Documents/GameNight
 (proven in the client there); the hull kit and effect meshes from the
@@ -16,12 +22,19 @@ sys.path.insert(0, str(ROOT / 'tools/vendor'))
 sys.path.insert(0, str(ROOT))
 import mpyq
 import numpy as np
-from tools import alien, basemap, level as L, shipkit, fx, catalog, elevator
+from tools import alien, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout
 
 NAME = 'AlienPOC'
-TITLE = 'Halcyon Drift: Cargo Elevator'
-MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Director', 'Mission', 'Bots', 'HUD', 'Main']
+TITLE = 'Halcyon Drift'
+MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Director', 'Mission', 'Bots', 'HUD', 'Campaign', 'Main']
 SEATS = 4
+# The campaign in order: the level's module (tools/level.py's deck, else tools/<name>.py), its title,
+# where it is, and the briefing line shown as it starts.
+LEVELS = [('deck', 'DISTRESS BEACON', 'USCSS HALCYON DRIFT  //  DECK 3',
+           'Distress beacon traced to deck 3. Get the reactor running again. Press H for controls.'),
+          ('cargo', 'CARGO ELEVATOR', 'COLONY LANDING BAY',
+           'Take the freight elevator down to the colony. Press H for controls.')]
+BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 
 
 def sha(data):
@@ -116,24 +129,12 @@ COMPONENT_LIST = b'''<?xml version="1.0" encoding="utf-8"?>
 </Components>'''
 
 
-def objects(hull_names, props):
-    """Placed doodads; the kit build passes neither, so only the start locations remain."""
+def objects(spawn):
+    """Placed objects: only the start locations. The deck itself is built by the script (src/Kit.galaxy)."""
     root = ET.Element('PlacedObjects', Version='27')
-    n = 1
-    for name in hull_names:
-        cx, cy = (int(v) for v in name[4:].split('_'))
-        e = ET.SubElement(root, 'ObjectDoodad', Id=str(n), Position='%g,%g,%g' % (cx * L.CHUNK, cy * L.CHUNK, L.FLOOR),
-                          Scale='1,1,1', Type='AS' + name)
-        ET.SubElement(e, 'Flag', Index='HeightAbsolute', Value='1'); ET.SubElement(e, 'Flag', Index='ForcePlacement', Value='1')
-        n += 1
-    for model, x, y, rot, scale, rad in props:
-        e = ET.SubElement(root, 'ObjectDoodad', Id=str(n), Position='%g,%g,%g' % (x, y, L.FLOOR),
-                          Rotation='%.4f' % math.radians(rot % 360), Scale='%g,%g,%g' % (scale, scale, scale), Type='ASP_' + model)
-        ET.SubElement(e, 'Flag', Index='HeightAbsolute', Value='1'); ET.SubElement(e, 'Flag', Index='ForcePlacement', Value='1')
-        n += 1
-    # Start locations: the camera's first frames look at the bay, not the map's corner.
+    # Start locations: the camera's first frames look at the first level's bay, not the map's corner.
     for i in range(SEATS):
-        ET.SubElement(root, 'ObjectPoint', Id=str(60000 + i), Position='%g,%g,0' % L.SPAWN, Scale='1,1,1', Type='StartLoc',
+        ET.SubElement(root, 'ObjectPoint', Id=str(60000 + i), Position='%g,%g,0' % spawn, Scale='1,1,1', Type='StartLoc',
                       Name='Start Location %03d' % (i + 1))
     ET.indent(root, space='    ')
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
@@ -150,78 +151,108 @@ def tour_spots(solid):
     return spots
 
 
-def level_galaxy(solid, room, floor, kit=False):
-    """AS_LevelInit: collision rows, lamps, vents, ammo, rooms, eggs, biomass, creep; the kit build adds the deck rows."""
-    out = ['void AS_WallRow (int y, string s) {', '    int x;', '    for(x=0;x<AS_W;x+=1) {as_wall[x][y]=StringSub(s,x+1,x+1)=="1";}', '}',
-           'void AS_KitProps () {']
-    if kit:
-        for model, x, y, rot, scale, rad in L.PROPS:
-            out.append('    AS_KitProp("%s",%.2f,%.2f,%.1f,%.3f);' % (model, x, y, rot, scale))
-    out += ['}', 'void AS_LevelInit () {', '    int i;']
-    for y, row in enumerate(L.galaxy_tables(solid)):
+def pad(rows, width, height, fill):
+    """A level's rows widened and lengthened to the map's size with `fill` (hull)."""
+    rows = [r + fill * (width - len(r)) for r in rows]
+    return rows + [fill * width] * (height - len(rows))
+
+
+def level_galaxy(n, solid, room, floor, MW, MH):
+    """Level n (the one tools/level.py has in use): AS_LevelRows<n>, collision and the deck for the kit;
+    AS_LevelData<n>, the spawn, lamps, vents, ammo, rooms, eggs, biomass and creep; AS_KitProps<n>, the dressing."""
+    out = ['void AS_LevelRows%d () {' % n]
+    for y, row in enumerate(pad(L.galaxy_tables(solid), MW, MH, '1')):
         out.append('    AS_WallRow(%d,"%s");' % (y, row))
-    if kit:
-        out.append('    as_kitMode=true;')
-        for y, row in enumerate(L.deck_rows(floor, room)):
-            out.append('    AS_DeckRow(%d,"%s");' % (y, row))
-        for k, kind in enumerate(L.KIT_KINDS):
-            out.append('    as_kitPanels[%d]="%s";' % (k, ''.join(map(str, L.KIT_PANELS[kind]))))
+    for y, row in enumerate(pad(L.deck_rows(floor, room), MW, MH, '#')):
+        out.append('    AS_DeckRow(%d,"%s");' % (y, row))
+    out += ['}', 'void AS_KitProps%d () {' % n]
+    for model, x, y, rot, scale, rad in L.PROPS:
+        out.append('    AS_KitProp("%s",%.2f,%.2f,%.1f,%.3f);' % (model, x, y, rot, scale))
+    out += ['}', 'void AS_LevelData%d () {' % n, '    int i;']
+    out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (L.SPAWN + (L.SPAWN_FACING,)))
     for i, (x, y) in enumerate(tour_spots(solid)):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))
-    out.append('    as_tourCount=%d;' % len(L.AREAS))
+    out.append('    as_tourCount=%d;as_tourAt= -1;' % len(L.AREAS))
     for x, y, kind, flick in L.LIGHTS:
         out.append('    AS_Lamp(%.2f,%.2f,"%s",%d);' % (x, y, kind, flick))
     for i, (x, y) in enumerate(L.VENTS):
         out.append('    as_vent[%d]=Point(%.2f,%.2f);' % (i, x, y))
     out.append('    as_ventCount=%d;' % len(L.VENTS))
     for i, (x, y) in enumerate(L.AMMO):
-        out.append('    as_ammoAt[%d]=Point(%.2f,%.2f);UnitCreate(1,"ASAmmo",c_unitCreateIgnorePlacement,0,as_ammoAt[%d],0.0);' % (i, x, y, i))
+        out.append('    AS_AmmoCrate(%d,%.2f,%.2f);' % (i, x, y))
     out.append('    as_ammoCount=%d;' % len(L.AMMO))
-    rooms = [a for a in L.AREAS]
-    for i, (name, (x0, y0, x1, y1), kind) in enumerate(rooms):
+    for i, (name, (x0, y0, x1, y1), kind) in enumerate(L.AREAS):
         out.append('    as_roomX0[%d]=%d.0;as_roomY0[%d]=%d.0;as_roomX1[%d]=%d.0;as_roomY1[%d]=%d.0;as_roomKind[%d]="%s";as_roomName[%d]="%s";'
                    % (i, x0, i, y0, i, x1, i, y1, i, kind, i, name))
-    out.append('    as_roomCount=%d;' % len(rooms))
+    out.append('    as_roomCount=%d;' % len(L.AREAS))
     for x, y in L.EGGS:
         out.append('    AS_SpawnAlien(AS_EGG,%.2f,%.2f,false);' % (x, y))
     for x, y, r in L.BIOMASS:
         out.append('    i=AS_SpawnAlien(AS_BIOMASS,%.2f,%.2f,false);if(i>=0) {as_aRadius[i]=%.2f;}' % (x, y, r))
-        out.append('    CreepModify(Point(%.2f,%.2f),%.2f,true,true);' % (x, y, r + 1.5))
+        out.append('    AS_Creep(%.2f,%.2f,%.2f);' % (x, y, r + 1.5))
     for x, y, r in getattr(L, 'CREEP', [(43.0, 67.0, 9.0), (36.0, 70.0, 3.0), (50.0, 70.0, 3.0), (75.0, 63.0, 4.0), (81.0, 66.0, 3.0), (60.0, 65.0, 2.5)]):
-        out.append('    CreepModify(Point(%.2f,%.2f),%.2f,true,true);' % (x, y, r))
-    if kit:
-        out.append('    AS_KitStart();')
+        out.append('    AS_Creep(%.2f,%.2f,%.2f);' % (x, y, r))
     out.append('}')
     return '\n'.join(out)
 
 
-def mission_galaxy():
-    """AS_MissionData: the mission's tables from tools/cargo.py (an empty function for the deck)."""
-    out = ['void AS_MissionData () {']
-    if L.LEVEL == 'deck':
-        return '\n'.join(out + ['}'])
-    out.append('    as_mission=true;')
+def level_common():
+    """What every level shares: the row readers, and the dispatch by level number."""
+    out = ['void AS_WallRow (int y, string s) {', '    int x;', '    for(x=0;x<AS_W;x+=1) {as_wall[x][y]=StringSub(s,x+1,x+1)=="1";}', '}',
+           'void AS_LevelNames () {']
+    for n, (name, title, place, brief) in enumerate(LEVELS):
+        out.append('    as_levelTitle[%d]="%s";as_levelPlace[%d]="%s";as_levelBrief[%d]="%s";' % (n, title, n, place, n, brief))
+    out.append('    as_kitMode=true;')
+    for k, kind in enumerate(L.KIT_KINDS):
+        out.append('    as_kitPanels[%d]="%s";' % (k, ''.join(map(str, L.KIT_PANELS[kind]))))
+    out += ['}', '// The level\'s tables, its lamps, crates, eggs and biomass; then the kit builds its deck.',
+            'void AS_LevelLoad (int n) {']
+    for n in range(len(LEVELS)):
+        out.append('    %sif(n==%d) {AS_LevelRows%d();AS_LevelData%d();}' % ('else ' if n else '', n, n, n))
+    out += ['    AS_KitStart();', '}', 'void AS_KitProps () {']
+    for n in range(len(LEVELS)):
+        out.append('    %sif(as_level==%d) {AS_KitProps%d();}' % ('else ' if n else '', n, n))
+    out.append('}')
+    return '\n'.join(out)
+
+
+def mission_galaxy(n):
+    """AS_MissionData<n>: level n's mission tables (tools/level.py and tools/cargo.py)."""
+    out = ['void AS_MissionData%d () {' % n]
     for i, (name, (x0, y0, x1, y1)) in enumerate(L.ZONES):
-        out.append('    as_zoneName[%d]="%s";as_zoneX0[%d]=%d.0;as_zoneY0[%d]=%d.0;as_zoneX1[%d]=%d.0;as_zoneY1[%d]=%d.0;' % (i, name, i, x0, i, y0, i, x1, i, y1))
+        out.append('    as_zoneName[%d]="%s";as_zoneX0[%d]=%d.0;as_zoneY0[%d]=%d.0;as_zoneX1[%d]=%d.0;as_zoneY1[%d]=%d.0;as_zoneHit[%d]=false;'
+                   % (i, name, i, x0, i, y0, i, x1, i, y1, i))
     out.append('    as_zoneCount=%d;' % len(L.ZONES))
     for i, (x, y) in enumerate(L.CHECKPOINTS):
         out.append('    as_cpX[%d]=%.2f;as_cpY[%d]=%.2f;' % (i, x, i, y))
     out.append('    as_cpCount=%d;' % len(L.CHECKPOINTS))
+    out.append('    as_extX0=%d.0;as_extY0=%d.0;as_extX1=%d.0;as_extY1=%d.0;' % L.EXTRACT)
+    out.append('    as_doorPanel=Point(%.2f,%.2f);' % L.CONSOLE)
+    for i, (x, y, wait) in enumerate(L.ROUTE):
+        out.append('    as_routeX[%d]=%.2f;as_routeY[%d]=%.2f;as_routeWait[%d]=%d;' % (i, x, i, y, i, wait))
+    out.append('    as_routeN=%d;as_routeAt=0;' % len(L.ROUTE))
     for i, (x, y) in enumerate(L.WINDOWS):
         out.append('    as_winX[%d]=%d.0;as_winY[%d]=%d.0;' % (i, x, i, y))
     out.append('    as_winCount=%d;' % len(L.WINDOWS))
-    out.append('    as_liftX0=%d.0;as_liftY0=%d.0;as_liftX1=%d.0;as_liftY1=%d.0;' % L.LIFT)
-    out.append('    as_extX0=%d.0;as_extY0=%d.0;as_extX1=%d.0;as_extY1=%d.0;' % L.EXTRACT)
-    out.append('    as_doorX0=%d;as_doorY0=%d;as_doorX1=%d;as_doorY1=%d;' % L.DOOR)
-    out.append('    as_doorPanel=Point(%.2f,%.2f);as_liftPanel=Point(%.2f,%.2f);' % (L.DOOR_PANEL + L.LIFT_PANEL))
-    for k in range(4):
-        out.append('    as_brIn[%d]=%d;as_brOut[%d]=%d;' % (k, L.BRIDGE_IN[k], k, L.BRIDGE_OUT[k]))
-    for i, (x, y, w, face, side) in enumerate(L.shaft_columns()):
-        out.append('    as_colX[%d]=%.2f;as_colY[%d]=%.2f;as_colW[%d]=%d.0;as_colFace[%d]=%.1f;as_colSide[%d]="%s";' % (i, x, i, y, i, w, i, face, i, side))
-    out.append('    as_colCount=%d;' % len(L.shaft_columns()))
-    for i, (x, y, wait) in enumerate(L.ROUTE):
-        out.append('    as_routeX[%d]=%.2f;as_routeY[%d]=%.2f;as_routeWait[%d]=%d;' % (i, x, i, y, i, wait))
-    out.append('    as_routeN=%d;' % len(L.ROUTE))
+    if L.LIFT is not None:
+        out.append('    as_liftX0=%d.0;as_liftY0=%d.0;as_liftX1=%d.0;as_liftY1=%d.0;' % L.LIFT)
+        out.append('    as_doorX0=%d;as_doorY0=%d;as_doorX1=%d;as_doorY1=%d;' % L.DOOR)
+        out.append('    as_liftPanel=Point(%.2f,%.2f);' % L.LIFT_PANEL)
+        for k in range(4):
+            out.append('    as_brIn[%d]=%d;as_brOut[%d]=%d;' % (k, L.BRIDGE_IN[k], k, L.BRIDGE_OUT[k]))
+        for i, (x, y, w, face, side) in enumerate(L.shaft_columns()):
+            out.append('    as_colX[%d]=%.2f;as_colY[%d]=%.2f;as_colW[%d]=%d.0;as_colFace[%d]=%.1f;as_colSide[%d]="%s";' % (i, x, i, y, i, w, i, face, i, side))
+        out.append('    as_colCount=%d;' % len(L.shaft_columns()))
+    else:
+        out.append('    as_colCount=0;')
+    out.append('}')
+    return '\n'.join(out)
+
+
+def mission_common():
+    out = ['void AS_MissionData () {']
+    for n in range(len(LEVELS)):
+        out.append('    %sif(as_level==%d) {AS_MissionData%d();}' % ('else ' if n else '', n, n))
     out.append('}')
     return '\n'.join(out)
 
@@ -229,13 +260,45 @@ def mission_galaxy():
 SIGNATURE = re.compile(r'^(void|bool|int|fixed|string|point|unit|actor|playergroup|trigger|text|color)\s+(AS_\w+)\s*\(([^;{)]*)\)\s*\{', re.M)
 
 
-def script(solid, room, floor, qa, demo=False, kit=False, auto=False):
+def hud_galaxy(frames):
+    """tools/hudlayout.py as AS_HUD_* constants (tints as colour functions), and each level's minimap square."""
+    out = ['// ---- generated by build.py from tools/hudlayout.py and tools/hudart.py ----',
+           'const int AS_HUD_RING_N = %d;' % hudart.RING_N]
+    for key, value in vars(hudlayout).items():
+        if not key.isupper():
+            continue
+        if isinstance(value, tuple):
+            out.append('color AS_HUD_%s () {return Color(%s);}' % (key, ','.join('%.2f' % (c / 2.55) for c in value)))
+        else:
+            out.append('const int AS_HUD_%s = %d;' % (key, value))
+    # Portraits (cosmetics): the default per slot, and the keys a bank may name.
+    out.append('string AS_HudPortraitDefault (int q) {')
+    for k, key in enumerate(hudart.PORTRAIT_DEFAULTS):
+        out.append('    if((q-1)%%%d==%d) {return "%s";}' % (len(hudart.PORTRAIT_DEFAULTS), k, key))
+    out += ['    return "%s";' % hudart.PORTRAIT_DEFAULTS[0], '}', 'bool AS_HudPortraitKnown (string key) {']
+    for key in hudart.PORTRAITS:
+        out.append('    if(key=="%s") {return true;}' % key)
+    out += ['    return false;', '}']
+    out.append('void AS_HudMaps () {')
+    for n, (x0, y0, size) in enumerate(frames):
+        out.append('    as_mmX0[%d]=%d.0;as_mmY0[%d]=%d.0;as_mmSize[%d]=%d.0;' % (n, x0, n, y0, n, size))
+    out.append('}')
+    return '\n'.join(out)
+
+
+def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=BANK, frames=()):
     bodies = []
     for name in MODULES:
-        if name == 'Level':
-            bodies.append(level_galaxy(solid, room, floor, kit))
+        if name == 'HUD':
+            src = (ROOT / 'src' / 'HUD.galaxy').read_text(encoding='utf-8')
+            # The constants go above the module's globals, the minimap squares after them.
+            head, cut, rest = src.partition('int[5] as_dHurt;')
+            gen = hud_galaxy(frames).split('void AS_HudMaps () {')
+            bodies.append(head + gen[0] + cut + rest + '\nvoid AS_HudMaps () {' + gen[1])
+        elif name == 'Level':
+            bodies.append(level_common() + '\n' + '\n'.join(levels))
         elif name == 'Mission':
-            bodies.append((ROOT / 'src' / 'Mission.galaxy').read_text(encoding='utf-8') + '\n' + mission_galaxy())
+            bodies.append((ROOT / 'src' / 'Mission.galaxy').read_text(encoding='utf-8') + '\n' + mission_common() + '\n' + '\n'.join(missions))
         else:
             bodies.append((ROOT / 'src' / (name + '.galaxy')).read_text(encoding='utf-8'))
     decls, seen = [], set()
@@ -247,13 +310,13 @@ def script(solid, room, floor, qa, demo=False, kit=False, auto=False):
             if n:
                 decls.append('%s %s (%s);' % (ret, func, ' '.join(params.split())))
     code = bodies[0] + '\n// ---- forward declarations ----\n' + '\n'.join(decls) + '\n' + '\n'.join(bodies[1:])
-    for key, value in {'spawnX': L.SPAWN[0], 'spawnY': L.SPAWN[1], 'spawnFacing': L.SPAWN_FACING}.items():
-        code = code.replace('@%s@' % key, '%.2f' % value)
-    code = code.replace('@W@', str(L.W)).replace('@H@', str(L.H))
+    code = code.replace('@W@', str(MW)).replace('@H@', str(MH)).replace('@LEVELS@', str(len(LEVELS)))
     assert '@' not in code.replace('"@', '').replace('@"', ''), 'unreplaced placeholder'
-    code = code.replace('bool as_qa = false;', 'bool as_qa = %s;' % str(qa).lower())
-    code = code.replace('bool as_demo = false;', 'bool as_demo = %s;' % str(demo).lower())
-    code = code.replace('bool as_auto = false;', 'bool as_auto = %s;' % str(auto).lower())
+    for line, value in [('bool as_qa = false;', str(qa).lower()), ('bool as_demo = false;', str(demo).lower()),
+                        ('bool as_auto = false;', str(auto).lower()), ('int as_startLevel = -1;', str(start)),
+                        ('string as_bankName = "%s";' % BANK, '"%s"' % bank)]:
+        assert line in code, 'build switch line missing: ' + line
+        code = code.replace(line, line.rsplit('=', 1)[0] + '= ' + value + ';')
     code = code.replace('string as_runId = "unset";', 'string as_runId = "%s";' % sha(code.encode())[:12])
     # The compiler refuses a global declared twice ("Invalid global variable name"); galaxy_check does not see it.
     names = re.findall(r'^(?:const\s+)?\w+(?:\[[^\]]*\])*\s+((?:as|AS)_\w+)\s*[=;]', code, re.M)
@@ -292,7 +355,8 @@ def script(solid, room, floor, qa, demo=False, kit=False, auto=False):
     return 'include "TriggerLibs/NativeLib"\n' + code + '\nvoid InitMap () {\n    libNtve_InitLib();\n    AS_Init();\n}\n'
 
 
-def ui_textures():
+def ui_textures(levels):
+    """The HUD art (tools/hudart.py) with each level's minimap, plus the vignette and a white square."""
     from PIL import Image
     white = Image.new('RGBA', (32, 32), (255, 255, 255, 255))
     size = 256
@@ -300,80 +364,97 @@ def ui_textures():
     r = np.sqrt(xx * xx + yy * yy)
     a = (np.clip((r - 0.55) / 0.6, 0, 1) ** 1.6 * 255).astype(np.uint8)
     vig = Image.fromarray(np.dstack([np.full_like(a, 255)] * 3 + [a]), 'RGBA')
-    return {'Base.SC2Assets/Derelict/UI/white.dds': shipkit.dds_rgba(white),
-            'Base.SC2Assets/Derelict/UI/vignette.dds': shipkit.dds_rgba(vig)}
+    files, frames = hudart.files(levels)
+    files.update({'Base.SC2Assets/Derelict/UI/white.dds': shipkit.dds_rgba(white),
+                  'Base.SC2Assets/Derelict/UI/vignette.dds': shipkit.dds_rgba(vig)})
+    return files, frames
 
 
-def compose(qa, demo=False, kit=False, painted=False, auto=False):
-    W, H = L.W, L.H
+def compose(qa, demo=False, auto=False, start=-1):
+    """Every level in one map: the terrain is a blank floor the size of the biggest level, and the script
+    builds whichever level is being played from its strings (src/Kit.galaxy), then the next."""
+    levels, missions, pieces, props, floors, report, maps = [], [], {}, set(), set(), [], []
+    sizes = []
+    for name, *_ in LEVELS:
+        L.use(name)
+        sizes.append((L.W, L.H))
+    MAP_SIZE = (max(w for w, h in sizes), max(h for w, h in sizes))
+    for n, (name, *_) in enumerate(LEVELS):
+        L.use(name)
+        floor, room = L.carve()
+        solid = L.blocked(floor)
+        levels.append(level_galaxy(n, solid, room, floor, *MAP_SIZE))
+        maps.append((floor, np.array([[L.in_void(x, y) for x in range(L.W)] for y in range(L.H)])))
+        missions.append(mission_galaxy(n))
+        props |= {p[0] for p in L.PROPS}
+        floors.add(L.FLOOR)
+        if L.LIFT is not None:
+            pieces.update(elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR))
+        report.append('%s %dx%d' % (name, L.W, L.H))
+    assert len(floors) == 1, 'levels at different deck heights share one terrain: %s' % floors
+    W, H = MAP_SIZE
+    L.use(LEVELS[0][0])
     files = {}
-    floor, room = L.carve()
-    solid = L.blocked(floor)
-    # Terrain: flat deck, painted per room.
+    # Terrain: one flat deck for every level, plates with rust and wreckage, every cell open until the script shuts the hull.
     heights = np.full((H + 1, W + 1), L.FLOOR)
-    # The kit build's map knows nothing of the level: one floor everywhere, every cell open until the script shuts the hull.
-    masks, dominant = L.generic_masks() if kit else L.terrain_masks(floor, room)
+    masks, dominant = L.generic_masks(W, H)
     files.update(basemap.terrain_binaries(W, H, heights, masks, L.TEXTURES, dominant))
     files['t3Terrain.xml'] = basemap.terrain_xml(W, H, 'Korhal', 'KorhalCliff0', L.TEXTURES, L.FLOOR)
-    files['PaintedPathingLayer'] = basemap.painted_pathing(np.ones_like(solid) if kit and not painted else ~solid)
+    files['PaintedPathingLayer'] = basemap.painted_pathing(np.ones((H, W), bool))
     players = [(0, 3, 0, '')] + [(s, 1, -1, 'Terr') for s in range(1, SEATS + 1)] + [(15, 4, 0, '')]
     options = 0x1000 if qa else 0x20
     files['MapInfo'] = basemap.map_info(W, H, 'Korhal', (2, 2, W - 2, H - 2), options, players,
                                         round(L.FLOOR / basemap.QUANTIZE_SCALE))
-    files['DocumentHeader'] = basemap.document_header(TITLE, 'Alien Swarm combat test in SC2', 'Top-down and third-person combat on a derelict ship.',
+    files['DocumentHeader'] = basemap.document_header(TITLE, 'Alien Swarm in SC2', 'Top-down co-op missions on a derelict ship and the colony below.',
                                                       ['Marine %d' % s for s in range(1, SEATS + 1)])
-    files['DocumentInfo'] = basemap.document_info()
+    # Each marine's campaign progress (src/Campaign.galaxy) and the QA log, preloaded so every player's bank is there at start.
+    bank = BANK + 'QA' if qa else BANK
+    banks = [(bank, s) for s in range(1, SEATS + 1)] + [('ASAuto', 1)]
+    files['DocumentInfo'] = basemap.document_info(banks)
+    bank_list = ET.Element('BankList')
+    for name, player in banks:
+        ET.SubElement(bank_list, 'Bank', Name=name, Player=str(player))
+    ET.indent(bank_list, space='    ')
+    files['BankList.xml'] = ET.tostring(bank_list, encoding='utf-8', xml_declaration=True)
     files['ComponentList.SC2Components'] = COMPONENT_LIST
     files['Attributes'] = attributes()
     files['Regions'] = b'<?xml version="1.0" encoding="utf-8"?><Regions></Regions>'
     files['Preload.xml'] = b'<?xml version="1.0" encoding="utf-8"?><Preload></Preload>'
     files['enUS.SC2Data/LocalizedData/GameStrings.txt'] = (
-        'DocInfo/Name=%s\nDocInfo/Author=drink\nDocInfo/DescShort=Alien Swarm combat test\nDocInfo/DescLong=Top-down and third-person combat on a derelict ship.\n'
+        'DocInfo/Name=%s\nDocInfo/Author=drink\nDocInfo/DescShort=Alien Swarm in SC2\nDocInfo/DescLong=Top-down co-op missions on a derelict ship and the colony below.\n'
         'DocInfo/Website=\nDocInfo/Category=Other\nVariant001/ModeName=Co-op\nVariant001/ModeDesc=Up to four marines\n' % TITLE).encode()
-    # Hull meshes and their textures.
-    models = L.kit_pieces() if kit else L.hull_meshes(floor, room)
+    # The hull kit's pieces, every level's set pieces, and their textures.
+    models = L.kit_pieces()
     textures = shipkit.hull_textures()
-    mission = L.LEVEL != 'deck'
-    if mission:
-        textures.update(elevator.textures())
+    textures.update(elevator.textures())
     shipkit.pack_textures(files, textures)
     emissive = {k for k, (d, e) in textures.items() if e is not None}
     for name, model in sorted(models.items()):
         files['Base.SC2Assets/Derelict/%s.m3' % name] = shipkit.write_m3(name, model.export(emissive))
-    pieces = elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR) if mission else {}
     for name, model in sorted(pieces.items()):
         files['Base.SC2Assets/Derelict/%s.m3' % name] = shipkit.write_m3(name, model.export(emissive))
     fx_files, _ = fx.build()
     files.update(fx_files)
     files.update(alien.build())
-    files.update(ui_textures())
-    props = {p[0] for p in L.PROPS}
-    if kit:
-        catalog.build(files, [], set(), kit_models=sorted(models), runtime_props=props, mesh_units=sorted(pieces))
-        files['Objects'] = objects([], [])
-    else:
-        catalog.build(files, sorted(models), props, mesh_units=sorted(pieces))
-        files['Objects'] = objects(sorted(models), L.PROPS)
-    code = script(solid, room, floor, qa, demo, kit, auto)
-    if painted:
-        code = code.replace('bool as_kitScriptPath = true;', 'bool as_kitScriptPath = false;')
-    files['MapScript.galaxy'] = code.encode()
-    return files
+    ui, frames = ui_textures(maps)
+    files.update(ui)
+    catalog.build(files, [], set(), kit_models=sorted(models), runtime_props=props, mesh_units=sorted(pieces))
+    files['Objects'] = objects(L.SPAWN)
+    files['MapScript.galaxy'] = script(levels, missions, W, H, qa, demo, auto, start, bank, frames).encode()
+    return files, report
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--level', default='cargo', help='cargo (the Cargo Elevator mission) or deck (the derelict combat test)')
     ap.add_argument('--qa', action='store_true')
-    ap.add_argument('--auto', action='store_true', help='QA autopilot: player 1 plays the mission by itself and logs to the ASAuto bank')
+    ap.add_argument('--auto', action='store_true', help='QA autopilot: player 1 plays the campaign by itself and logs to the ASAuto bank')
     ap.add_argument('--demo', action='store_true', help='scripted firing range for screenshots (shows script errors too)')
-    ap.add_argument('--kit', action='store_true', help='deck placed from strings at load by the hull kit (shows script errors too)')
-    ap.add_argument('--kit-painted', action='store_true', help='the kit build, but alien pathing painted into the map as the baked build does')
+    ap.add_argument('--start', type=int, default=-1, help='QA: skip the level menu and start at this level (0 the deck, 1 the cargo elevator)')
     args = ap.parse_args()
-    L.use(args.level)
-    kit = args.kit or args.kit_painted
-    name = NAME + ('-KitP' if args.kit_painted else '-Kit' if kit else '-Demo' if args.demo else '-Auto' if args.auto else '-QA' if args.qa else '')
-    files = compose(args.qa or args.demo or kit or args.auto, args.demo, kit, args.kit_painted, args.auto)
+    qa = args.qa or args.demo or args.auto or args.start >= 0
+    start = args.start if args.start >= 0 else (0 if args.auto or args.demo else -1)
+    name = NAME + ('-Demo' if args.demo else '-Auto' if args.auto else '-QA' if qa else '')
+    files, levels = compose(qa, args.demo, args.auto, start)
     editable = ROOT / 'editor' / (name + '.SC2Map')
     if editable.exists():
         shutil.rmtree(editable)
@@ -382,10 +463,8 @@ def main():
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
     report = pack(files, ROOT / 'dist' / (name + '.SC2Map'))
-    # What the level geometry costs in the archive: the baked hull chunks, or the kit's pieces.
-    hull = [d for n, d in files.items() if re.match(r'Base\.SC2Assets/Derelict/(Hull|K)\w*\.m3$', n)]
-    report['hullMeshes'] = len(hull)
-    report['hullMeshBytesPacked'] = sum(min(len(d), len(zlib.compress(d, 9)) + 1) for d in hull)
+    report['levels'] = levels
+    report['scriptBytes'] = len(files['MapScript.galaxy'])
     print(json.dumps(report, indent=2))
 
 

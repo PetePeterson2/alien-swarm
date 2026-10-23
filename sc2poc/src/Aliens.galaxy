@@ -353,3 +353,9 @@ void AS_AlienPulse () {
         if(as_a[i]!=null && as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS) {AS_Unstick(i);}
     }
 }
+// Every alien, egg and growth gone at once, without gore or kills: the level is being cleared.
+void AS_AliensClear () {
+    int i;
+    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null) {UnitRemove(as_a[i]);as_a[i]=null;}}
+    as_alive2=0;
+}

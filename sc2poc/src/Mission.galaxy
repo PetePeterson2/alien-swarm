@@ -1,6 +1,9 @@
 // =====================================================================
-// The mission: CARGO ELEVATOR (tools/cargo.py). Objectives, the security
-// door, scripted moments, the elevator ride, the escape, checkpoints.
+// The missions. Mission 1, DISTRESS BEACON (tools/level.py, the deck): down
+// to the reactor, hold its console until the power is back, then back to
+// the dropship. Mission 2, CARGO ELEVATOR (tools/cargo.py): objectives, the
+// security door, scripted moments, the elevator ride, the escape. Both
+// share the stages, the console hold, checkpoints and extraction.
 //
 // The elevator never moves. The platform is fixed floor ringed by black;
 // the shaft walls round it are units (tools/elevator.py panels) that hang
@@ -18,8 +21,8 @@ fixed as_missionStart;
 fixed as_missionEnd;
 fixed as_wipeAt;                 // squad wiped: respawn at the checkpoint at this time
 fixed as_victoryAt;
-const int AS_ST_LAND = 0;        // landing bay to the security door
-const int AS_ST_DOOR = 1;        // override the door
+const int AS_ST_LAND = 0;        // landing bay to the security door (the deck: to the reactor)
+const int AS_ST_DOOR = 1;        // override the door (the deck: restore the power)
 const int AS_ST_LIFT = 2;        // reach the elevator
 const int AS_ST_BOARD = 3;       // everyone on the platform
 const int AS_ST_RIDE = 4;        // going down
@@ -157,6 +160,8 @@ fixed as_hack;                   // 0..1 override progress
 fixed as_doorOpenAt;             // leaves slide from this time
 bool as_doorOpen;
 bool as_hackHorde;
+bool as_hackDone;                // the console's job is done (the door overridden, the power back)
+string as_hackLabel;             // what the progress bar says while the console is held
 void AS_DoorBuild () {
     int i;fixed cy=(IntToFixed(as_doorY0)+IntToFixed(as_doorY1))*0.5;fixed cx=(IntToFixed(as_doorX0)+IntToFixed(as_doorX1))*0.5;
     for(i=0;i<2;i+=1) {
@@ -176,8 +181,25 @@ void AS_DoorPulse () {
     if(t>=0.6 && as_wall[as_doorX0][as_doorY0]) {
         AS_SetCell(as_doorX0,as_doorY0,as_doorX1,as_doorY1,false);
         for(i=0;i<4;i+=1) {if(as_doorBlock[i]!=null) {UnitRemove(as_doorBlock[i]);as_doorBlock[i]=null;}}
+        AS_KitUnblock(as_doorX0,as_doorY0,as_doorX1,as_doorY1);
+        AS_Log("door open");
     }
     if(t>=1.0) {as_doorOpen=true;}
+}
+// The hull kit lays its blockers a few ticks after the mission has shut the door and the exit bridge, so it
+// shuts their cells too: take away every kit blocker lying wholly inside the rectangle when it opens.
+void AS_KitUnblock (int x0, int y0, int x1, int y1) {
+    int i;int n=0;point q;fixed x;fixed y;fixed r;
+    for(i=0;i<as_kitUnitN;i+=1) {
+        if(as_kitUnit[i]==null || UnitGetType(as_kitUnit[i])==null) {continue;}
+        if(UnitGetType(as_kitUnit[i])=="PathingBlocker2x2") {r=1.0;}
+        else if(UnitGetType(as_kitUnit[i])=="PathingBlocker1x1") {r=0.5;}
+        else {continue;}
+        q=UnitGetPosition(as_kitUnit[i]);x=PointGetX(q);y=PointGetY(q);
+        if(x-r<IntToFixed(x0)-0.01 || x+r>IntToFixed(x1)+0.01 || y-r<IntToFixed(y0)-0.01 || y+r>IntToFixed(y1)+0.01) {continue;}
+        UnitRemove(as_kitUnit[i]);as_kitUnit[i]=null;n+=1;
+    }
+    AS_Log("kit blockers cleared "+IntToString(n));
 }
 void AS_HackPulse () {
     int p;int at=0;string s;
@@ -193,14 +215,26 @@ void AS_HackPulse () {
             as_nextHorde=as_now;as_director=true;AS_StartHorde();
         }
     }
-    if(as_hack>=1.0) {
-        as_stage=AS_ST_LIFT;as_stageAt=as_now;as_doorOpenAt=as_now;
-        AS_Objective(0,2);AS_Objective(1,1);
-        SoundPlayAtPoint(SoundLink("Doodad_SecurityGateDiagonalOpen",-1),PlayerGroupAll(),as_doorPanel,0.5,100.0,0.0);
-        AS_All("DOOR OVERRIDDEN","Push through the crew quarters to the cargo elevator");AS_Log("door overridden");
-        as_checkpoint=1;
-        AS_MarkAt(74.0,96.0);
+    if(as_hack>=1.0) {AS_HackDone();}
+}
+void AS_HackDone () {
+    as_hackDone=true;as_stageAt=as_now;
+    AS_Objective(0,2);AS_Objective(1,1);
+    if(as_level==AS_LV_DECK) {
+        // The reactor comes back: the lights with it, and the swarm has heard.
+        as_stage=AS_ST_ESCAPE;
+        as_light=3;GameSetLighting(as_lightId[as_light],2.0);
+        AS_Flash(PointGetX(as_doorPanel),PointGetY(as_doorPanel),1.4,3.0,"160,220,255");AS_ShakeAll(0.15,0.5);
+        AS_All("POWER RESTORED","Get back to the dropship");AS_Log("power restored");
+        AS_MarkAt((as_extX0+as_extX1)*0.5,(as_extY0+as_extY1)*0.5);
+        as_director=true;as_nextHorde=as_now+8.0;
+        return;
     }
+    as_stage=AS_ST_LIFT;as_doorOpenAt=as_now;
+    SoundPlayAtPoint(SoundLink("Doodad_SecurityGateDiagonalOpen",-1),PlayerGroupAll(),as_doorPanel,0.5,100.0,0.0);
+    AS_All("DOOR OVERRIDDEN","Push through the crew quarters to the cargo elevator");AS_Log("door overridden");
+    as_checkpoint=1;
+    AS_MarkAt(74.0,96.0);
 }
 
 // ---- scripted moments -------------------------------------------------
@@ -228,6 +262,7 @@ void AS_GalleryPulse () {
     if(as_burstNext==3) {AS_SpawnNear(AS_PARASITE,x-1.0,y,true);}
 }
 fixed as_ventBlowAt;
+actor as_ventFire;               // the fire the blast leaves, cleared with the level
 void AS_VentBlow () {
     int p;point q;fixed x=17.5;fixed y=87.0;int i;
     AS_Log("vent blows");
@@ -241,7 +276,8 @@ void AS_VentBlow () {
         if(DistanceBetweenPoints(q,Point(x,y))<3.0) {AS_HurtMarine(p,12.0,x,y,6.0);}
     }
     for(i=0;i<AS_Scaled(3);i+=1) {AS_SpawnNear(AS_PARASITE,x+RandomFixed(-0.5,0.5),y+RandomFixed(-0.5,0.5),true);}
-    libNtve_gf_CreateActorAtPoint("ASP_DOM_Fire_Large",Point(x,y));
+    as_ventFire=libNtve_gf_CreateActorAtPoint("ASR_DOM_Fire_Large",Point(x,y));
+    ActorSend(as_ventFire,libNtve_gf_SetPosition(x,y,as_floorZ));
 }
 
 // ---- the elevator -----------------------------------------------------
@@ -497,6 +533,7 @@ void AS_RideMove () {
             as_ride=4;
             AS_SetCell(as_brOut[0],as_brOut[1],as_brOut[2],as_brOut[3],false);
             for(k=2;k<4;k+=1) {if(as_brBlock[k]!=null) {UnitRemove(as_brBlock[k]);as_brBlock[k]=null;}}
+            AS_KitUnblock(as_brOut[0],as_brOut[1],as_brOut[2],as_brOut[3]);
             AS_All("LOWER LEVEL","Fight through the freight junction to the transit station");AS_Log("exit open, escape");
             AS_Objective(2,2);AS_Objective(3,1);
             as_stage=AS_ST_ESCAPE;as_stageAt=as_now;as_checkpoint=5;
@@ -587,8 +624,18 @@ void AS_Climbers (int kind, int n) {
     // Two in five more than asked: the first in-client run found the ride too easy.
     for(i=0;i<(n*7+2)/5;i+=1) {AS_Climber(kind);}
 }
+// Autopilot only: wipe the squad once, twenty seconds into the ride, to exercise the wipe and checkpoint path.
+bool as_autoWiped;
+void AS_AutoWipeTest () {
+    int p;
+    if(!as_auto || as_autoWiped || as_rideClock<20.0) {return;}
+    as_autoWiped=true;AS_Log("QA forced wipe");
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && as_alive[p]) {as_god[p]=false;AS_HurtMarine(p,1000.0,0.0,0.0,0.0);}}
+    as_god[1]=true;
+}
 void AS_RideWaves () {
     int n=AS_Humans();fixed t=as_rideClock;int k;
+    AS_AutoWipeTest();
     // Each wave once, at its time; climbers trickle, so a wave is a few seconds of contacts.
     if(as_rideWave==0 && t>5.0) {as_rideWave=1;AS_AllMsg("<c val=\"FF5040\">Movement on the shaft walls</c>");AS_Climbers(AS_DRONE,AS_Scaled(3));}
     if(as_rideWave==1 && t>9.0) {as_rideWave=2;AS_Climbers(AS_DRONE,AS_Scaled(3));}
@@ -630,7 +677,8 @@ point AS_RespawnPoint (int p) {
         if(q==p || !AS_Person(q) || !as_alive[q]) {continue;}
         at=UnitGetPosition(as_m[q]);
         for(k=0;k<8;k+=1) {
-            a=IntToFixed(k)*45.0;x=PointGetX(at)+Cos(a)*1.2;y=PointGetY(at)+Sin(a)*1.2;
+            // Each marine tries its own side of the teammate first, so a squad coming back does not stack.
+            a=IntToFixed(k+p*2)*45.0;x=PointGetX(at)+Cos(a)*1.2;y=PointGetY(at)+Sin(a)*1.2;
             if(AS_Free(x,y,AS_MARINE_R)) {return Point(x,y);}
         }
         return at;
@@ -680,6 +728,13 @@ void AS_ZoneEnter (string z) {
             AS_MarkAt((as_liftX0+as_liftX1)*0.5,(as_liftY0+as_liftY1)*0.5);
         }
     }
+    else if(z=="reactor") {
+        if(as_stage==AS_ST_LAND) {
+            as_stage=AS_ST_DOOR;as_stageAt=as_now;as_checkpoint=1;
+            AS_All("REACTOR CORE","Hold position at the console to restore power");AS_Log("at the reactor console");
+            AS_MarkAt(PointGetX(as_doorPanel),PointGetY(as_doorPanel));
+        }
+    }
     else if(z=="quarters") {as_checkpoint=MaxI(as_checkpoint,1);}
     else if(z=="shaft") {as_checkpoint=MaxI(as_checkpoint,5);}
 }
@@ -690,6 +745,7 @@ void AS_ZonePulse () {
         if(AS_CountIn(as_zoneX0[z],as_zoneY0[z],as_zoneX1[z],as_zoneY1[z])>0) {as_zoneHit[z]=true;AS_ZoneEnter(as_zoneName[z]);}
     }
 }
+string as_extName;                // where the squad extracts, for the count messages
 // The finale: the first marine on the transit platform calls the car; the squad holds until it comes.
 const fixed AS_HOLD = 45.0;
 fixed as_holdAt;
@@ -729,34 +785,29 @@ void AS_ExtractPulse () {
     int on;int alive;int p;int i;
     if(as_stage!=AS_ST_ESCAPE) {return;}
     on=AS_CountIn(as_extX0,as_extY0,as_extX1,as_extY1);alive=AS_Living();
-    if(AS_HoldPulse(on)) {return;}
+    if(as_level==AS_LV_CARGO && AS_HoldPulse(on)) {return;}
     if(alive==0 || on<alive) {
-        if(on>0 && as_tick%24==0) {AS_AllMsg("<c val=\"FFBA40\">"+IntToString(on)+" / "+IntToString(alive)+"</c> marines at the transit platform");}
+        if(on>0 && as_tick%24==0) {AS_AllMsg("<c val=\"FFBA40\">"+IntToString(on)+" / "+IntToString(alive)+"</c> marines at "+as_extName);}
         as_victoryAt=0.0;return;
     }
-    if(as_victoryAt==0.0) {as_victoryAt=as_now+2.0;AS_AllMsg("<c val=\"8CFFA0\">Squad at the transit platform</c>");}
+    if(as_victoryAt==0.0) {as_victoryAt=as_now+2.0;AS_AllMsg("<c val=\"8CFFA0\">Squad at "+as_extName+"</c>");}
     if(as_now<as_victoryAt) {return;}
-    as_stage=AS_ST_DONE;as_missionEnd=as_now;AS_Log("MISSION COMPLETE in "+FixedToString(as_now-as_missionStart,1)+" s");AS_LogStatus();
-    AS_Objective(3,2);AS_MarkOff();
+    as_stage=AS_ST_DONE;as_missionEnd=as_now;AS_Log("MISSION COMPLETE "+as_levelTitle[as_level]+" in "+FixedToString(as_now-as_missionStart,1)+" s");AS_LogStatus();
+    AS_Objective(as_objCount-1,2);AS_MarkOff();
     as_director=false;as_hordeLeft=0;
     GameSetLighting("ASPowered",3.0);
     AS_AllSound("Alert_Victory");
     // God mode first: boomers bursting in the clean-up below would otherwise still down a marine.
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {as_god[p]=true;}}
     for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS) {AS_KillAlien(i,0,1);}}
-    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p);}}
-    TriggerExecute(TriggerCreate("AS_EndT"),false,false);
-}
-bool AS_EndT (bool testConds, bool runActions) {
-    int p;
-    Wait(30.0,c_timeGame);
-    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && (!as_bot[p] || as_auto)) {GameOver(p,c_gameOverVictory,true,true);}}
-    return true;
+    // Progress into every marine's bank, the debrief, then the next level (src/Campaign.galaxy).
+    AS_MissionWon();
 }
 
 // The deck as the squad finds it: sleepers in the rooms, scaled to the squad.
 void AS_MissionPopulate () {
     int r;
+    if(as_level==AS_LV_DECK) {AS_PopulateByKind();return;}
     for(r=0;r<as_roomCount;r+=1) {
         if(as_roomName[r]=="Bay Corridor") {AS_Populate(r,AS_DRONE,AS_Scaled(2));}
         if(as_roomName[r]=="Security Office") {AS_Populate(r,AS_DRONE,AS_Scaled(2));}
@@ -770,23 +821,61 @@ void AS_MissionPopulate () {
         if(as_roomName[r]=="Transit Station") {AS_Populate(r,AS_DRONE,AS_Scaled(3));AS_Populate(r,AS_BOOMER,1);}
     }
 }
+// A level's mission from the start: every stage, beat and ride value back to the beginning
+// (a level played after another finds what the last one left), then its own set pieces.
 void AS_MissionInit () {
     int k;
-    if(!as_mission) {return;}
     as_probeAuto=0.0;
-    as_director=false;as_nextHorde=as_now+1000.0;
-    as_missionStart=as_now;as_checkpoint=0;as_stage=AS_ST_LAND;
-    as_objName[0]="Override the security door";as_objName[1]="Reach the cargo elevator";
-    as_objName[2]="Ride the elevator down";as_objName[3]="Escape to the transit station";
+    as_missionStart=as_now;as_missionEnd=0.0;as_checkpoint=0;as_stage=AS_ST_LAND;as_stageAt=as_now;
+    as_wipeAt=0.0;as_victoryAt=0.0;as_objAt=null;
+    as_hack=0.0;as_hackHorde=false;as_hackDone=false;as_doorOpenAt=0.0;as_doorOpen=false;
+    as_burstNext= -1;as_ventBlowAt=0.0;
+    as_inCol= -1;as_outCol= -1;as_outSlot=0;as_inGone=false;as_outSet=false;
+    as_scroll=0.0;as_scrollV=0.0;as_ride=0;as_rideAt=0.0;as_boardAt=0.0;as_rideWave=0;as_rideClock=0.0;as_surge=false;
+    as_autoWiped=false;as_holdAt=0.0;as_holdWave=0.0;as_lowerLevel=false;
+    as_crumbHead= -1;as_crumbN=0;
+    for(k=0;k<5;k+=1) {as_objState[k]=0;}
+    if(as_level==AS_LV_DECK) {
+        as_objName[0]="Restore power at the reactor core";as_objName[1]="Return to the dropship";as_objCount=2;
+        as_hackLabel="RESTORING REACTOR POWER";as_extName="the dropship";
+        as_director=true;as_nextHorde=as_now+50.0;
+    }
+    else {
+        as_objName[0]="Override the security door";as_objName[1]="Reach the cargo elevator";
+        as_objName[2]="Ride the elevator down";as_objName[3]="Escape to the transit station";as_objCount=4;
+        as_hackLabel="OVERRIDING SECURITY DOOR";as_extName="the transit platform";
+        as_director=false;as_nextHorde=as_now+1000.0;
+        AS_DoorBuild();AS_LiftBuild();AS_ShaftSet(0.0);
+    }
     as_objState[0]=1;
-    as_burstNext= -1;
-    AS_DoorBuild();AS_LiftBuild();AS_ShaftSet(0.0);
     AS_MissionPopulate();
     AS_MarkAt(PointGetX(as_doorPanel),PointGetY(as_doorPanel));
-    AS_Log("mission start, marines "+IntToString(AS_Humans())+", bots "+IntToString(as_botCount));
+    AS_Log("mission start "+as_levelTitle[as_level]+", marines "+IntToString(AS_Humans())+", bots "+IntToString(as_botCount));
+}
+void AS_UnitGone (unit u) {
+    if(u!=null && UnitIsValid(u)) {UnitRemove(u);}
+}
+// Everything the mission put in the level, gone before the next one (src/Campaign.galaxy).
+void AS_MissionClear () {
+    int c;int k;
+    AS_UnitGone(as_beacon);AS_UnitGone(as_beaconLight);as_beacon=null;as_beaconLight=null;
+    for(k=0;k<2;k+=1) {
+        AS_UnitGone(as_doorLeaf[k]);AS_UnitGone(as_gateIn[k]);AS_UnitGone(as_gateOut[k]);AS_UnitGone(as_alarm[k]);AS_UnitGone(as_liftSpin[k]);
+        as_doorLeaf[k]=null;as_gateIn[k]=null;as_gateOut[k]=null;as_alarm[k]=null;as_liftSpin[k]=null;
+    }
+    for(k=0;k<4;k+=1) {AS_UnitGone(as_doorBlock[k]);AS_UnitGone(as_brBlock[k]);as_doorBlock[k]=null;as_brBlock[k]=null;}
+    for(c=0;c<16;c+=1) {
+        for(k=0;k<AS_SLOTS;k+=1) {AS_UnitGone(as_pan[c][k]);AS_UnitGone(as_panSpare[c][k]);as_pan[c][k]=null;as_panSpare[c][k]=null;}
+    }
+    AS_UnitGone(as_lintelIn);AS_UnitGone(as_lintelOut);AS_UnitGone(as_bridgeIn);AS_UnitGone(as_bridgeOut);AS_UnitGone(as_platform);AS_UnitGone(as_void);
+    as_lintelIn=null;as_lintelOut=null;as_bridgeIn=null;as_bridgeOut=null;as_platform=null;as_void=null;
+    for(k=0;k<6;k+=1) {AS_UnitGone(as_shaftLight[k]);as_shaftLight[k]=null;}
+    for(k=0;k<AS_CLIMB;k+=1) {if(as_climbA[k]!=null) {ActorSend(as_climbA[k],"Destroy");as_climbA[k]=null;}}
+    if(as_ventFire!=null) {ActorSend(as_ventFire,"Destroy");as_ventFire=null;}
+    if(as_rideSnd!=null) {SoundStop(as_rideSnd,true);as_rideSnd=null;}
+    as_colCount=0;as_zoneCount=0;
 }
 void AS_MissionPulse () {
-    if(!as_mission) {return;}
     if(as_tick%160==80) {AS_LogStatus();}
     AS_CrumbPulse();
     if(as_tick%4==0) {AS_ZonePulse();AS_ExtractPulse();}
@@ -806,8 +895,14 @@ void AS_SquadTo (fixed x, fixed y) {
     as_crumbHead= -1;as_crumbN=0;
 }
 void AS_SkipAhead (int p) {
-    if(!as_qa || !as_mission) {return;}
+    if(!as_qa || !as_levelReady) {return;}
     AS_Log("QA skip from stage "+IntToString(as_stage));
+    if(as_level==AS_LV_DECK) {
+        if(as_stage==AS_ST_LAND) {AS_ZoneEnter("reactor");}
+        if(as_stage==AS_ST_DOOR) {as_hack=1.0;AS_HackPulse();AS_SquadTo(42.0,38.0);}
+        else if(as_stage==AS_ST_ESCAPE) {AS_SquadTo(21.5,15.0);}
+        return;
+    }
     if(as_stage<=AS_ST_DOOR) {
         if(as_stage==AS_ST_LAND) {AS_ZoneEnter("door");}
         as_hack=1.0;AS_HackPulse();AS_SquadTo(18.0,66.0);

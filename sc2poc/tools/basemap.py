@@ -73,9 +73,13 @@ def document_header(title, short, long_desc, player_names):
     return b
 
 
-def document_info():
+def document_info(banks=()):
+    """``banks``: (name, player) pairs to preload, so SC2 sends each player's bank to the others at load
+    (Saboteur's career bank; the same pairs go in BankList.xml)."""
     deps = ''.join('<Value>%s</Value>' % d for d in DEPENDENCIES)
-    return ('<?xml version="1.0" encoding="utf-8"?><DocInfo><Dependencies>%s</Dependencies></DocInfo>' % deps).encode()
+    preload = ''.join('<Value>Bank;%s;%d</Value>' % b for b in banks)
+    return ('<?xml version="1.0" encoding="utf-8"?><DocInfo><Dependencies>%s</Dependencies>%s</DocInfo>'
+            % (deps, '<Preload>%s</Preload>' % preload if preload else '')).encode()
 
 
 def terrain_xml(width, height, tileset, cliffset, textures, floor):

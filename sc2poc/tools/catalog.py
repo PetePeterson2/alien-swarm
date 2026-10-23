@@ -218,17 +218,30 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
 
 
 def font_styles():
+    """The HUD's text after Alien Swarm's scheme (Neo Sans and Verdana there, Eurostile here): white, the
+    quantities light blue, headers and prompts with the cyan glow of its *Blur fonts (35,214,250)."""
     root = ET.Element('StyleFile')
     reg = 'UI\\Fonts\\Eurostile-Reg.otf'; bold = 'UI\\Fonts\\Eurostile-Bol.otf'; ext = 'UI\\Fonts\\EurostileExt-Med.otf'
-    light = '255,226,232,236'; amber = '255,255,186,64'; red = '255,255,80,64'; green = '255,120,255,150'
-    for name, font, size, align, color in [
-            ('ASBody', reg, 17, 'Left', light), ('ASBodyC', reg, 17, 'Center', light), ('ASSmall', reg, 14, 'Left', light),
-            ('ASSmallR', reg, 14, 'Right', light), ('ASHead', ext, 18, 'Left', amber), ('ASHeadC', ext, 22, 'Center', amber),
-            ('ASAmmo', bold, 40, 'Right', light), ('ASAmmoS', bold, 18, 'Right', light), ('ASWeapon', ext, 20, 'Right', amber),
-            ('ASSlot', bold, 13, 'Center', light), ('ASSlotOn', bold, 13, 'Center', amber), ('ASBig', ext, 40, 'Center', red),
-            ('ASCross', bold, 26, 'Center', green), ('ASHealth', bold, 22, 'Left', light), ('ASKey', bold, 15, 'Left', amber)]:
+    white = '255,255,255,255'; light = '255,226,232,236'; pale = '255,169,213,255'; steel = '255,140,200,240'
+    blue = '255,66,142,192'; red = '255,200,25,25'; dim = '255,128,128,128'; glow = '200,35,214,250'
+    for name, font, size, align, color, lit in [
+            ('ASSmall', reg, 18, 'Left', white, False), ('ASSmallR', reg, 15, 'Right', light, False),
+            ('ASSmallDim', reg, 18, 'Left', dim, False), ('ASLarge', reg, 30, 'Left', white, False),
+            ('ASLow', bold, 20, 'Left', red, False), ('ASKeyR', bold, 22, 'Right', white, False),
+            ('ASKeyC', bold, 26, 'Center', white, False), ('ASQtyR', reg, 17, 'Right', blue, False),
+            ('ASObjHead', reg, 22, 'Left', white, True), ('ASObj', reg, 20, 'Left', white, False),
+            ('ASObjDone', reg, 20, 'Left', white, True), ('ASUse', reg, 22, 'Left', white, True),
+            ('ASBig', ext, 48, 'Center', white, True), ('ASBigSub', reg, 22, 'Center', pale, False),
+            ('ASNotice', reg, 21, 'Center', pale, False), ('ASHead', ext, 26, 'Left', white, True),
+            ('ASHeadR', ext, 22, 'Right', pale, False), ('ASHeadC', ext, 26, 'Center', white, True),
+            ('ASFrame', reg, 19, 'Left', steel, False), ('ASBody', reg, 19, 'Left', light, False),
+            ('ASBodyR', reg, 19, 'Right', light, False), ('ASBodyC', reg, 19, 'Center', light, False),
+            ('ASBtn', ext, 20, 'Center', '255,180,220,250', False), ('ASBtnOff', ext, 20, 'Center', '255,90,104,116', False),
+            ('ASTagMe', reg, 17, 'Center', '255,255,255,0', False), ('ASTagMate', reg, 17, 'Center', '255,0,144,188', False),
+            ('ASTagAI', reg, 17, 'Center', white, False)]:
         child(root, 'Style', name=name, template='ModCenterSize20', font=font, height=size, vjustify='Middle', hjustify=align,
-              styleflags='Shadow | InlineJustification', textcolor=color, highlightcolor=color, disabledcolor=color,
+              styleflags='Shadow | Glow | InlineJustification' if lit else 'Shadow | InlineJustification',
+              textcolor=color, highlightcolor=color, disabledcolor=color, glowcolor=glow if lit else '0,0,0,0',
               shadowoffset=1, outlinewidth=0)
     ET.indent(root, space='    ')
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)

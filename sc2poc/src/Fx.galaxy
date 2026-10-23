@@ -123,6 +123,11 @@ void AS_LampSet (int i, bool on) {
     if(as_lampOn[i]==on) {return;}
     as_lampOn[i]=on;libNtve_gf_ShowHideUnit(as_lamp[i],on);
 }
+void AS_LampsClear () {
+    int i;
+    for(i=0;i<as_lampCount;i+=1) {UnitRemove(as_lamp[i]);as_lamp[i]=null;}
+    as_lampCount=0;
+}
 // Failing lamps: long dark spells; sputtering lamps: rapid stutter; alarms pulse.
 void AS_LampPulse () {
     int i;
@@ -222,6 +227,13 @@ void AS_SplatPulse () {
         as_splatFading[i]=true;as_splatUntil[i]=as_now+3.5;return;
     }
     UnitRemove(as_splat[i]);as_splat[i]=null;
+}
+// Every effect unit still out (tracer meshes, flame puffs, splats), cleared between levels.
+void AS_FxClear () {
+    int i;
+    for(i=0;i<AS_FXN;i+=1) {if(as_fx[i]!=null) {UnitRemove(as_fx[i]);as_fx[i]=null;}}
+    for(i=0;i<AS_PUFFS;i+=1) {if(as_puff[i]!=null) {UnitRemove(as_puff[i]);as_puff[i]=null;}}
+    for(i=0;i<AS_SPLATS;i+=1) {if(as_splat[i]!=null) {UnitRemove(as_splat[i]);as_splat[i]=null;}}
 }
 // A spray of alien blood along the direction the hit travelled.
 void AS_Spray (fixed x, fixed y, fixed z, fixed ang, fixed size) {

@@ -1,16 +1,21 @@
 // =====================================================================
-// The hull kit: builds a deck from its strings when the level loads
-// (build.py --kit), instead of the hull meshes and pathing baked into the
-// map. Walls, caps and ceiling are copies of a few reusable pieces
-// (tools/level.py, kit_pieces); alien pathing is shut with pathing blocker units.
-// The QA probe and room tour run in both builds so the two can be compared.
+// The hull kit: builds a level's deck from its strings when the level loads,
+// and clears it away again before the next (src/Campaign.galaxy). Walls, caps
+// and ceiling are copies of a few reusable pieces (tools/level.py, kit_pieces);
+// alien pathing is shut with pathing blocker units.
 // =====================================================================
 
-int[@W@][@H@] as_cell;            // -1 hull, else the room kind (tools/level.py KIT_KINDS)
+int[@W@][@H@] as_cell;            // the room kind (tools/level.py KIT_KINDS), else AS_HULL, AS_VOID or AS_WINDOW
+const int AS_HULL = -1;
+const int AS_VOID = -2;           // the drop round a lift: no wall, no cap
+const int AS_WINDOW = -3;         // hull whose faces show the window panel
+const int AS_KIND_HIVE = 7;
+const int AS_KIND_LIFT = 8;       // no ceiling over the lift and its bridges
+const int AS_PANEL_WINDOW = 8;    // KIT_WALLS index of the window panel
 int[@W@][@H@] as_kitMark;         // scratch: 1 a tile covers the cell, 2 a pathing block does
 bool[@W@][@H@] as_kitNear;        // hull cell within three of the deck: gets a cap
 bool[@W@][@H@] as_kitEdge;        // collision cell touching the deck: gets a pathing blocker
-string[8] as_kitPanels;         // per kind: the wall panels it draws from, one digit each
+string[16] as_kitPanels;        // per kind: the wall panels it draws from, one digit each
 int as_kitWalls;
 int as_kitTiles;
 int as_kitCaps;
@@ -25,6 +30,14 @@ bool as_kitBuilt;
 string as_kitReport = "";
 string as_probeReport = "";
 string as_kitStages = "";       // pathing readback at each stage, leaks/shut
+int as_kitGen;                  // bumped when a level is cleared: a build still running for the old one stops
+// Everything the kit made, so the level can be cleared for the next one.
+const int AS_KIT_ACTORS = 8192;
+actor[8192] as_kitActor;
+int as_kitActorN;
+const int AS_KIT_UNITS = 2048;
+unit[2048] as_kitUnit;
+int as_kitUnitN;
 // Wall actors and their sides, so Ctrl+Y can mirror the turns if the client rotates the other way.
 actor[1024] as_kitWallA;
 int[1024] as_kitWallSide;
@@ -38,7 +51,9 @@ void AS_DeckRow (int y, string s) {
     int x;string c;
     for(x=0;x<AS_W;x+=1) {
         c=StringSub(s,x+1,x+1);
-        if(c=="#") {as_cell[x][y]= -1;}
+        if(c=="#") {as_cell[x][y]=AS_HULL;}
+        else if(c=="v") {as_cell[x][y]=AS_VOID;}
+        else if(c=="w") {as_cell[x][y]=AS_WINDOW;}
         else {as_cell[x][y]=StringToInt(c);}
     }
 }
@@ -54,7 +69,12 @@ void AS_KitTurn (actor a, fixed turn) {
 actor AS_KitPiece (string piece, fixed x, fixed y) {
     actor a=libNtve_gf_CreateActorAtPoint("AS"+piece,Point(x,y));
     ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ));
+    AS_KitKeep(a);
     return a;
+}
+void AS_KitKeep (actor a) {
+    if(as_kitActorN<AS_KIT_ACTORS) {as_kitActor[as_kitActorN]=a;}
+    as_kitActorN+=1;
 }
 
 // ---- walls ------------------------------------------------------------
@@ -68,12 +88,13 @@ int AS_KitPanel (int kind, int bx, int by, int side) {
 // The panel on side s of hull cell (x, y) (0 south, 1 east, 2 north, 3 west), -1 when no face.
 int AS_FacePanel (int x, int y, int s) {
     int nx=x;int ny=y;
-    if(x<0 || y<0 || x>=AS_W || y>=AS_H || AS_Floor(x,y)) {return -1;}
+    if(x<0 || y<0 || x>=AS_W || y>=AS_H || AS_Floor(x,y) || as_cell[x][y]==AS_VOID) {return -1;}
     if(s==0) {ny-=1;}
     else if(s==1) {nx+=1;}
     else if(s==2) {ny+=1;}
     else {nx-=1;}
     if(!AS_Floor(nx,ny)) {return -1;}
+    if(as_cell[x][y]==AS_WINDOW) {return AS_PANEL_WINDOW;}
     return AS_KitPanel(as_cell[nx][ny],nx/2,ny/2,s);
 }
 void AS_KitWall (string piece, fixed x, fixed y, int s) {
@@ -94,9 +115,9 @@ void AS_KitBay (int xa, int ya, int xb, int yb, int s, fixed mx, fixed my) {
 // Ceiling over deck cells (want 0 plain, 1 hive) or caps over near hull cells (want 2).
 bool AS_KitWants (int x, int y, int want) {
     if(as_kitMark[x][y]==1) {return false;}
-    if(want==2) {return !AS_Floor(x,y) && as_kitNear[x][y];}
-    if(!AS_Floor(x,y)) {return false;}
-    return (as_cell[x][y]==7)==(want==1);
+    if(want==2) {return !AS_Floor(x,y) && as_cell[x][y]!=AS_VOID && as_kitNear[x][y];}
+    if(!AS_Floor(x,y) || as_cell[x][y]==AS_KIND_LIFT) {return false;}
+    return (as_cell[x][y]==AS_KIND_HIVE)==(want==1);
 }
 bool AS_KitFits (int x, int y, int n, int want) {
     int i;int j;
@@ -142,6 +163,7 @@ void AS_KitEdges () {
 }
 void AS_KitBlock (string kind, fixed x, fixed y) {
     UnitCreate(1,kind,c_unitCreateIgnorePlacement,0,Point(x,y),0.0);
+    if(as_kitUnitN<AS_KIT_UNITS) {as_kitUnit[as_kitUnitN]=UnitLastCreated();as_kitUnitN+=1;}
     as_kitBlockers+=1;
 }
 void AS_KitPathing () {
@@ -183,21 +205,27 @@ void AS_KitShow () {
     AS_QaText(as_kitReport+"<n/>"+as_kitStages+"<n/>"+as_probeReport);
 }
 bool AS_KitT (bool testConds, bool runActions) {
-    int x;int y;int i;int j;timer t=TimerCreate();
+    int gen=as_kitGen;timer t=TimerCreate();
     TimerStart(t,3600.0,false,c_timeReal);
     // Pathing calls made during map init do nothing: start once the game is running.
     Wait(0.0625,c_timeGame);
+    if(gen!=as_kitGen) {return true;}
     if(as_kitScriptPath) {AS_KitPathStages();}
     Wait(0.0,c_timeGame);
-    AS_KitBuildRest(t);
+    if(gen!=as_kitGen) {return true;}
+    AS_KitBuildRest(t,gen);
     return true;
 }
 void AS_KitPathStages () {
+    int x;int y;
+    for(x=0;x<AS_W;x+=1) {for(y=0;y<AS_H;y+=1) {as_kitMark[x][y]=0;as_kitNear[x][y]=false;}}
     // Pathing first, so aliens woken early already go round the walls; read back before and after.
     AS_KitPathCheck();as_kitStages="read (edge leaks/deck shut): open map "+AS_KitLS();
+    // The readback is a native call a cell: a breath before the next pass over the whole map.
+    Wait(0.0,c_timeGame);
     AS_KitPathing();Wait(0.0,c_timeGame);AS_KitPathCheck();as_kitStages=as_kitStages+", blockers "+AS_KitLS();
 }
-void AS_KitBuildRest (timer t) {
+void AS_KitBuildRest (timer t, int gen) {
     int x;int y;int i;int j;
     // Caps go on hull cells within three of the deck, as the baked hull does.
     for(y=0;y<AS_H;y+=1) {
@@ -205,11 +233,11 @@ void AS_KitBuildRest (timer t) {
             if(!AS_Floor(x,y)) {continue;}
             for(i=MaxI(0,x-3);i<=MinI(AS_W-1,x+3);i+=1) {for(j=MaxI(0,y-3);j<=MinI(AS_H-1,y+3);j+=1) {as_kitNear[i][j]=true;}}
         }
-        if(y%16==15) {Wait(0.0,c_timeGame);}
+        if(y%16==15) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
     }
     for(y=0;y<AS_H;y+=4) {
         for(x=0;x<AS_W;x+=4) {AS_KitTiles(x,y,0);AS_KitTiles(x,y,1);AS_KitTiles(x,y,2);}
-        Wait(0.0,c_timeGame);
+        Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}
     }
     // Walls in bays: south and north faces along each row, east and west faces up each column.
     for(y=0;y<AS_H;y+=1) {
@@ -217,14 +245,14 @@ void AS_KitBuildRest (timer t) {
             AS_KitBay(x,y,x+1,y,0,IntToFixed(x+1),IntToFixed(y));
             AS_KitBay(x+1,y,x,y,2,IntToFixed(x+1),IntToFixed(y+1));
         }
-        if(y%8==7) {Wait(0.0,c_timeGame);}
+        if(y%8==7) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
     }
     for(x=0;x<AS_W;x+=1) {
         for(y=0;y<AS_H;y+=2) {
             AS_KitBay(x,y,x,y+1,1,IntToFixed(x+1),IntToFixed(y+1));
             AS_KitBay(x,y+1,x,y,3,IntToFixed(x),IntToFixed(y+1));
         }
-        if(x%8==7) {Wait(0.0,c_timeGame);}
+        if(x%8==7) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
     }
     AS_KitProps();
     as_kitSecs=TimerGetElapsed(t);as_kitBuilt=true;
@@ -233,7 +261,20 @@ void AS_KitBuildRest (timer t) {
         +" actors.<n/>Pathing: "+IntToString(as_kitBlockers)+" blocker units, "+IntToString(as_kitLeaks)+" edge leaks, "
         +IntToString(as_kitShut)+" deck cells shut.";
     if(!as_kitScriptPath) {as_kitReport=as_kitReport+" (unused: painted pathing build)";}
+    if(as_kitActorN>AS_KIT_ACTORS || as_kitUnitN>=AS_KIT_UNITS) {as_kitReport=as_kitReport+" OVER THE TRACKING LIMITS: the next level will not clear it all";}
     AS_KitShow();
+    AS_Log("kit built: "+IntToString(as_kitActorN)+" actors, "+IntToString(as_kitBlockers)+" blockers, leaks/shut "+AS_KitLS()+", "+FixedToString(as_kitSecs,2)+" s real");
+}
+// Clear the deck away for the next level: every kit actor and pathing blocker, and the counts.
+void AS_KitClear () {
+    int i;
+    as_kitGen+=1;as_kitBuilt=false;
+    for(i=0;i<MinI(as_kitActorN,AS_KIT_ACTORS);i+=1) {ActorSend(as_kitActor[i],"Destroy");as_kitActor[i]=null;}
+    for(i=0;i<as_kitUnitN;i+=1) {if(as_kitUnit[i]!=null) {UnitRemove(as_kitUnit[i]);}as_kitUnit[i]=null;}
+    as_kitActorN=0;as_kitUnitN=0;
+    as_kitWalls=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
+    as_kitReport="";as_kitStages="";as_probeReport="";
+    AS_ProbeStop();
 }
 void AS_KitStart () {
     TriggerExecute(TriggerCreate("AS_KitT"),false,false);
@@ -241,6 +282,7 @@ void AS_KitStart () {
 void AS_KitProp (string model, fixed x, fixed y, fixed rot, fixed scale) {
     actor a=libNtve_gf_CreateActorAtPoint("ASR_"+model,Point(x,y));
     ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ));
+    AS_KitKeep(a);
     ActorSend(a,"SetScale "+FixedToString(scale,3));
     if(as_kitProps<96) {as_kitPropA[as_kitProps]=a;as_kitPropRot[as_kitProps]=rot;}
     as_kitProps+=1;
@@ -319,7 +361,7 @@ fixed as_probeLen;
 int as_probeSamples;
 int as_probeClips;
 point as_probeLast;
-fixed as_probeAuto = 4.0;
+fixed as_probeAuto;
 string[2] as_probeLine;
 const fixed AS_PROBE_X0 = 11.5;
 const fixed AS_PROBE_Y0 = 11.5;
@@ -334,6 +376,9 @@ void AS_ProbeStart () {
     UnitIssueOrder(as_probe,OrderTargetingPoint(AbilityCommand("move",0),AS_ProbeTarget()),c_orderQueueReplace);
     as_probeLine[as_probeLeg]="PROBE leg "+IntToString(as_probeLeg)+" walking...";AS_ProbeShow();
     as_probeStart=as_now;as_probeLen=0.0;as_probeSamples=0;as_probeClips=0;as_probeLast=Point(AS_PROBE_X0,AS_PROBE_Y0);
+}
+void AS_ProbeStop () {
+    if(as_probe!=null) {UnitRemove(as_probe);as_probe=null;}
 }
 void AS_ProbeShow () {
     as_probeReport=as_probeLine[0]+"<n/>"+as_probeLine[1];AS_KitShow();

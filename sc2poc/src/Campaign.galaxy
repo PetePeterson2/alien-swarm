@@ -1,0 +1,218 @@
+// =====================================================================
+// The campaign. Every level is in this one map (build.py LEVELS) and is
+// built from its strings when it is played (src/Kit.galaxy), so the map
+// carries no level geometry and the 256 x 256 limit never comes into it.
+//
+// Each marine's bank says how far they have got. At the start the host
+// (the first human in the lobby) picks a mission from those open to the
+// squad: a level is open if any marine here has unlocked it. From there
+// the levels chain: a mission won is written to every marine's bank, the
+// level is cleared away and the next one built in its place.
+//
+// The bank: HalcyonDrift.SC2Bank (HalcyonDriftQA in QA builds), section
+// "campaign": "unlocked", how many levels are open (1 at first); "won<n>",
+// 1 once level n has been won.
+// Section "cosmetic": "portrait", the portrait the marine wears, a key of tools/hudart.py PORTRAITS
+// ("<model>_<skin>", e.g. marine_veteran); unknown keys are ignored. Nothing writes it yet: it is
+// where rewards for veteran players go.
+// =====================================================================
+
+bank[5] as_bank;
+bool[5] as_bankOn;
+int[5] as_unlocked;
+int as_open = 1;                 // levels open to this squad: the most any marine here has unlocked
+int as_host;                     // the human who picks the level
+int as_menu;                     // the level menu, 0 until it is built
+int[8] as_menuBtn;
+int as_menuInfo;
+fixed as_menuUntil;              // the furthest open level starts by itself at this time
+const fixed AS_MENU_WAIT = 60.0;
+const fixed AS_NEXT_WAIT = 15.0; // the debrief, then the next level
+// What a level puts down besides its deck, so it can all be cleared for the next.
+unit[16] as_ammoU;
+const int AS_CREEPS = 32;
+fixed[32] as_creepX;
+fixed[32] as_creepY;
+fixed[32] as_creepR;
+int as_creepN;
+
+void AS_AmmoCrate (int i, fixed x, fixed y) {
+    as_ammoAt[i]=Point(x,y);
+    UnitCreate(1,"ASAmmo",c_unitCreateIgnorePlacement,0,as_ammoAt[i],0.0);
+    as_ammoU[i]=UnitLastCreated();
+}
+void AS_Creep (fixed x, fixed y, fixed r) {
+    CreepModify(Point(x,y),r,true,true);
+    if(as_creepN<AS_CREEPS) {as_creepX[as_creepN]=x;as_creepY[as_creepN]=y;as_creepR[as_creepN]=r;as_creepN+=1;}
+}
+
+// ---- banks ----------------------------------------------------------
+// A marine with a bank: every human; in the autopilot, marine 1 too (the QA bank).
+bool AS_Banked (int p) {
+    return AS_Person(p) && (!as_bot[p] || (as_auto && p==1));
+}
+void AS_BankLoad () {
+    int p;int n;
+    as_open=1;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        as_bankOn[p]=false;as_unlocked[p]=1;
+        if(!AS_Banked(p)) {continue;}
+        as_bank[p]=BankLoad(as_bankName,p);as_bankOn[p]=true;
+        n=1;
+        if(BankKeyExists(as_bank[p],"campaign","unlocked")) {n=BankValueGetAsInt(as_bank[p],"campaign","unlocked");}
+        as_unlocked[p]=MaxI(1,MinI(AS_LEVELS,n));
+        if(BankKeyExists(as_bank[p],"cosmetic","portrait") && AS_HudPortraitKnown(BankValueGetAsString(as_bank[p],"cosmetic","portrait"))) {
+            as_portrait[p]=BankValueGetAsString(as_bank[p],"cosmetic","portrait");
+        }
+        as_open=MaxI(as_open,as_unlocked[p]);
+    }
+    AS_Log("banks read: "+IntToString(as_open)+" of "+IntToString(AS_LEVELS)+" levels open");
+}
+// Level n won: the next one opens for every marine still in the game.
+void AS_BankWin (int n) {
+    int p;int open=MinI(AS_LEVELS,n+2);
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!as_bankOn[p] || PlayerStatus(p)!=c_playerStatusActive) {continue;}
+        as_unlocked[p]=MaxI(as_unlocked[p],open);
+        BankValueSetFromInt(as_bank[p],"campaign","version",1);
+        BankValueSetFromInt(as_bank[p],"campaign","unlocked",as_unlocked[p]);
+        BankValueSetFromInt(as_bank[p],"campaign","won"+IntToString(n),1);
+        BankSave(as_bank[p]);
+        AS_Log("bank p"+IntToString(p)+": won "+IntToString(n)+", unlocked "+IntToString(as_unlocked[p]));
+    }
+    as_open=MaxI(as_open,open);
+}
+
+// ---- the level menu -------------------------------------------------
+string AS_MenuLine (int n) {
+    string s="MISSION "+IntToString(n+1)+"  //  "+as_levelTitle[n];
+    if(n>=as_open) {s=s+"  //  LOCKED";}
+    return s;
+}
+void AS_MenuShow () {
+    int p;int n;int d;int img;int h=170+70*AS_LEVELS;trigger t=TriggerCreate("AS_MenuT");
+    as_host=0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && !as_bot[p]) {as_host=p;break;}}
+    // Alien Swarm's mission screens: a dark navy frame, a steel-blue header strip, navy buttons.
+    d=DialogCreate(680,h,c_anchorCenter,0,0,true);DialogSetImageVisible(d,false);as_menu=d;
+    AS_Art(d,0,0,680,h,"frame",AS_Full());
+    AS_Art(d,0,0,680,56,"header",AS_Full());
+    AS_Label(d,0,c_anchorTopLeft,28,6,624,44,"ASHead","SELECT MISSION");
+    AS_Label(d,0,c_anchorTopLeft,28,6,624,44,"ASHeadR","HALCYON DRIFT");
+    for(n=0;n<AS_LEVELS;n+=1) {
+        // The AS button is a plain image under the button. The button's own images are uniform (clear, and a pale
+        // tint on hover), since SC2 slices a button's image as a border and loses the box's edge lines.
+        img=AS_Image(d,c_anchorTop,0,80+70*n,600,56,AS_Ui("buttonoff"),AS_Full());
+        libNtve_gf_CreateDialogItemButton(d,600,56,c_anchorTop,0,80+70*n,StringToText(as_levelPlace[n]),StringToText(AS_MenuLine(n)),"");
+        as_menuBtn[n]=DialogControlLastCreated();
+        DialogControlSetPropertyAsString(as_menuBtn[n],c_triggerControlPropertyImage,PlayerGroupAll(),AS_Ui("clear"));
+        DialogControlSetPropertyAsString(as_menuBtn[n],c_triggerControlPropertyHoverImage,PlayerGroupAll(),AS_Ui("hover"));
+        DialogControlSetPropertyAsString(as_menuBtn[n],c_triggerControlPropertyStyle,PlayerGroupAll(),"ASBtnOff");
+        DialogControlSetEnabled(as_menuBtn[n],PlayerGroupAll(),false);
+        if(as_host>0 && n<as_open) {
+            DialogControlSetEnabled(as_menuBtn[n],AS_Me(as_host),true);
+            DialogControlSetPropertyAsString(img,c_triggerControlPropertyImage,AS_Me(as_host),AS_Ui("button"));
+            DialogControlSetPropertyAsString(as_menuBtn[n],c_triggerControlPropertyStyle,AS_Me(as_host),"ASBtn");
+        }
+        TriggerAddEventDialogControl(t,c_playerAny,as_menuBtn[n],c_triggerControlEventTypeClick);
+    }
+    as_menuInfo=AS_Label(d,0,c_anchorBottom,0,24,640,60,"ASBodyC","");
+    DialogSetVisible(d,PlayerGroupAll(),true);
+    as_menuUntil=as_now+AS_MENU_WAIT;
+    AS_MenuInfo();
+}
+void AS_MenuInfo () {
+    int p;string secs=IntToString(FixedToInt(MaxF(0.0,as_menuUntil-as_now)));
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || as_bot[p]) {continue;}
+        if(p==as_host) {AS_Text(as_menuInfo,p,"Pick where the squad starts. Winning a mission opens the next.<n/>"+as_levelTitle[as_open-1]+" starts by itself in "+secs+" s.");}
+        else {AS_Text(as_menuInfo,p,"Marine "+IntToString(as_host)+" is picking the mission ("+secs+" s).");}
+    }
+}
+bool AS_MenuT (bool testConds, bool runActions) {
+    int n;int c=EventDialogControl();
+    if(EventPlayer()!=as_host || as_level>=0) {return true;}
+    for(n=0;n<AS_LEVELS;n+=1) {if(c==as_menuBtn[n] && n<as_open) {AS_MenuPick(n);return true;}}
+    return true;
+}
+void AS_MenuPick (int n) {
+    as_menuUntil=0.0;
+    if(as_menu!=0) {DialogSetVisible(as_menu,PlayerGroupAll(),false);}
+    AS_Log("level "+IntToString(n)+" picked");
+    AS_LevelBegin(n);
+}
+// Before a level is running: the menu's countdown, and the pick if nobody makes it.
+void AS_CampaignPulse () {
+    if(as_level>=0 || as_menu==0) {return;}
+    if(as_tick%16==0) {AS_MenuInfo();}
+    if(as_menuUntil>0.0 && as_now>=as_menuUntil) {AS_MenuPick(as_open-1);}
+}
+
+// ---- a level from start to finish -------------------------------------
+void AS_LevelBegin (int n) {
+    int p;
+    as_level=n;
+    // Its tables, lamps, crates, eggs, biomass and creep; the kit starts building the deck.
+    AS_LevelLoad(n);AS_MissionData();
+    as_light=0;GameSetLighting(as_lightId[0],0.0);
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p)) {continue;}
+        as_respawnPt[p]=null;as_respawnAt[p]=0.0;
+        as_kills[p]=0;as_shotsFired[p]=0;as_shotsHit[p]=0;as_dmgTaken[p]=0.0;as_deaths[p]=0;
+        as_botGoalPt[p]=null;as_botLast[p]=null;as_botFoe[p]= -1;
+        AS_GiveLoadout(p);AS_BotLoadout(p);
+        AS_MarineSpawn(p);
+        AS_DebriefHide(p);
+        AS_Announce(p,as_levelTitle[n],as_levelBrief[n]);
+    }
+    AS_DirectorInit();AS_MissionInit();
+    if(as_amb!=null) {SoundStop(as_amb,true);}
+    SoundPlay(SoundLink("Ambience_HybridLabInner",-1),PlayerGroupAll(),45.0,0.0);as_amb=SoundLastPlayed();
+    as_levelReady=true;
+    AS_Log("level "+IntToString(n)+" begins: "+as_levelTitle[n]);
+}
+// Clear the level away: its deck, mission pieces, aliens, effects, lamps, crates and creep.
+void AS_LevelEnd () {
+    int p;int i;
+    as_levelReady=false;
+    AS_KitClear();AS_MissionClear();AS_AliensClear();AS_WeaponsClear();AS_FxClear();AS_LampsClear();
+    for(i=0;i<16;i+=1) {if(as_ammoU[i]!=null) {UnitRemove(as_ammoU[i]);as_ammoU[i]=null;}}
+    as_ammoCount=0;
+    for(i=0;i<as_creepN;i+=1) {CreepModify(Point(as_creepX[i],as_creepY[i]),as_creepR[i],false,true);}
+    as_creepN=0;
+    as_director=false;as_hordeLeft=0;as_hordeUntil=0.0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_god[p]=as_auto && p==1;as_infestUntil[p]=0.0;as_trigger[p]=false;}
+    // What is left should be the marines and their lights, laser and torch: five units each.
+    AS_Log("level "+IntToString(as_level)+" cleared, units left "+IntToString(UnitGroupCount(UnitGroup(null,c_playerAny,RegionEntireMap(),null,0),c_unitCountAll)));
+}
+// A mission is won: the banks, the debrief, then the next level or the end.
+void AS_MissionWon () {
+    int p;string next;
+    AS_BankWin(as_level);
+    if(as_level+1<AS_LEVELS) {next="Next: <c val=\"FFBA40\">"+as_levelTitle[as_level+1]+"</c>  -  deploying in "+IntToString(FixedToInt(AS_NEXT_WAIT))+" seconds.";}
+    else {next="That is every mission so far.<n/><n/><c val=\"6A8070\">Returning to the lobby in 30 seconds.</c>";}
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p,next);}}
+    TriggerExecute(TriggerCreate("AS_NextT"),false,false);
+}
+bool AS_NextT (bool testConds, bool runActions) {
+    int p;int n=as_level+1;
+    if(n<AS_LEVELS) {
+        Wait(AS_NEXT_WAIT,c_timeGame);
+        AS_LevelEnd();
+        // A moment for the removals to go through before the next deck goes up in the same place.
+        Wait(0.5,c_timeGame);
+        AS_LevelBegin(n);
+        return true;
+    }
+    Wait(30.0,c_timeGame);
+    AS_Log("CAMPAIGN COMPLETE");
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && (!as_bot[p] || as_auto)) {GameOver(p,c_gameOverVictory,true,true);}}
+    return true;
+}
+// After the players and their HUDs are made: read the banks, then the menu (or the QA start level).
+void AS_CampaignInit () {
+    AS_LevelNames();
+    AS_BankLoad();
+    if(as_startLevel>=0) {AS_LevelBegin(MinI(as_startLevel,AS_LEVELS-1));return;}
+    AS_MenuShow();
+}
