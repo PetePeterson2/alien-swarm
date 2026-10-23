@@ -227,7 +227,7 @@ fixed AS_MarineSpeed (int p) {
 }
 void AS_Move (int p) {
     fixed f=0.0;fixed s=0.0;fixed wx;fixed wy;fixed k;fixed speed;fixed yaw;fixed x;fixed y;fixed nx;fixed ny;fixed len;point here;
-    fixed sx;fixed sy;fixed step;fixed dir;fixed turn;int t;
+    fixed sx;fixed sy;fixed step;fixed dir;fixed turn;int t;int k2;
     if(!as_alive[p]) {return;}
     if(as_using[p]>=0) {AS_Walk(p,0.0);as_mvX[p]=0.0;as_mvY[p]=0.0;return;}
     speed=AS_MarineSpeed(p);
@@ -249,6 +249,20 @@ void AS_Move (int p) {
     nx=x+(as_mvX[p]+as_knockX[p])*AS_DT;ny=y+(as_mvY[p]+as_knockY[p])*AS_DT;
     as_knockX[p]*=0.7;as_knockY[p]*=0.7;
     if(AbsF(as_knockX[p])+AbsF(as_knockY[p])<0.05) {as_knockX[p]=0.0;as_knockY[p]=0.0;}
+    // Pressed into a wall (the swarm's bodies shove the unit, a knock at a frame): every step from inside would
+    // be refused, so step out to the nearest free spot first.
+    if(!AS_Free(x,y,AS_MARINE_R)) {
+        for(t=1;t<=8 && !AS_Free(x,y,AS_MARINE_R);t+=1) {
+            for(k2=0;k2<8;k2+=1) {
+                dir=IntToFixed(k2)*45.0;
+                if(AS_Free(x+Cos(dir)*0.08*IntToFixed(t),y+Sin(dir)*0.08*IntToFixed(t),AS_MARINE_R)) {x+=Cos(dir)*0.08*IntToFixed(t);y+=Sin(dir)*0.08*IntToFixed(t);break;}
+            }
+        }
+        nx=x+(as_mvX[p])*AS_DT;ny=y+(as_mvY[p])*AS_DT;
+        if(!AS_Free(nx,ny,AS_MARINE_R)) {nx=x;ny=y;}
+        UnitSetPosition(as_m[p],Point(nx,ny),true);
+        return;
+    }
     if(!AS_Free(nx,ny,AS_MARINE_R)) {
         // Slide along the wall: keep whichever half of the step is free and still moves.
         sx=nx;sy=ny;nx=x;ny=y;
@@ -437,25 +451,27 @@ int AS_HumanCount () {
     for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && (!as_bot[q] || (as_auto && q==1))) {n+=1;}}
     return n;
 }
-// The F-key of marine q among p's own (1 is p's own slot, then the AI marines in slot order).
-int AS_OwnIndex (int p, int q) {
-    int k;int n=1;
-    if(q==p) {return 1;}
-    for(k=1;k<=AS_PLAYERS;k+=1) {
-        if(k==p || !AS_Owns(p,k)) {continue;}
-        n+=1;
-        if(k==q) {return n;}
-    }
+// F1-F4 name p's own marines in the briefing's row order. Switching trades marines between player slots, so
+// a marine is found by its profile (as_squadProf, set at launch), never by the slot it is in now.
+int AS_SlotOfProf (int prof) {
+    int k;
+    for(k=1;k<=AS_PLAYERS;k+=1) {if(AS_Person(k) && as_prof[k]==prof) {return k;}}
     return 0;
 }
 int AS_OwnByIndex (int p, int n) {
-    int k;int i=1;
-    if(n==1) {return p;}
-    for(k=1;k<=AS_PLAYERS;k+=1) {
-        if(k==p || !AS_Owns(p,k)) {continue;}
+    int r;int i=0;int k;
+    for(r=1;r<=AS_PLAYERS;r+=1) {
+        if(as_squadProf[r]<0) {continue;}
+        k=AS_SlotOfProf(as_squadProf[r]);
+        if(k==0 || !AS_Owns(p,k)) {continue;}
         i+=1;
         if(i==n) {return k;}
     }
+    return 0;
+}
+int AS_OwnIndex (int p, int q) {
+    int n;
+    for(n=1;n<=AS_PLAYERS;n+=1) {if(AS_OwnByIndex(p,n)==q) {return n;}}
     return 0;
 }
 int AS_NextOwnMarine (int p) {
@@ -486,7 +502,7 @@ void AS_SwapMarines (int a, int b) {
     u=as_muzzle[a];as_muzzle[a]=as_muzzle[b];as_muzzle[b]=u;
     u=as_laser[a];as_laser[a]=as_laser[b];as_laser[b]=u;
     n=as_prof[a];as_prof[a]=as_prof[b];as_prof[b]=n;
-    for(i=0;i<3;i+=1) {n=as_inv[a][i];as_inv[a][i]=as_inv[b][i];as_inv[b][i]=n;}
+    for(i=0;i<3;i+=1) {n=as_inv[a][i];as_inv[a][i]=as_inv[b][i];as_inv[b][i]=n;n=as_invLaunch[a][i];as_invLaunch[a][i]=as_invLaunch[b][i];as_invLaunch[b][i]=n;}
     for(i=0;i<=AS_ITEMS;i+=1) {
         n=as_mag[a][i];as_mag[a][i]=as_mag[b][i];as_mag[b][i]=n;
         n=as_reserve[a][i];as_reserve[a][i]=as_reserve[b][i];as_reserve[b][i]=n;

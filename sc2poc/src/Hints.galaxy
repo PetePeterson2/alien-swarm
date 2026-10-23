@@ -108,8 +108,11 @@ bool AS_HintLearned (int p, int i) {
 }
 // A person's hint, not an AI marine's.
 bool AS_HintFor (int p) {return AS_Person(p) && (!as_bot[p] || (as_auto && p==1)) && as_dCenter[p]!=0;}
+int as_hintShots;                          // QA: the first hints are snapshotted (src/HUD.galaxy AS_UiDump)
 void AS_HintOpen (int p, int i, string caption, string key) {
-    if(!AS_HintFor(p) || AS_HintLearned(p,i) || as_levelReady==false) {return;}
+    if(!AS_HintFor(p) || AS_HintLearned(p,i) || as_levelReady==false || AS_MissionOver()) {return;}
+    // At a panel or terminal only the hacking lessons speak.
+    if(as_using[p]>=0 && i!=AS_LS_HACK && i!=AS_LS_COMPUTER) {return;}
     if(as_hintOn[p]==i) {as_hintUntil[p]=as_now+MaxF(as_lsTimeout[i],1.0);return;}
     if(as_hintOn[p]>=0 && as_lsPri[as_hintOn[p]]>as_lsPri[i]) {return;}
     if(caption=="") {caption=as_lsCaption[i];}
@@ -119,6 +122,13 @@ void AS_HintOpen (int p, int i, string caption, string key) {
     as_lsShown[p][i]+=1;AS_HintSave(p,i);
     AS_HintShow(p,caption,key);
     AS_SoundUI(p,"AC_UI_OnClick01");
+    if(as_auto) {AS_Log("hint: "+caption+"  ["+key+"]");}
+    if(as_auto && as_hintShots<2) {as_hintShots+=1;AS_UiDump("hint"+IntToString(as_hintShots),p);}
+}
+// QA: forget every lesson, as for a first-time player.
+void AS_HintsReset (int p) {
+    int i;
+    for(i=0;i<AS_LESSONS;i+=1) {as_lsShown[p][i]=0;as_lsOk[p][i]=0;AS_HintSave(p,i);}
 }
 void AS_HintClose (int p, int i) {
     if(!AS_Person(p) || as_hintOn[p]!=i) {return;}

@@ -27,15 +27,17 @@ from tools import alien, basemap, level as L, shipkit, fx, catalog, elevator, hu
 NAME = 'AlienPOC'
 TITLE = 'Halcyon Drift'
 WIPE = False
+AUTO_SKILL, AUTO_ONSLAUGHT, AUTO_PROF = 2, False, 3
+MARINES = ['sarge', 'wildcat', 'faith', 'crash', 'jaeger', 'wolfe', 'bastille', 'vegas']
 REFERENCE_SOUNDS = Path.home() / 'OneDrive/Documents/sc2map/doodad-royale/reference/catalog/Sound.txt'
 MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Bots',
            'Progress', 'HUD', 'Hints', 'Briefing', 'Campaign', 'Main']
 SEATS = 4
 # The campaign in order, after Alien Swarm's Jacob's Rest: the level's module (tools/<name>.py), its title,
 # where it is, the briefing line, and the par (speed-run) time in seconds (Landing Bay's speedruntime is 85).
-LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII  //  SYNTEK LANDING BAY 7',
+LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII // SYNTEK LANDING BAY 7',
            'Sweep the landing bay and download the flight data. Press H for controls.', 85),
-          ('cargo', 'CARGO ELEVATOR', 'VEREON XII  //  CARGO ELEVATOR',
+          ('cargo', 'CARGO ELEVATOR', 'VEREON XII // CARGO ELEVATOR',
            'Take the freight elevator down to the colony. Press H for controls.', 170)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
@@ -367,6 +369,8 @@ def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=
     assert '@' not in code.replace('"@', '').replace('@"', ''), 'unreplaced placeholder'
     for line, value in [('bool as_qa = false;', str(qa).lower()), ('bool as_demo = false;', str(demo).lower()),
                         ('bool as_auto = false;', str(auto).lower()), ('bool as_autoWipe = false;', str(WIPE).lower()),
+                        ('int as_autoSkill = 2;', str(AUTO_SKILL)), ('bool as_autoOnslaught = false;', str(AUTO_ONSLAUGHT).lower()),
+                        ('int as_autoProf = 3;', str(AUTO_PROF)),
                         ('int as_startLevel = -1;', str(start)),
                         ('string as_bankName = "%s";' % BANK, '"%s"' % bank)]:
         assert line in code, 'build switch line missing: ' + line
@@ -522,12 +526,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--qa', action='store_true')
     ap.add_argument('--auto', action='store_true', help='QA autopilot: player 1 plays the campaign by itself and logs to the ASAuto bank')
+    ap.add_argument('--skill', type=int, default=2, help='with --auto: difficulty picked in the briefing, 1 Easy .. 5 Brutal')
+    ap.add_argument('--onslaught', action='store_true', help='with --auto: Onslaught on')
+    ap.add_argument('--marine', default='crash', choices=MARINES, help='with --auto: the marine the autopilot plays')
     ap.add_argument('--wipe', action='store_true', help='with --auto: Landing Bay loses its tech first (restart), then the whole squad (failed), then plays through')
     ap.add_argument('--demo', action='store_true', help='scripted firing range for screenshots (shows script errors too)')
     ap.add_argument('--start', type=int, default=-1, help='QA: skip the briefing and start at this level (0 Landing Bay, 1 the cargo elevator)')
     args = ap.parse_args()
-    global WIPE
+    global WIPE, AUTO_SKILL, AUTO_ONSLAUGHT, AUTO_PROF
     WIPE = args.wipe
+    AUTO_SKILL, AUTO_ONSLAUGHT, AUTO_PROF = args.skill, args.onslaught, MARINES.index(args.marine)
     args.auto = args.auto or args.wipe
     qa = args.qa or args.demo or args.auto or args.start >= 0
     start = args.start if args.start >= 0 else (0 if args.auto or args.demo else -1)

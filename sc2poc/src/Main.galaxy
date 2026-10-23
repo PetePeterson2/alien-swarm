@@ -78,22 +78,27 @@ bool AS_DevKey (int p, int k) {
     if(k==c_keyU) {AS_KitUnpath(p);return true;}
     return false;
 }
+// The triggers only read the event; the functions do the work, so the autopilot's input test
+// (src/Bots.galaxy AS_AutoInput) runs exactly what a key or click runs.
 bool AS_KeyDownT (bool testConds, bool runActions) {
-    int p=EventPlayer();int k=EventKeyPressed();bool ctrl=EventKeyControl();
-    if(!AS_Person(p) || !as_levelReady) {return true;}
-    if(k==c_keyW) {AS_KeyMove(p,0,true);return true;}
-    if(k==c_keyA) {AS_KeyMove(p,1,true);return true;}
-    if(k==c_keyS) {AS_KeyMove(p,2,true);return true;}
-    if(k==c_keyD) {AS_KeyMove(p,3,true);return true;}
-    if(ctrl && AS_DevKey(p,k)) {return true;}
-    if(k==c_keyF1 || k==c_keyF2 || k==c_keyF3 || k==c_keyF4) {AS_SwitchTo(p,k-c_keyF1+1);return true;}
-    if(k==c_keyTab) {AS_FullMapToggle(p);return true;}
-    if(k==c_keyH) {AS_HelpToggle(p);return true;}
-    if(k==c_keyN) {as_numbers[p]=!as_numbers[p];if(as_numbers[p]) {AS_Message(p,"Damage numbers on");}else {AS_Message(p,"Damage numbers off");}return true;}
-    if(k==c_keyC) {AS_CameraMode(p,1-as_view[p],0.4);return true;}
-    if(!as_alive[p]) {return true;}
-    if(k==c_keyE) {AS_UsePress(p);return true;}
-    if(as_using[p]>=0) {return true;}
+    AS_KeyDown(EventPlayer(),EventKeyPressed(),EventKeyControl());
+    return true;
+}
+void AS_KeyDown (int p, int k, bool ctrl) {
+    if(!AS_Person(p) || !as_levelReady) {return;}
+    if(k==c_keyW) {AS_KeyMove(p,0,true);return;}
+    if(k==c_keyA) {AS_KeyMove(p,1,true);return;}
+    if(k==c_keyS) {AS_KeyMove(p,2,true);return;}
+    if(k==c_keyD) {AS_KeyMove(p,3,true);return;}
+    if(ctrl && AS_DevKey(p,k)) {return;}
+    if(k==c_keyF1 || k==c_keyF2 || k==c_keyF3 || k==c_keyF4) {AS_SwitchTo(p,k-c_keyF1+1);return;}
+    if(k==c_keyTab) {AS_FullMapToggle(p);return;}
+    if(k==c_keyH) {AS_HelpToggle(p);return;}
+    if(k==c_keyN) {as_numbers[p]=!as_numbers[p];if(as_numbers[p]) {AS_Message(p,"Damage numbers on");}else {AS_Message(p,"Damage numbers off");}return;}
+    if(k==c_keyC) {AS_CameraMode(p,1-as_view[p],0.4);return;}
+    if(!as_alive[p]) {return;}
+    if(k==c_keyE) {AS_UsePress(p);return;}
+    if(as_using[p]>=0) {return;}
     if(k==c_keyR) {AS_Reload(p);}
     if(k==c_keyQ) {AS_SwapWeapon(p);}
     if(k==c_key1) {as_extraHeld[p]=true;if(as_inv[p][2]==AS_IT_WELDER) {AS_WelderStart(p);}else {AS_UseExtra(p);}}
@@ -102,11 +107,13 @@ bool AS_KeyDownT (bool testConds, bool runActions) {
     if(k==c_keyG) {AS_DropHand(p);}
     if(k==c_keyV) {AS_SquadOrder(p,0);}
     if(k==c_keyX) {AS_SquadOrder(p,1);}
-    return true;
 }
 bool AS_KeyUpT (bool testConds, bool runActions) {
-    int p=EventPlayer();int k=EventKeyPressed();
-    if(!AS_Person(p)) {return true;}
+    AS_KeyUp(EventPlayer(),EventKeyPressed());
+    return true;
+}
+void AS_KeyUp (int p, int k) {
+    if(!AS_Person(p)) {return;}
     if(k==c_keyW) {AS_KeyMove(p,0,false);}
     if(k==c_keyA) {AS_KeyMove(p,1,false);}
     if(k==c_keyS) {AS_KeyMove(p,2,false);}
@@ -114,7 +121,6 @@ bool AS_KeyUpT (bool testConds, bool runActions) {
     if(k==c_keyE) {as_useHeld[p]=false;}
     if(k==c_key1) {as_extraHeld[p]=false;}
     if(k==c_keyF) {as_trigger2[p]=false;}
-    return true;
 }
 // G: the weapon in hand to the deck, to give a squadmate.
 void AS_DropHand (int p) {
@@ -135,25 +141,29 @@ void AS_SquadOrder (int p, int ord) {
     else {AS_Message(p,"Squad: hold position");AS_HintSuccess(p,AS_LS_HOLD);}
 }
 bool AS_MouseDownT (bool testConds, bool runActions) {
-    int p=EventPlayer();int b=EventMouseClickedButton();
-    if(!AS_Person(p) || !as_levelReady) {return true;}
-    if(as_bot[p] && !(as_auto && p==1)) {return true;}
-    if(as_using[p]>=0) {return true;}
+    AS_MouseDown(EventPlayer(),EventMouseClickedButton());
+    return true;
+}
+void AS_MouseDown (int p, int b) {
+    if(!AS_Person(p) || !as_levelReady) {return;}
+    if(as_bot[p] && !(as_auto && p==1)) {return;}
+    if(as_using[p]>=0) {return;}
     // A dead marine's player watches the squad: a click moves on to the next living marine.
-    if(!as_alive[p]) {if(b==c_mouseButtonLeft) {AS_SpectateNext(p);}return true;}
+    if(!as_alive[p]) {if(b==c_mouseButtonLeft) {AS_SpectateNext(p);}return;}
     // The first round leaves on the click itself, not at the next 1/16 s step: a quick
     // click that was let go before that step used to fire nothing at all.
     if(b==c_mouseButtonLeft) {as_trigger[p]=true;AS_TriggerPulled(p);AS_FirePulse(p);}
     else if(b==c_mouseButtonRight) {AS_Melee(p);AS_HintEvent("melee",p);}
     else if(b==c_mouseButtonMiddle) {as_trigger2[p]=true;AS_Secondary(p);}
-    return true;
 }
 bool AS_MouseUpT (bool testConds, bool runActions) {
-    int p=EventPlayer();int b=EventMouseClickedButton();
-    if(!AS_Person(p)) {return true;}
+    AS_MouseUp(EventPlayer(),EventMouseClickedButton());
+    return true;
+}
+void AS_MouseUp (int p, int b) {
+    if(!AS_Person(p)) {return;}
     if(b==c_mouseButtonLeft) {as_trigger[p]=false;}
     else if(b==c_mouseButtonMiddle) {as_trigger2[p]=false;}
-    return true;
 }
 bool AS_MouseMoveT (bool testConds, bool runActions) {
     AS_MouseMoved(EventPlayer(),EventMouseMovedPosXWorld(),EventMouseMovedPosYWorld());
@@ -162,11 +172,13 @@ bool AS_MouseMoveT (bool testConds, bool runActions) {
 // The wheel swaps weapons, as AS's inventory next / previous.
 fixed[5] as_wheelAt;
 bool AS_WheelT (bool testConds, bool runActions) {
-    int p=EventPlayer();
-    if(!AS_Person(p) || !as_levelReady || !as_alive[p] || as_now-as_wheelAt[p]<0.2) {return true;}
+    AS_Wheel(EventPlayer());
+    return true;
+}
+void AS_Wheel (int p) {
+    if(!AS_Person(p) || !as_levelReady || !as_alive[p] || as_now-as_wheelAt[p]<0.2) {return;}
     as_wheelAt[p]=as_now;
     AS_SwapWeapon(p);
-    return true;
 }
 void AS_KeyEvents (trigger t, bool down) {
     int k;

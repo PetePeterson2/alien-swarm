@@ -394,6 +394,7 @@ void AS_OrderTechHack (int p, int kind, int ref) {
     if(best==0) {return;}
     as_aiHackKind=kind;as_aiHackRef=ref;as_aiHackTech=best;
     AS_AllMsg(AS_MarineNameS(best)+": on it.");
+    AS_Log("AI tech p"+IntToString(best)+" ("+AS_MarineNameS(best)+") sent to hack, "+FixedToString(bd,1)+" away");
 }
 // The ordered tech walks to the spot and hacks it plainly: a panel in 10 s, a terminal (hack and download) in 20.
 void AS_TechAiPulse () {
@@ -401,6 +402,7 @@ void AS_TechAiPulse () {
     if(q<=0) {return;}
     if(!AS_Person(q) || !as_alive[q]) {as_aiHackTech=0;return;}
     if(as_aiHackKind==AS_USE_PANEL) {at=Point(as_drPanelX[r],as_drPanelY[r]);}else {at=Point(as_tmX[r],as_tmY[r]);}
+    if(as_auto && as_tick%32==0) {AS_Log("AI tech p"+IntToString(q)+" "+FixedToString(DistanceBetweenPoints(UnitGetPosition(as_m[q]),at),1)+" from the job, panel "+FixedToString(as_drHack[r],2));}
     if(DistanceBetweenPoints(UnitGetPosition(as_m[q]),at)>1.4) {return;}
     if(as_aiHackKind==AS_USE_PANEL) {
         if(!as_drLocked[r]) {as_aiHackTech=0;return;}
@@ -410,7 +412,7 @@ void AS_TechAiPulse () {
     }
     if(!as_cpStarted[r]) {as_cpStarted[r]=true;as_cpHackTaken[r]=FixedToInt(as_dmgTaken[q]);as_cpHackKills[r]=AS_SquadKills();AS_MissionHackStarted(r,q);AS_DirectorHackStarted();}
     as_cpAiHack[r]=MinF(1.0,as_cpAiHack[r]+AS_DT/IntToFixed(MaxI(1,as_cpTumblers[r]))*2.0*0.1);
-    if(as_cpAiHack[r]>=0.3 && !as_cpHacked[r]) {as_cpUser[r]=q;as_cpHacked[r]=true;as_cpLocked[r]=false;AS_MissionHackDone(r,q);as_cpUser[r]=0;}
+    if(as_cpAiHack[r]>=0.3 && !as_cpHacked[r]) {as_cpUser[r]=q;as_cpHacked[r]=true;as_cpLocked[r]=false;AS_MissionHackDone(r,q);as_cpUser[r]=0;AS_Log("terminal hacked by AI tech p"+IntToString(q));}
     if(as_cpAiHack[r]>=0.6 && as_cpHasData[r] && as_cpDone[r]<1.0) {as_cpDone[r]=1.0;AS_MissionDownloaded(r,q);as_aiHackTech=0;}
     if(as_cpAiHack[r]>=0.6) {as_aiHackTech=0;}
 }

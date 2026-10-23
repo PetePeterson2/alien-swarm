@@ -192,8 +192,60 @@ string[5] as_kFace;           // the marine strip and minimap appear with the fi
 string AS_Ui (string name) {return AS_UI+name+".dds";}
 color AS_Rgb (int r, int g, int b) {return Color(IntToFixed(r)/2.55,IntToFixed(g)/2.55,IntToFixed(b)/2.55);}
 color AS_Full () {return Color(100.0,100.0,100.0);}
+// ---- QA: what is on a player's screen, for the autopilot ---------------------------------------
+// In -Auto builds every label and image is listed as it is made (dialogs are destroyed through AS_DialogDestroy,
+// which drops theirs). AS_UiDump writes each visible one's dialog, place, size, style, image, tint and text to
+// the ASUi bank; tools/uishots.py draws that as a picture of the screen and checks it for overlaps and clipping.
+const int AS_UIREC = 16000;
+int[16000] as_uiRecC;
+int[16000] as_uiRecD;
+int as_uiRecN;
+const int AS_UISHOW = 16384;
+int[16384] as_uiShowC;
+bool[16384] as_uiShowOn;
+void AS_UiReg (int d, int c) {
+    int i;int n=0;
+    if(!as_auto) {return;}
+    if(as_uiRecN>=AS_UIREC) {
+        for(i=0;i<as_uiRecN;i+=1) {if(as_uiRecD[i]>=0) {as_uiRecC[n]=as_uiRecC[i];as_uiRecD[n]=as_uiRecD[i];n+=1;}}
+        as_uiRecN=n;
+        if(as_uiRecN>=AS_UIREC) {return;}
+    }
+    as_uiRecC[as_uiRecN]=c;as_uiRecD[as_uiRecN]=d;as_uiRecN+=1;
+}
+void AS_DialogDestroy (int d) {
+    int i;
+    for(i=0;i<as_uiRecN;i+=1) {if(as_uiRecD[i]==d) {as_uiRecD[i]= -1;}}
+    DialogDestroy(d);
+}
+string AS_UiColor (color k) {
+    return IntToString(FixedToInt(ColorGetComponent(k,0)*2.55))+","+IntToString(FixedToInt(ColorGetComponent(k,1)*2.55))+","+IntToString(FixedToInt(ColorGetComponent(k,2)*2.55));
+}
+void AS_UiDump (string shot, int p) {
+    bank b;int i;int c;int d;int t;int n=0;string k;string row;
+    if(!as_auto) {return;}
+    b=BankLoad("ASUi",1);
+    BankSectionRemove(b,shot);
+    for(i=0;i<as_uiRecN;i+=1) {
+        d=as_uiRecD[i];c=as_uiRecC[i];
+        if(d<0) {continue;}
+        t=DialogControlGetType(c);k=IntToString(n);n+=1;
+        row=IntToString(BoolToInt(DialogIsVisible(d,p)))+IntToString(BoolToInt(AS_UiShown(c)))+"|"+IntToString(d)+"|"+IntToString(DialogGetWidth(d))+"|"+IntToString(DialogGetHeight(d))+"|"+IntToString(DialogGetAnchor(d))+"|"+IntToString(DialogGetOffsetX(d))+"|"+IntToString(DialogGetOffsetY(d))+"|"+IntToString(DialogGetRenderPriority(d))
+            +"|"+IntToString(t)+"|"+IntToString(DialogControlGetAnchor(c,p))+"|"+IntToString(DialogControlGetOffsetX(c,p))+"|"+IntToString(DialogControlGetOffsetY(c,p))+"|"+IntToString(DialogControlGetWidth(c,p))+"|"+IntToString(DialogControlGetHeight(c,p));
+        if(t==c_triggerControlTypeLabel || t==c_triggerControlTypeButton) {
+            row=row+"|"+DialogControlGetPropertyAsString(c,c_triggerControlPropertyStyle,p)+"|";
+            BankValueSetFromText(b,shot,k+"t",DialogControlGetPropertyAsText(c,c_triggerControlPropertyText,p));
+        }
+        else {row=row+"|"+DialogControlGetPropertyAsString(c,c_triggerControlPropertyImage,p)+"|"+AS_UiColor(DialogControlGetPropertyAsColor(c,c_triggerControlPropertyColor,p));}
+        BankValueSetFromString(b,shot,k,row);
+    }
+    BankValueSetFromInt(b,shot,"n",n);
+    BankSave(b);
+    AS_Log("ui shot "+shot+": "+IntToString(n)+" controls ("+IntToString(as_uiRecN)+" listed)");
+}
 int AS_Label (int d, int p, int anchor, int x, int y, int w, int h, string style, string s) {
     int c=DialogControlCreate(d,c_triggerControlTypeLabel);
+    AS_UiReg(d,c);
     DialogControlSetSize(c,PlayerGroupAll(),w,h);
     DialogControlSetPosition(c,PlayerGroupAll(),anchor,x,y);
     DialogControlSetPropertyAsString(c,c_triggerControlPropertyStyle,PlayerGroupAll(),style);
@@ -202,6 +254,7 @@ int AS_Label (int d, int p, int anchor, int x, int y, int w, int h, string style
 }
 int AS_Image (int d, int anchor, int x, int y, int w, int h, string image, color tint) {
     int c=DialogControlCreate(d,c_triggerControlTypeImage);
+    AS_UiReg(d,c);
     DialogControlSetSize(c,PlayerGroupAll(),w,h);
     DialogControlSetPosition(c,PlayerGroupAll(),anchor,x,y);
     DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,PlayerGroupAll(),image);
@@ -215,7 +268,12 @@ int AS_Lbl (int d, int x, int y, int w, int h, string style, string s) {return A
 void AS_Text (int c, int p, string s) {
     DialogControlSetPropertyAsText(c,c_triggerControlPropertyText,AS_Me(p),StringToText(s));
 }
-void AS_Show (int c, int p, bool on) {DialogControlSetVisible(c,AS_Me(p),on);}
+void AS_Show (int c, int p, bool on) {
+    DialogControlSetVisible(c,AS_Me(p),on);
+    if(as_auto && p==1) {as_uiShowC[c%AS_UISHOW]=c;as_uiShowOn[c%AS_UISHOW]=on;}
+}
+// Player 1's control visibility as AS_Show last set it (QA; DialogControlIsVisible does not report it).
+bool AS_UiShown (int c) {return as_uiShowC[c%AS_UISHOW]!=c || as_uiShowOn[c%AS_UISHOW];}
 void AS_SetArt (int c, int p, string name) {DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,AS_Me(p),AS_Ui(name));}
 void AS_SetTint (int c, int p, color k) {DialogControlSetPropertyAsColor(c,c_triggerControlPropertyColor,AS_Me(p),k);}
 void AS_SetStyle (int c, int p, string style) {DialogControlSetPropertyAsString(c,c_triggerControlPropertyStyle,AS_Me(p),style);}
@@ -1008,7 +1066,8 @@ void AS_MissionHud (int p) {
 void AS_Debrief (int p, string next, bool won) {
     int q;int acc;text c0;string c1;string c2;string c3;string c4;int at;string lv;string unlocks;
     if(as_dDebrief[p]==0) {return;}
-    AS_Text(as_cDebPlace[p],p,as_levelTitle[as_level]+"  //  "+as_levelPlace[as_level]+"  //  "+AS_SkillName(as_skill));
+    if(as_auto) {AS_Log("debrief shown to p"+IntToString(p)+": "+as_levelTitle[as_level]+", won "+IntToString(BoolToInt(won))+", next "+next);}
+    AS_Text(as_cDebPlace[p],p,as_levelTitle[as_level]+"  //  "+AS_SkillName(as_skill));
     AS_Text(as_cDebTime[p],p,AS_Clock(as_missionEnd-as_missionStart));
     AS_SetArt(as_cDebMap[p],p,"map"+IntToString(as_level));
     if(won) {AS_Text(as_cDebResult[p],p,"MISSION COMPLETE");}else {AS_Text(as_cDebResult[p],p,"<c val=\"FF6050\">MISSION FAILED</c>");}

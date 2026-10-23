@@ -315,17 +315,21 @@ void AS_AwardXp (int p, bool won) {
     total=mission+kills+timeXp+ff+dmg+heal+hack+medals;
     if(as_skill==1) {scale=0.5;}else if(as_skill==3) {scale=1.2;}else if(as_skill==4) {scale=1.4;}else if(as_skill==5) {scale=1.5;}
     as_xpGained[p]=FixedToInt(IntToFixed(total)*scale);
-    s="Objectives Complete<n/>Kills<n/>Completion Time (Par "+AS_Clock(IntToFixed(par))+")<n/>Friendly Fire Done<n/>Damage Taken<n/>Damage Healed<n/>Fast Hacks<n/>Medals<n/>Difficulty Bonus";
+    s="Objectives Complete<n/>Kills<n/>Completion Time (Par "+AS_Clock(IntToFixed(par))+")<n/>Friendly Fire Done<n/>Damage Taken<n/>Damage Healed<n/>Fast Hacks<n/>Medals and Achievements<n/>Difficulty Bonus";
     as_xpLines[p]=s+"|"+IntToString(mission)+"<n/>"+IntToString(kills)+"<n/>"+IntToString(timeXp)+"<n/>"+IntToString(ff)+"<n/>"+IntToString(dmg)+"<n/>"+IntToString(heal)+"<n/>"+IntToString(hack)+"<n/>"+IntToString(medals)+"<n/>"+AS_SkillBonus();
     as_xp[p]=MinI(as_xp[p]+as_xpGained[p],AS_XpFor(p,27));
     AS_BankSet(p,"xp","xp",as_xp[p]);
     if(AS_PlayerLevel(p)>=27) {AS_Achieve(p,"armory");}
     AS_BankSave(p);
     AS_Log("xp p"+IntToString(p)+" +"+IntToString(as_xpGained[p])+" now "+IntToString(as_xp[p])+" level "+IntToString(AS_PlayerLevel(p)));
+    if(as_auto) {
+        AS_Log("debrief p"+IntToString(p)+": "+AS_ReplaceAll(AS_ReplaceAll(as_xpLines[p],"<n/>",", "),"|"," = "));
+        AS_Log("medals p"+IntToString(p)+": "+as_medalsWon[p]+"  rank: level "+IntToString(AS_PlayerLevel(p))+" "+AS_PromoName(as_promo[p])+", next level at "+IntToString(AS_XpFor(p,AS_PlayerLevel(p)+1)));
+    }
 }
 string AS_SkillBonus () {
     if(as_skill==1) {return "-50%";}if(as_skill==3) {return "+20%";}if(as_skill==4) {return "+40%";}if(as_skill==5) {return "+50%";}
-    return "";
+    return "+0%";
 }
 // The items a level-up opened, for the debrief: "New Weapon Unlocked!".
 string AS_NewUnlocks (int p) {

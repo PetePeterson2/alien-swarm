@@ -65,6 +65,7 @@ int[5][8] as_cRsFace;
 int[5][8] as_cRsTaken;
 int[5][8] as_cRsFrame;
 int[5] as_cRsName;
+int[5] as_cRsSub;                  // rank, full name and class under the name
 int[5] as_cRsBio;
 int[5][5] as_cRsSkill;
 int[5][5] as_cRsSkillBar;
@@ -90,6 +91,7 @@ int AS_BrButton (int p, int d, int x, int y, int w, int h, string art, string la
     if(art!="") {AS_Art(d,x,y,w,h,art,AS_Full());}
     libNtve_gf_CreateDialogItemButton(d,w,h,c_anchorTopLeft,x,y,StringToText(""),StringToText(label),"");
     c=DialogControlLastCreated();
+    AS_UiReg(d,c);
     DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,PlayerGroupAll(),AS_Ui("clear"));
     DialogControlSetPropertyAsString(c,c_triggerControlPropertyHoverImage,PlayerGroupAll(),AS_Ui("hover"));
     DialogControlSetPropertyAsString(c,c_triggerControlPropertyStyle,PlayerGroupAll(),style);
@@ -98,9 +100,11 @@ int AS_BrButton (int p, int d, int x, int y, int w, int h, string art, string la
     return c;
 }
 bool AS_BrIsHost (int p) {return p==as_brHost;}
+// A player at the briefing (the autopilot's player 1 counts: it drives the briefing as one).
+bool AS_BrHuman (int p) {return as_on[p] && (!as_bot[p] || (as_auto && p==1));}
 int AS_BrFirstHuman () {
     int p;
-    for(p=1;p<=AS_PLAYERS;p+=1) {if(as_on[p] && !as_bot[p]) {return p;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_BrHuman(p)) {return p;}}
     return 0;
 }
 
@@ -113,11 +117,11 @@ void AS_BriefingOpen (int mission) {
     if(as_brTrig==null) {as_brTrig=TriggerCreate("AS_BrClickT");}
     for(p=1;p<=AS_PLAYERS;p+=1) {
         as_brReady[p]=false;
-        if(as_on[p] && !as_bot[p] && as_prof[p]<0) {AS_BrAssign(p,AS_BrFreeProfile(-1));}
+        if(AS_BrHuman(p) && as_prof[p]<0) {AS_BrAssign(p,AS_BrFreeProfile(-1));}
     }
     if(AS_HumanCount()==1 && as_brHost>0) {AS_BrAutoFill();}
     for(p=1;p<=AS_PLAYERS;p+=1) {
-        if(!as_on[p] || as_bot[p]) {continue;}
+        if(!AS_BrHuman(p)) {continue;}
         AS_BrBuild(p);
         as_brView[p]=0;
     }
@@ -128,11 +132,11 @@ void AS_BriefingClose () {
     int p;
     as_briefOn=false;
     for(p=1;p<=AS_PLAYERS;p+=1) {
-        if(as_dBrief[p]!=0) {DialogDestroy(as_dBrief[p]);as_dBrief[p]=0;}
-        if(as_dBriefBg[p]!=0) {DialogDestroy(as_dBriefBg[p]);as_dBriefBg[p]=0;}
-        if(as_dBrRoster[p]!=0) {DialogDestroy(as_dBrRoster[p]);as_dBrRoster[p]=0;}
-        if(as_dBrItems[p]!=0) {DialogDestroy(as_dBrItems[p]);as_dBrItems[p]=0;}
-        if(as_dBrAch[p]!=0) {DialogDestroy(as_dBrAch[p]);as_dBrAch[p]=0;}
+        if(as_dBrief[p]!=0) {AS_DialogDestroy(as_dBrief[p]);as_dBrief[p]=0;}
+        if(as_dBriefBg[p]!=0) {AS_DialogDestroy(as_dBriefBg[p]);as_dBriefBg[p]=0;}
+        if(as_dBrRoster[p]!=0) {AS_DialogDestroy(as_dBrRoster[p]);as_dBrRoster[p]=0;}
+        if(as_dBrItems[p]!=0) {AS_DialogDestroy(as_dBrItems[p]);as_dBrItems[p]=0;}
+        if(as_dBrAch[p]!=0) {AS_DialogDestroy(as_dBrAch[p]);as_dBrAch[p]=0;}
         as_brCtlN[p]=0;
     }
 }
@@ -187,8 +191,8 @@ bool AS_BrCanEquip (int p, int it, int k) {
 // ---- building it -------------------------------------------------------------------------
 void AS_BrBuild (int p) {
     int d;int r;int k;int x;int y;int s;
-    if(as_dBrief[p]!=0) {DialogDestroy(as_dBrief[p]);}
-    if(as_dBriefBg[p]!=0) {DialogDestroy(as_dBriefBg[p]);}
+    if(as_dBrief[p]!=0) {AS_DialogDestroy(as_dBrief[p]);}
+    if(as_dBriefBg[p]!=0) {AS_DialogDestroy(as_dBriefBg[p]);}
     as_brCtlN[p]=0;
     d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);as_dBriefBg[p]=d;
     AS_Image(d,c_anchorCenter,0,0,3200,1200,AS_WHITE,AS_Rgb(12,20,30));
@@ -200,7 +204,7 @@ void AS_BrBuild (int p) {
     AS_BrButton(p,d,440,14,48,48,"buttonoff","<","ASBtn",1);
     as_cBrMission[p]=AS_Label(d,p,c_anchorTop,0,10,560,56,"ASHeadC","");
     AS_BrButton(p,d,1072,14,48,48,"buttonoff",">","ASBtn",2);
-    as_cBrPlace[p]=AS_Lbl(d,1130,8,420,60,"ASDebPlace","");
+    as_cBrPlace[p]=AS_Lbl(d,1130,8,420,60,"ASHeadR","");
     // The mission: map, objectives, description.
     AS_Art(d,10,90,520,520,"frame",AS_Full());
     as_cBrMap[p]=AS_Art(d,30,110,480,480,"map0",AS_Full());
@@ -295,7 +299,7 @@ bool AS_BrNeedsTech () {return as_briefMission==AS_LV_BAY;}
 string AS_BrWaiting () {
     int q;string s="";
     for(q=1;q<=AS_PLAYERS;q+=1) {
-        if(q==as_brHost || !as_on[q] || as_bot[q] || as_brReady[q]) {continue;}
+        if(q==as_brHost || !AS_BrHuman(q) || as_brReady[q]) {continue;}
         if(s!="") {s=s+", ";}
         s=s+AS_PlayerNameS(q);
     }
@@ -373,7 +377,7 @@ void AS_BrRosterOpen (int p, int row) {
     int d;int i;int x;int y;int k;
     as_brView[p]=1;as_brEditRow[p]=row;as_brPickProf[p]=as_prof[row];
     if(as_brPickProf[p]<0) {as_brPickProf[p]=AS_BrFreeProfile(-1);}
-    if(as_dBrRoster[p]!=0) {DialogDestroy(as_dBrRoster[p]);}
+    if(as_dBrRoster[p]!=0) {AS_DialogDestroy(as_dBrRoster[p]);}
     d=DialogCreate(1000,880,c_anchorCenter,270,-10,false);DialogSetImageVisible(d,false);as_dBrRoster[p]=d;
     AS_Art(d,0,0,1000,880,"frame",AS_Full());
     AS_Art(d,0,0,1000,56,"header",AS_Full());
@@ -389,8 +393,9 @@ void AS_BrRosterOpen (int p, int row) {
         AS_BrButton(p,d,x,y,224,238,"","","ASTab",70+i);
     }
     // The marine looked at: name, bio, skills.
-    as_cRsName[p]=AS_Lbl(d,24,578,600,40,"ASHead","");
-    as_cRsBio[p]=AS_Lbl(d,24,620,440,180,"ASBody","");
+    as_cRsName[p]=AS_Lbl(d,24,572,450,36,"ASHead","");
+    as_cRsSub[p]=AS_Lbl(d,24,608,450,26,"ASBody","");
+    as_cRsBio[p]=AS_Lbl(d,24,642,440,170,"ASBody","");
     for(k=0;k<5;k+=1) {
         as_cRsSkill[p][k]=AS_Lbl(d,490,584+k*42,280,34,"ASBody","");
         AS_Image(d,c_anchorTopLeft,770,594+k*42,150,14,AS_WHITE,AS_Rgb(40,46,54));
@@ -413,11 +418,14 @@ void AS_BrRosterShow (int p) {
     for(i=0;i<AS_PROFILES;i+=1) {
         q=AS_BrTakenBy(i,as_brEditRow[p]);
         if(i==pr) {AS_SetArt(as_cRsFrame[p][i],p,"buttonhi");}else {AS_SetArt(as_cRsFrame[p][i],p,"buttonoff");}
-        if(q>0) {AS_SetTint(as_cRsFace[p][i],p,AS_Rgb(90,90,90));AS_Text(as_cRsTaken[p][i],p,"<c val=\"FF8070\">TAKEN</c>");}
+        // Another player's marine is taken; one on an AI row can be picked, and the two rows trade marines.
+        if(q>0 && AS_BrMayEdit(p,q)) {AS_SetTint(as_cRsFace[p][i],p,AS_Full());AS_Text(as_cRsTaken[p][i],p,"<c val=\"8CC8F0\">AI SQUAD</c>");}
+        else if(q>0) {AS_SetTint(as_cRsFace[p][i],p,AS_Rgb(90,90,90));AS_Text(as_cRsTaken[p][i],p,"<c val=\"FF8070\">TAKEN</c>");}
         else {AS_SetTint(as_cRsFace[p][i],p,AS_Full());AS_Text(as_cRsTaken[p][i],p,"");}
     }
     if(pr<0) {return;}
-    AS_Text(as_cRsName[p],p,as_pfName[pr]+"  <c val=\"9AB0C0\">"+as_pfFull[pr]+"  -  "+as_clName[as_pfClass[pr]]+"</c>");
+    AS_Text(as_cRsName[p],p,as_pfName[pr]);
+    AS_Text(as_cRsSub[p],p,"<c val=\"9AB0C0\">"+as_pfFull[pr]+"  -  "+as_clName[as_pfClass[pr]]+"</c>");
     AS_Text(as_cRsBio[p],p,as_pfBio[pr]);
     for(k=0;k<5;k+=1) {
         sk=as_pfSlot[pr][k];
@@ -427,7 +435,7 @@ void AS_BrRosterShow (int p) {
     }
 }
 void AS_BrRosterClose (int p) {
-    if(as_dBrRoster[p]!=0) {DialogDestroy(as_dBrRoster[p]);as_dBrRoster[p]=0;}
+    if(as_dBrRoster[p]!=0) {AS_DialogDestroy(as_dBrRoster[p]);as_dBrRoster[p]=0;}
     as_brView[p]=0;AS_BrPrune(p);
 }
 // Buttons of a closed overlay are dropped from the click table.
@@ -445,7 +453,7 @@ void AS_BrPrune (int p) {
 void AS_BrItemsOpen (int p, int row, int slot) {
     int d;int i;int n=0;int it;int x;int y;int w;int h;int cols;
     as_brView[p]=2;as_brEditRow[p]=row;as_brEditSlot[p]=slot;as_brPickItem[p]=as_inv[row][slot];
-    if(as_dBrItems[p]!=0) {DialogDestroy(as_dBrItems[p]);}
+    if(as_dBrItems[p]!=0) {AS_DialogDestroy(as_dBrItems[p]);}
     d=DialogCreate(1000,880,c_anchorCenter,270,-10,false);DialogSetImageVisible(d,false);as_dBrItems[p]=d;
     AS_Art(d,0,0,1000,880,"frame",AS_Full());
     AS_Art(d,0,0,1000,56,"header",AS_Full());
@@ -529,7 +537,7 @@ void AS_BrItemsShow (int p) {
     if(AS_BrCanEquip(row,pick,slot)) {AS_SetArt(as_cItEquipImg[p],p,"button");}else {AS_SetArt(as_cItEquipImg[p],p,"buttonoff");}
 }
 void AS_BrItemsClose (int p) {
-    if(as_dBrItems[p]!=0) {DialogDestroy(as_dBrItems[p]);as_dBrItems[p]=0;}
+    if(as_dBrItems[p]!=0) {AS_DialogDestroy(as_dBrItems[p]);as_dBrItems[p]=0;}
     as_brView[p]=0;AS_BrPrune(p);
 }
 
@@ -537,7 +545,7 @@ void AS_BrItemsClose (int p) {
 void AS_BrAchOpen (int p) {
     int d;int i;int x;int y;bool got;int n=0;
     as_brView[p]=3;
-    if(as_dBrAch[p]!=0) {DialogDestroy(as_dBrAch[p]);}
+    if(as_dBrAch[p]!=0) {AS_DialogDestroy(as_dBrAch[p]);}
     d=DialogCreate(1500,1100,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);as_dBrAch[p]=d;
     AS_Art(d,0,0,1500,1100,"frame",AS_Full());
     AS_Art(d,0,0,1500,56,"header",AS_Full());
@@ -554,7 +562,7 @@ void AS_BrAchOpen (int p) {
     DialogSetVisible(d,AS_Me(p),true);
 }
 void AS_BrAchClose (int p) {
-    if(as_dBrAch[p]!=0) {DialogDestroy(as_dBrAch[p]);as_dBrAch[p]=0;}
+    if(as_dBrAch[p]!=0) {AS_DialogDestroy(as_dBrAch[p]);as_dBrAch[p]=0;}
     as_brView[p]=0;AS_BrPrune(p);
 }
 
@@ -604,8 +612,10 @@ void AS_BrAction (int p, int act) {
     }
     if(act>=70 && act<=77) {as_brPickProf[p]=act-70;AS_BrRosterShow(p);return;}
     if(act==80) {
-        r=as_brEditRow[p];i=as_brPickProf[p];
-        if(i<0 || AS_BrTakenBy(i,r)>0) {AS_SoundUI(p,"AC_UI_Error01");return;}
+        r=as_brEditRow[p];i=as_brPickProf[p];k=AS_BrTakenBy(i,r);
+        // A marine on a row this player may edit (an AI row) trades places with this row's marine.
+        if(i<0 || (k>0 && !AS_BrMayEdit(p,k))) {AS_SoundUI(p,"AC_UI_Error01");return;}
+        if(k>0) {AS_BrAssign(k,as_prof[r]);}
         AS_BrAssign(r,i);AS_BrRosterClose(p);
         if(AS_HumanCount()==1) {AS_BrAutoFill();}
         AS_BrUnready();AS_BrRefreshAll();return;
@@ -636,7 +646,7 @@ void AS_BrUnready () {
 void AS_BrStart (int p) {
     int q;
     if(AS_BrNeedsTech() && !AS_BrSquadHasTech()) {AS_AllMsg("<c val=\"FF6050\">This mission requires at least one Tech Marine.</c>");AS_SoundUI(p,"AC_UI_Error01");return;}
-    for(q=1;q<=AS_PLAYERS;q+=1) {if(as_on[q] && !as_bot[q]) {AS_BankSave(q);}}
+    for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_BrHuman(q)) {AS_BankSave(q);}}
     AS_Log("mission launched: "+as_levelTitle[as_briefMission]+" on "+AS_SkillName(as_skill));
     AS_BriefingClose();
     AS_LevelLaunch(as_briefMission);

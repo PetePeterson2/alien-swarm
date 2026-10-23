@@ -49,7 +49,7 @@ void AS_WireOpen (int p, int d) {
     if(rows!=2) {space=4*T;}
     W=T*(7+cols);H=space*wires+3*T;
     AS_HackTrigger();
-    if(as_dWire[p]!=0) {DialogDestroy(as_dWire[p]);as_dWire[p]=0;}
+    if(as_dWire[p]!=0) {AS_DialogDestroy(as_dWire[p]);as_dWire[p]=0;}
     dlg=DialogCreate(W+20,H+y0+10,c_anchorCenter,0,-60,false);DialogSetImageVisible(dlg,false);as_dWire[p]=dlg;as_wireDoor[p]=d;
     AS_Image(dlg,c_anchorTopLeft,0,0,W+20,H+y0+10,AS_WHITE,Color(0.0,0.0,0.0));
     DialogSetTransparency(dlg,0.0);
@@ -118,7 +118,7 @@ void AS_WireDone (int p) {
     as_wireDoneAt[p]=as_now;
 }
 void AS_WireClose (int p) {
-    if(as_dWire[p]!=0) {DialogDestroy(as_dWire[p]);as_dWire[p]=0;}
+    if(as_dWire[p]!=0) {AS_DialogDestroy(as_dWire[p]);as_dWire[p]=0;}
 }
 // A click on a tile of an unlit wire turns it a quarter turn clockwise.
 void AS_WireClick (int p, int c) {
@@ -164,7 +164,7 @@ void AS_CompOpen (int p, int i) {
     AS_SoundUI(p,"UI_BnetClick");
 }
 void AS_CompClose (int p) {
-    if(as_dComp[p]!=0) {DialogDestroy(as_dComp[p]);as_dComp[p]=0;}
+    if(as_dComp[p]!=0) {AS_DialogDestroy(as_dComp[p]);as_dComp[p]=0;}
 }
 // The columns of the override, each with its switch, and the status blocks.
 void AS_CompTumblers (int p, int i) {

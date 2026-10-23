@@ -38,6 +38,11 @@ int[5] as_deaths;
 bool[5] as_bot;                        // an AI marine (src/Bots.galaxy)
 bool as_auto = false;                  // autopilot QA run (build.py --auto rewrites this line)
 bool as_autoWipe = false;              // with it, Landing Bay's death rules first (build.py --wipe rewrites this line)
+int as_autoSkill = 2;                  // the difficulty the autopilot picks in the briefing (build.py --skill)
+bool as_autoOnslaught = false;         // and Onslaught (build.py --onslaught)
+int[5][3] as_invLaunch;                // each marine's loadout at launch: restored when the level ends (src/Campaign.galaxy)
+int[5] as_squadProf;                   // the marine in each briefing row at launch: F1-F4 go by these (src/Marine.galaxy)
+int as_autoProf = 3;                   // and the marine it plays, in profile order: 3 Crash (build.py --marine)
 fixed[5] as_botVX;                     // a bot's wanted walk, unit vector
 fixed[5] as_botVY;
 // AI marines and the QA log (src/Bots.galaxy): declared here, the mission reads them.

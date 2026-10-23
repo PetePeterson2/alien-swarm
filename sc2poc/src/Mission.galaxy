@@ -664,10 +664,11 @@ fixed as_techRestartAt;
 void AS_WipePulse () {
     if(as_stage==AS_ST_DONE || as_failed) {return;}
     if(as_failAt==0.0 && AS_Living()==0 && AS_Humans()>0) {as_failAt=as_now+0.6;as_failWhy="";AS_Log("squad wiped");}
+    // The last tech fell while the mission still needs one: AS restarts the mission in place, however far in
+    // (asw_marine.cpp ScheduleTechFailureRestart, asw_gamerules.cpp CheckTechFailure); a full wipe fails it instead.
     if(as_techRestartAt>0.0 && as_now>=as_techRestartAt) {
         as_techRestartAt=0.0;
-        if(as_now-as_missionStart<30.0) {AS_Log("no tech: restart");as_failed=true;as_stage=AS_ST_DONE;AS_MissionRestart();return;}
-        as_failAt=as_now;as_failWhy="No live Tech Marine";
+        if(AS_Living()>0) {AS_Log("no tech: restart");as_failed=true;as_stage=AS_ST_DONE;AS_MissionRestart();return;}
     }
     if(as_failAt>0.0 && as_now>=as_failAt) {
         as_failAt=0.0;as_failed=true;as_stage=AS_ST_DONE;as_missionEnd=as_now;

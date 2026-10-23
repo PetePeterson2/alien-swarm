@@ -230,6 +230,7 @@ SPAWNERS = [
     ('insane_ranger_spawn', 26.2, 130.5, 'AS_RANGER', 4, 1, 4.0, 1, 4, 4, 1, 1),
     ('insane_ranger_spawn', 43.5, 130.0, 'AS_BOOMER', 1, 1, 4.0, 0, 4, 4, 1, 0),
     ('insane_ranger_spawn', 43.5, 131.5, 'AS_RANGER', 1, 1, 4.0, 0, 4, 4, 1, 0),
+    ('insane_ranger_spawn', 44.3, 130.3, 'AS_RANGER', 1, 1, 4.0, 0, 4, 4, 1, 0),
     ('insane_har_spawn', 31.4, 64.5, 'AS_HARVESTER', 1, 1, 4.0, 0, 4, 4, 1, 0),
     ('insane_har_spawn', 22.0, 62.6, 'AS_HARVESTER', 1, 1, 4.0, 0, 4, 4, 1, 0),
     ('insane_har2_spawn', 16.4, 90.4, 'AS_HARVESTER', 1, 1, 4.0, 0, 4, 4, 1, 0),

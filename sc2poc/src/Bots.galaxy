@@ -188,6 +188,7 @@ bool AS_AutoGateDone () {return as_level!=AS_LV_BAY || as_bayStage>=1 || as_hack
 // At the gate: the autopilot's marine works the east panel itself when it is the tech (the briefing test
 // picks Crash), through the same tiles a player clicks; otherwise the squad's tech is sent.
 fixed as_autoClickAt;
+int as_autoWireClicks;
 point AS_AutoGate () {
     int d=AS_DoorNamed("gate_east");point pp;
     if(as_level!=AS_LV_BAY || d<0) {return null;}
@@ -201,7 +202,10 @@ point AS_AutoGate () {
         AS_UseStart(1,AS_USE_PANEL,d);
         return null;
     }
-    if(as_now>=as_autoClickAt) {as_autoClickAt=as_now+0.2;AS_AutoWireClick(d);}
+    if(as_now>=as_autoClickAt) {
+        as_autoClickAt=as_now+0.2;AS_AutoWireClick(d);
+        as_autoWireClicks+=1;if(as_autoWireClicks==3) {AS_UiDump("wire",1);}
+    }
     return null;
 }
 // One click toward a solution: the first tile of an unlit wire that is not yet turned the way the path needs.
@@ -263,8 +267,55 @@ void AS_AutoWipe () {
     if(as_autoWipeStep==0) {AS_Log("wipe test: the tech is down");}else {AS_Log("wipe test: the squad is down");}
     as_autoWipeStep+=1;
 }
+// Once, early in the first Landing Bay: every key and button a player has, through the functions the input
+// triggers call (src/Main.galaxy), with what each changed written to the log.
+bool as_autoInputDone;
+string AS_AutoHands (int p) {
+    string s=as_it[as_inv[p][0]].title+" / "+as_it[as_inv[p][1]].title+" in hand "+IntToString(as_hand[p]);
+    if(as_slot[p]>0) {s=s+" ("+as_it[as_slot[p]].title+" "+IntToString(as_mag[p][as_slot[p]])+"+"+IntToString(as_reserve[p][as_slot[p]])+")";}
+    return s;
+}
+bool AS_AutoInputT (bool testConds, bool runActions) {
+    int p=1;int before;
+    AS_Log("input test: start, "+AS_AutoHands(p));
+    AS_UiDump("hud",p);
+    AS_MouseDown(p,c_mouseButtonLeft);Wait(0.4,c_timeGame);AS_MouseUp(p,c_mouseButtonLeft);
+    AS_Log("input test: left mouse held 0.4 s, "+AS_AutoHands(p));
+    AS_KeyDown(p,c_keyR,false);AS_KeyUp(p,c_keyR);
+    AS_Log("input test: R, reloading "+IntToString(BoolToInt(as_reloadEnd[p]>0.0)));
+    Wait(3.0,c_timeGame);
+    AS_Log("input test: after reload, "+AS_AutoHands(p));
+    AS_KeyDown(p,c_keyQ,false);AS_KeyUp(p,c_keyQ);AS_Log("input test: Q, "+AS_AutoHands(p));
+    Wait(0.3,c_timeGame);
+    AS_Wheel(p);AS_Log("input test: wheel, "+AS_AutoHands(p));
+    before=as_mag[p][as_slot[p]];
+    AS_MouseDown(p,c_mouseButtonRight);AS_MouseUp(p,c_mouseButtonRight);AS_Log("input test: right mouse (melee)");
+    Wait(0.6,c_timeGame);
+    AS_MouseDown(p,c_mouseButtonMiddle);AS_MouseUp(p,c_mouseButtonMiddle);
+    AS_KeyDown(p,c_keyF,false);AS_KeyUp(p,c_keyF);AS_Log("input test: middle mouse and F (alt fire), "+AS_AutoHands(p));
+    Wait(0.6,c_timeGame);
+    AS_KeyDown(p,c_keySpace,false);AS_KeyUp(p,c_keySpace);AS_Log("input test: space (roll)");
+    Wait(1.0,c_timeGame);
+    AS_KeyDown(p,c_keyG,false);AS_KeyUp(p,c_keyG);AS_Log("input test: G (drop), "+AS_AutoHands(p));
+    Wait(0.3,c_timeGame);
+    AS_KeyDown(p,c_keyE,false);AS_KeyUp(p,c_keyE);AS_Log("input test: E (pick up), "+AS_AutoHands(p));
+    AS_KeyDown(p,c_key1,false);Wait(0.3,c_timeGame);AS_KeyUp(p,c_key1);AS_Log("input test: 1 held (offhand: "+as_it[as_inv[p][2]].title+")");
+    AS_KeyDown(p,c_keyTab,false);Wait(0.5,c_timeGame);AS_UiDump("fullmap",p);AS_KeyDown(p,c_keyTab,false);AS_Log("input test: Tab twice (map)");
+    AS_KeyDown(p,c_keyH,false);Wait(0.5,c_timeGame);AS_UiDump("help",p);AS_KeyDown(p,c_keyH,false);AS_Log("input test: H twice (help)");
+    AS_KeyDown(p,c_keyC,false);Wait(0.5,c_timeGame);AS_KeyDown(p,c_keyC,false);AS_Log("input test: C twice (camera)");
+    AS_KeyDown(p,c_keyN,false);AS_KeyDown(p,c_keyN,false);
+    AS_KeyDown(p,c_keyX,false);AS_Log("input test: X, bot 2 order "+IntToString(as_botOrder[2]));
+    AS_KeyDown(p,c_keyV,false);AS_Log("input test: V, bot 2 order "+IntToString(as_botOrder[2]));
+    AS_KeyDown(p,c_keyW,false);Wait(0.25,c_timeGame);AS_KeyUp(p,c_keyW);
+    AS_KeyDown(p,c_keyF2,false);AS_Log("input test: F2, now "+AS_MarineNameS(p));
+    Wait(0.5,c_timeGame);
+    AS_KeyDown(p,c_keyF1,false);AS_Log("input test: F1, now "+AS_MarineNameS(p));
+    AS_Log("input test: done, "+AS_AutoHands(p));
+    return true;
+}
 // Early in Landing Bay the autopilot opens a PDA's mail for two seconds: the terminal's mail page.
 int as_autoMailStep;
+bool as_autoShotMail;
 fixed as_autoMailRun;
 fixed as_autoMailAt;
 void AS_AutoMail () {
@@ -277,10 +328,12 @@ void AS_AutoMail () {
         }
         as_autoMailStep=2;
     }
+    if(as_autoMailStep==1 && !as_autoShotMail && as_now>as_autoMailAt+1.0) {as_autoShotMail=true;AS_UiDump("mail",1);}
     if(as_autoMailStep==1 && as_now>as_autoMailAt+2.0) {
         if(as_using[1]>=0) {AS_UseStop(1);}
         as_autoMailStep=2;AS_Log("ui test: mail closed");
     }
+    if(!as_autoInputDone && as_level==AS_LV_BAY && as_autoMailStep==2) {as_autoInputDone=true;TriggerExecute(TriggerCreate("AS_AutoInputT"),false,false);}
 }
 bool AS_AutoTankDone () {
     int d=AS_DoorNamed("tank_s");
@@ -310,14 +363,18 @@ bool AS_AutoDataDone () {
     if(as_level!=AS_LV_BAY) {return true;}
     return as_objState[1]==2 && (d<0 || as_drBroken[d]);
 }
+bool as_autoShotTumb;
+bool as_autoShotDl;
 // The terminal: the autopilot's tech hacks it and downloads the data at the screen; otherwise the squad's tech is sent.
 point AS_AutoData () {
     int i=as_bayComputer;point pp;
     if(as_cpN<=0) {return null;}
-    if(!AS_IsTech(1)) {
-        if(as_aiHackTech==0 && as_cpDone[i]<1.0) {AS_OrderTechHack(1,AS_USE_TERMINAL,i);}
+    // Not a tech: the squad's tech hacks it; once it is hacked anyone may download (at half speed).
+    if(!AS_IsTech(1) && !as_cpHacked[i]) {
+        if(as_aiHackTech==0) {AS_OrderTechHack(1,AS_USE_TERMINAL,i);}
         return null;
     }
+    if(as_aiHackTech>0 && as_cpHacked[i]) {return null;}
     if(as_cpDone[i]>=1.0) {return null;}
     pp=Point(as_tmX[i],as_tmY[i]);
     if(as_using[1]!=i) {
@@ -325,7 +382,11 @@ point AS_AutoData () {
         AS_UseStart(1,AS_USE_TERMINAL,i);
         return null;
     }
-    if(!as_cpHacked[i]) {AS_AutoTumblers(i);}
+    if(!as_cpHacked[i]) {
+        if(!as_autoShotTumb) {as_autoShotTumb=true;AS_UiDump("tumblers",1);}
+        AS_AutoTumblers(i);
+    }
+    else if(!as_autoShotDl && as_cpDone[i]>0.4) {as_autoShotDl=true;AS_UiDump("download",1);}
     return null;
 }
 // The autopilot's marine 1 is driven by the script; AI marines are added in the briefing (src/Briefing.galaxy).

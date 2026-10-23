@@ -1218,8 +1218,10 @@ void AS_PickUp (int p, int i) {
     if(!AS_CanCarry(p,it)) {AS_Message(p,"<c val=\"FF6050\">"+AS_ClassOnly(it)+"</c>");return;}
     mag=as_dropMag[i];res=as_dropReserve[i];alt=as_dropAlt[i];
     UnitRemove(as_drop[i]);as_drop[i]=null;
+    // An empty weapon slot takes it; with both full it replaces the one in hand.
     if(AS_IsExtra(it)) {k=2;}
-    else if(as_inv[p][1]<=0) {k=1;}
+    else if(as_inv[p][as_hand[p]]<=0) {k=as_hand[p];}
+    else if(as_inv[p][1-as_hand[p]]<=0) {k=1-as_hand[p];}
     else {k=as_hand[p];}
     old=as_inv[p][k];
     if(old>0) {

@@ -88,6 +88,7 @@ void AS_LevelLaunch (int n) {
     int p;int squad=0;
     for(p=1;p<=AS_PLAYERS;p+=1) {if(as_on[p] && as_prof[p]<0) {as_on[p]=false;as_bot[p]=false;}}
     for(p=1;p<=AS_PLAYERS;p+=1) {if(as_on[p]) {squad+=1;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_invLaunch[p][0]=as_inv[p][0];as_invLaunch[p][1]=as_inv[p][1];as_invLaunch[p][2]=as_inv[p][2];}
     AS_DifficultySet(as_skill,squad);
     as_botCount=0;
     for(p=1;p<=AS_PLAYERS;p+=1) {if(as_on[p] && as_bot[p] && !(as_auto && p==1)) {as_botCount+=1;}}
@@ -97,6 +98,7 @@ void AS_LevelLaunch (int n) {
 void AS_LevelBegin (int n) {
     int p;
     as_level=n;as_debriefOn=false;
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_squadProf[p]= -1;if(AS_Person(p)) {as_squadProf[p]=as_prof[p];}}
     AS_MissionStatsReset();
     // Its tables, lamps, crates, eggs and biomass; the kit starts building the deck.
     AS_LevelLoad(n);AS_MissionData();
@@ -131,24 +133,36 @@ void AS_LevelEnd () {
     for(p=1;p<=AS_PLAYERS;p+=1) {
         as_god[p]=as_auto && p==1;as_infestUntil[p]=0.0;as_trigger[p]=false;as_trigger2[p]=false;as_spectate[p]=0;
         if(as_m[p]!=null) {libNtve_gf_ShowHideUnit(as_m[p],false);as_alive[p]=false;AS_TorchShow(p);}
+        // Guns found or dropped in the mission stay in it: the loadout picked at the briefing comes back.
+        if(as_invLaunch[p][0]+as_invLaunch[p][1]+as_invLaunch[p][2]>0) {as_inv[p][0]=as_invLaunch[p][0];as_inv[p][1]=as_invLaunch[p][1];as_inv[p][2]=as_invLaunch[p][2];}
     }
     AS_Log("level "+IntToString(as_level)+" cleared, units left "+IntToString(UnitGroupCount(UnitGroup(null,c_playerAny,RegionEntireMap(),null,0),c_unitCountAll)));
 }
 // A mission is won: medals and XP, the banks, the debrief; then the next mission's briefing.
+// The mission is over: hints, the commander's subtitle and any lines still queued leave the screen to the debrief.
+void AS_ScreenQuiet () {
+    int p;
+    AS_HintsHideAll();
+    as_lineN=0;as_lineUntil=0.0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_HudSubtitle(p,"");}}
+}
 void AS_MissionWon () {
     int p;string next;
+    AS_ScreenQuiet();
     as_lastWon=true;as_failStreak=0;
     AS_MissionAwards(true);
     AS_BankWin(as_level);
     if(as_level+1<AS_LEVELS) {next="Next: <c val=\"FFBA40\">"+as_levelTitle[as_level+1]+"</c>";}
     else {next="<c val=\"FFBA40\">CAMPAIGN COMPLETE</c>  -  every mission so far is done.";}
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p,next,true);}}
+    AS_UiDump("debrief_"+IntToString(as_level),1);
     as_debriefOn=true;as_continueGo=false;
     TriggerExecute(TriggerCreate("AS_NextT"),false,false);
 }
 // A mission is lost: MISSION FAILED and a line of advice, then the debrief with RESTART.
 void AS_MissionLost (string why) {
     int p;string advice=AS_FailAdvice(why);
+    AS_ScreenQuiet();
     as_lastWon=false;as_failStreak+=1;as_failWhy=advice;
     AS_MissionAwards(false);
     AS_AllSound("Alert_Defeat");
@@ -159,6 +173,7 @@ bool AS_FailT (bool testConds, bool runActions) {
     int p;
     Wait(6.0,c_timeGame);
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p,"<c val=\"FF6050\">"+as_failWhy+"</c>",false);}}
+    AS_UiDump("failed_"+IntToString(as_level),1);
     as_debriefOn=true;as_continueGo=false;
     if(as_failStreak>=4 && as_skill>1) {AS_AllMsg("Your squad may be better suited to an easier difficulty: the host can lower it in the briefing.");}
     TriggerExecute(TriggerCreate("AS_NextT"),false,false);
@@ -207,13 +222,12 @@ bool AS_NextT (bool testConds, bool runActions) {
 void AS_MissionRestart () {
     TriggerExecute(TriggerCreate("AS_RestartT"),false,false);
 }
+// AS's in-game restart (no live tech): the same squad and loadouts start the mission over, no briefing between.
 bool AS_RestartT (bool testConds, bool runActions) {
     Wait(0.5,c_timeGame);
     AS_LevelEnd();
     Wait(0.5,c_timeGame);
-    if(as_auto) {AS_LevelLaunch(as_level);return true;}
-    AS_HudAllHide();
-    AS_BriefingOpen(as_level);
+    AS_LevelLaunch(as_level);
     return true;
 }
 // The host's CONTINUE / RESTART on the debrief (src/HUD.galaxy).
@@ -244,9 +258,10 @@ void AS_CampaignInit () {
 // ---- the autopilot's pass through the briefing ------------------------------------------------
 // Every control a host uses, through the same actions their clicks run (AS_BrAction): the mission arrows,
 // each difficulty, Onslaught, the roster and each bio, the item list and each item's page, an equip, the
-// achievements. Player 1 takes the squad's tech (Crash, else Vegas) so the hacks are done at the screens.
+// achievements. Player 1 takes the marine build.py --marine names (Crash by default, so the hacks are done at the screens).
 bool AS_AutoBriefT (bool testConds, bool runActions) {
-    int p=1;int k;int orig;
+    int p=1;int k;int orig;int xp;
+    AS_HintsReset(p);
     AS_BriefingOpen(as_open-1);
     // The briefing makes the first human the host; the autopilot's player counts as a bot there.
     as_brHost=1;
@@ -255,22 +270,31 @@ bool AS_AutoBriefT (bool testConds, bool runActions) {
     AS_BrAction(p,2);AS_BrAction(p,1);
     for(k=0;k<AS_LEVELS && as_briefMission!=AS_LV_BAY;k+=1) {AS_BrAction(p,1);}
     for(k=11;k<=15;k+=1) {AS_BrAction(p,k);Wait(0.25,c_timeGame);}
-    AS_BrAction(p,12);AS_BrAction(p,20);AS_BrAction(p,20);
+    AS_BrAction(p,10+as_autoSkill);AS_BrAction(p,20);AS_BrAction(p,20);
+    if(as_autoOnslaught) {AS_BrAction(p,20);}
     AS_Log("ui test: "+as_levelTitle[as_briefMission]+" on "+AS_SkillName(as_skill)+", onslaught "+IntToString(BoolToInt(as_onslaught)));
     AS_BrAction(p,31);
     for(k=70;k<=77;k+=1) {AS_BrAction(p,k);Wait(0.25,c_timeGame);}
-    AS_BrAction(p,73);AS_BrAction(p,80);
-    if(!AS_IsTech(p)) {AS_BrAction(p,31);AS_BrAction(p,77);AS_BrAction(p,80);}
+    AS_BrAction(p,70+as_autoProf);AS_UiDump("roster",p);AS_BrAction(p,80);
     AS_BrAutoFill();AS_BrRefreshAll();
     AS_Log("ui test: p1 is "+AS_MarineNameS(p)+", squad "+IntToString(AS_SquadCount())+", tech "+IntToString(BoolToInt(AS_BrSquadHasTech())));
     Wait(0.5,c_timeGame);
+    AS_UiDump("briefing",p);
     for(k=0;k<3;k+=1) {
         orig=as_inv[p][k];
         AS_BrAction(p,43+k);Wait(0.25,c_timeGame);
+        if(k==0) {AS_BrAction(p,100);AS_UiDump("items",p);}
+        if(k==2) {AS_BrAction(p,100);AS_UiDump("items_offhand",p);}
         AS_AutoBriefItems(p,orig);
     }
     AS_Log("ui test: loadout "+as_it[as_inv[p][0]].title+" / "+as_it[as_inv[p][1]].title+" / "+as_it[as_inv[p][2]].title);
-    AS_BrAction(p,152);Wait(1.0,c_timeGame);AS_BrAction(p,154);
+    AS_BrAction(p,152);Wait(1.0,c_timeGame);AS_UiDump("achievements",p);AS_BrAction(p,154);
+    // Promotion from level 27 (PROMOTE on the achievements page), then the real rank back.
+    xp=as_xp[p];as_xp[p]=AS_XpFor(p,27);
+    AS_Log("ui test: rank level "+IntToString(AS_PlayerLevel(p))+", can promote "+IntToString(BoolToInt(AS_CanPromote(p))));
+    AS_BrAction(p,153);
+    AS_Log("ui test: promoted to "+AS_PromoName(as_promo[p])+", level "+IntToString(AS_PlayerLevel(p))+", level 2 now needs "+IntToString(AS_XpFor(p,2))+" xp");
+    as_promo[p]=MaxI(0,as_promo[p]-1);as_xp[p]=xp;AS_BankSet(p,"xp","xp",xp);AS_BankSet(p,"xp","promo",as_promo[p]);AS_BankSave(p);AS_BrRefreshAll();
     AS_Log("ui test: achievements "+IntToString(AS_AchievedCount(p))+" of "+IntToString(as_achN));
     Wait(0.5,c_timeGame);
     AS_BrAction(p,150);
