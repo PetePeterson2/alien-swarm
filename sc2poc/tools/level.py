@@ -502,6 +502,11 @@ def paint_spots():
     for x, y, kind, flick in LIGHTS:
         if flick == 0 and kind in ('white', 'whitebig', 'yellow', 'cold'):
             spots.append(('KVCold' if kind == 'cold' else 'KVWarm', x, y, 0.0))
+    # A painted arrow down the middle of each corridor, along its length.
+    for name, (x0, y0, x1, y1), kind in AREAS:
+        if kind == 'hall' and max(x1 - x0, y1 - y0) >= 8:
+            cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            spots.append(('KNArrow', cx, cy, 270.0 if x1 - x0 >= y1 - y0 else 0.0))
     # Yellow guide lines round the bays and cargo rooms, a unit and a half in from the walls.
     floor, room = carve()
     solid = blocked(floor)
@@ -525,7 +530,7 @@ def paint_pieces(slugs):
     layer that tints the deck and an added one that brightens it (tools/deckart.py paint_textures)."""
     from tools.shipkit import ShipModel, UNLIT, MULTIPLY, ADD
     out = {}
-    for slug, tex, a, b in [(s_, 'paint_' + s_.lower(), 3.0, 0.75) for s_ in slugs] + [('Pad', 'paint_pad', 2.0, 2.0), ('Line', 'paint_line', 1.0, 0.12)]:
+    for slug, tex, a, b in [(s_, 'paint_' + s_.lower(), 3.0, 0.75) for s_ in slugs] + [('Pad', 'paint_pad', 2.0, 2.0), ('Line', 'paint_line', 1.0, 0.12), ('Arrow', 'paint_arrow', 0.6, 0.6)]:
         m = out['KN' + slug] = ShipModel('KN' + slug, (0, 0, 0))
         for layer, blend, z in (('_m', MULTIPLY, 0.012), ('_a', ADD, 0.014)):
             m.quad((tex + layer, False, UNLIT, blend), (-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
@@ -652,7 +657,7 @@ def decal_spots(floor, room, solid, seed=7):
             piece = rng.choice(['KPBarrels', 'KPBarrels', 'KPCrateStack', 'KPBarrel', 'KPCrateM'])
             spots.append((piece, x + 0.5 + ox, y + 0.5 + oy, rng.choice([0.0, 90.0, 180.0, 270.0]) + rng.uniform(-12, 12)))
     # Loose cables across the deck in the working rooms.
-    for x, y in rng.sample(open_cells, len(open_cells) // 120):
+    for x, y in rng.sample(open_cells, len(open_cells) // 240):
         if kind(x, y) in ('bay', 'cargo', 'reactor', 'lab', 'mess', 'hall'):
             spots.append((rng.choice(['KDCable1', 'KDCable2']), x + 0.5, y + 0.5, rng.uniform(0, 360)))
     # A warning sign in a few of the big rooms, clear of the walls.

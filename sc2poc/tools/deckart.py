@@ -429,7 +429,7 @@ def paint_line(w=256, h=32, color=(226, 182, 40)):
 
 def paint_textures(names):
     """name -> image: each room's stencilled name, the landing pad and the guide line, as _m (multiplied) and _a (added) layers."""
-    src = {'paint_pad': paint_pad(), 'paint_line': paint_line()}
+    src = {'paint_pad': paint_pad(), 'paint_line': paint_line(), 'paint_arrow': decal_arrow()}
     for slug, text in names.items():
         src['paint_' + slug.lower()] = decal_text(text, 512, 128)
     out = {}
