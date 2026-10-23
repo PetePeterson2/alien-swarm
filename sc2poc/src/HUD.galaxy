@@ -236,7 +236,11 @@ void AS_HudCreate (int p) {
     int d;int k;int i;int x;int y;int ix;
     color blue=AS_HUD_INACTIVE();
     AS_HudMaps();
-    // Damage vignette, underneath everything.
+    // A soft dark frame round the view, as Alien Swarm's screen has; under everything.
+    d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);
+    AS_Image(d,c_anchorCenter,0,0,2400,1200,AS_VIGNETTE,Color(0.0,0.0,0.0));
+    DialogSetTransparency(d,50.0);DialogSetVisible(d,AS_Me(p),true);
+    // Damage vignette, underneath everything else.
     d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);
     AS_Image(d,c_anchorCenter,0,0,2400,1200,AS_VIGNETTE,Color(100.0,8.0,4.0));
     DialogSetTransparency(d,100.0);DialogSetVisible(d,AS_Me(p),true);as_dHurt[p]=d;

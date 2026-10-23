@@ -250,4 +250,9 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **Hull tops** darker again, so the deck stands out as in AS; two more lamps in Cargo Elevator's freight junction.
 - **Viewports** onto space (the window bay, now with stars) in the docking bay's and cargo hold's north walls (`level.py VIEWPORTS`, look only; the gallery's `WINDOWS` still give way in mission 2).
 - **Sputtering lamps spit sparks** now and then as they catch (`AS_LampSparks`).
+- **Warm lamps** in both bays (yellow large lights, with light shafts), for AS's amber hangar look; cold light stays in the labs and reactor.
+- **Corridors**: dashed cyan running lights along the walls (KDRun, added), brighter tread plate, and a steady lamp wherever a stretch had none within five units (`level.py corridor_lamps`; lamp cap 96).
+- **Soft contact shadows** under crates, barrels, lockers, consoles and the ammo case.
+- **A soft dark vignette** frames the view (the HUD's vignette art in black at half opacity, under every other dialog).
+- **Ceilings** (third-person view) in the pale panel style with vents.
 
