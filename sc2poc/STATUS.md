@@ -241,7 +241,7 @@ Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo 
 - **Bulkhead frames** (`propart.py` KPDoor1-12) at every corridor-to-room doorway: chevron lintel, posts with a green status light.
 - **Backlit passage signs** ("← SOUTH PASSAGE", after AS's reactorcontrolwitharrow) beside doors on the walls the camera faces.
 - **Loose cables** across working rooms (multiplied decals, thick rubber with a duller core).
-- **Lockers** along crew rooms' walls and **glowing consoles** in labs, offices, bays and the reactor.
+- **Lockers** along crew rooms' walls and **glowing consoles** in labs, offices, bays, cargo rooms and the reactor.
 - **The ammo crate** is AS's ammo case (olive-grey, AMMO stencil, glowing green lid strip) instead of SC2's plasma-rounds pickup.
 - **The reactor** has a glowing cyan core drum on its housing (KPReactor, in the deck's PROPS; `build.py` lays any `KP*` prop as a kit piece).
 - **Light shafts** under the steady white and cold lamps: eight added quads per lamp, after asw_vol_light.
