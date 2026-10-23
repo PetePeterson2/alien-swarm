@@ -200,6 +200,12 @@ def tex_window(seed=301, size=(512, 640)):
             spot = np.clip(1 - np.hypot(xx - gx, yy - (y1 - y0) * 0.7) / 26, 0, 1) ** 2
             glass += spot[..., None] * np.array((60, 120, 90))
             emis[y0:y1, 20:w - 20] += spot[..., None] * np.array((30, 80, 60))
+    # Distant stars beyond the glass.
+    r = np.random.default_rng(seed)
+    for _ in range(70):
+        sy, sx = int(r.integers(2, y1 - y0 - 2)), int(r.integers(2, w - 42))
+        b = r.uniform(0.3, 1.0) * np.array((200, 210, 230))
+        glass[sy:sy + 3, sx:sx + 3] += b; emis[y0 + sy:y0 + sy + 3, 20 + sx:20 + sx + 3] += b * 0.8
     a[y0:y1, 20:w - 20] = glass
     return _img(a), _img(emis)
 

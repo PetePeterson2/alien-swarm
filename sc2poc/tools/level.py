@@ -145,6 +145,8 @@ LEVEL = 'deck'
 VOID = None
 LIFT = None
 WINDOWS = []
+# Hull cells whose faces show the window panel for the look alone (WINDOWS are the gallery's, which give way).
+VIEWPORTS = [(10, 22), (11, 22), (24, 22), (25, 22), (76, 30), (77, 30), (84, 30), (85, 30)]
 
 
 _DECK = None
@@ -632,7 +634,7 @@ def deck_rows(floor, room):
             return str(KIT_KINDS.index(kind_at(room, x, y)))
         if in_void(x, y):
             return 'v'
-        return 'w' if (x, y) in WINDOWS else '#'
+        return 'w' if (x, y) in WINDOWS or (x, y) in VIEWPORTS else '#'
     return [''.join(cell(x, y) for x in range(W)) for y in range(H)]
 
 

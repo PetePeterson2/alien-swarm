@@ -53,6 +53,7 @@ BLOCKS = [
     (104, 36, 108, 38), (114, 36, 118, 38),                      # transit station: platform barriers
 ]
 
+VIEWPORTS = []                 # decorative windows (tools/level.py); the gallery's WINDOWS are its own
 SPAWN = (18.0, 9.0)
 SPAWN_FACING = 90.0
 

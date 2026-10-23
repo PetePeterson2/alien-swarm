@@ -236,3 +236,16 @@ Found in the client:
 Kit totals for Distress Beacon: 444 walls, 467 floor pieces, 333 decals and props, 2,711 actors, built in 2.6 s; pathing unchanged (0 leaks). Map: 6.3 MB. The hull terrain is all dark plates now (the plating covers every deck cell), and the derelict ambient was lowered so the lamp pools stand out.
 
 Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo Elevator 225.6 s, CAMPAIGN COMPLETE), with no script errors. Screenshots: `dist/screens/overhaul-*.jpg`, with `overhaul-compare.jpg` setting two Alien Swarm shots beside the before and after. Texture previews: `dist/deck-art.png`, `dist/wall-art.png`.
+
+**Second pass (same day).** More of Alien Swarm's dressing, each checked in the client:
+- **Bulkhead frames** (`propart.py` KPDoor1-12) at every corridor-to-room doorway: chevron lintel, posts with a green status light.
+- **Backlit passage signs** ("← SOUTH PASSAGE", after AS's reactorcontrolwitharrow) beside doors on the walls the camera faces.
+- **Loose cables** across working rooms (multiplied decals, thick rubber with a duller core).
+- **Lockers** along crew rooms' walls and **glowing consoles** in labs, offices, bays and the reactor.
+- **The ammo crate** is AS's ammo case (olive-grey, AMMO stencil, glowing green lid strip) instead of SC2's plasma-rounds pickup.
+- **The reactor** has a glowing cyan core drum on its housing (KPReactor, in the deck's PROPS; `build.py` lays any `KP*` prop as a kit piece).
+- **Light shafts** under the steady white and cold lamps: eight added quads per lamp, after asw_vol_light.
+- **Lab floors** carry a faint cyan glow in their seams (first try was far too bright: a Tron grid).
+- **Team colours**: the squad wears the HUD's blue, red, green and yellow; the swarm is orange-brown (`PlayerSetColorIndex` in `AS_Init`), nearer AS's drones.
+- **Hull tops** darker again, so the deck stands out as in AS; two more lamps in Cargo Elevator's freight junction.
+
