@@ -147,7 +147,49 @@ def tex_ammo(seed=48, top=False):
     return _img(a), (_img(emis) if top else None)
 
 
+def tex_locker(seed=49):
+    """swarm_lockerskin: a pair of tall grey-blue locker doors with vents, handles and name strips (row 0 the top)."""
+    w, h = 256, 512
+    a = np.array((104, 118, 132), float)[None, None] * (0.85 + 0.25 * _noise(0, 24, seed, 3, (h, w))[..., None])
+    a[:, w // 2 - 3:w // 2 + 3] *= 0.4
+    a[:, :6] *= 1.3; a[:, -6:] *= 0.5; a[:8] *= 1.3; a[-30:] *= 0.45
+    for x0 in (20, w // 2 + 20):
+        for y in range(40, 130, 12):
+            a[y:y + 5, x0:x0 + 88] *= 0.35
+        a[160:176, x0 + 20:x0 + 68] = (220, 220, 210)
+        a[250:300, x0 + 76:x0 + 84] = (60, 62, 64)
+    a *= (1 - 0.3 * np.clip(_noise(0, 30, seed + 3, 3, (h, w)) - 0.55, 0, 1) * 3)[..., None]
+    return _img(a)
+
+
+def tex_console(seed=50, top=False):
+    """A wall console: dark casing, a keyboard deck and a glowing green-blue screen (emissive)."""
+    a = np.array((58, 62, 66), float)[None, None] * (0.85 + 0.25 * _noise(0, 24, seed, 3, (T, T))[..., None])
+    _edges(a, 8)
+    emis = np.zeros((T, T, 3))
+    if top:
+        a[40:T - 40, 24:T - 24] = (24, 28, 30)
+        for y in range(52, T - 52, 18):
+            for x in range(36, T - 36, 22):
+                a[y:y + 10, x:x + 14] = (80, 86, 90)
+        for k, c in enumerate([(255, 60, 40), (60, 255, 90), (255, 200, 40), (60, 160, 255)]):
+            a[20:30, 30 + k * 24:44 + k * 24] = c; emis[20:30, 30 + k * 24:44 + k * 24] = c
+    else:
+        scr = np.zeros((150, T - 40, 3))
+        lines = (np.arange(150) % 6 < 3)[:, None]
+        scr[..., 1] = 70 + 50 * lines; scr[..., 2] = 90 + 40 * lines; scr[..., 0] = 15
+        r = np.random.default_rng(seed)
+        for _ in range(8):
+            gy = r.integers(6, 140); gl = r.integers(20, 150)
+            scr[gy:gy + 5, 10:10 + gl] = (120, 255, 200)
+        a[30:180, 20:T - 20] = scr * 0.8; emis[30:180, 20:T - 20] = scr
+    return _img(a), _img(emis)
+
+
 TEXTURES = {
+    'prop_locker': lambda: (tex_locker(), None),
+    'prop_console': lambda: tex_console(),
+    'prop_console_top': lambda: tex_console(top=True),
     'prop_ammo': lambda: tex_ammo(),
     'prop_ammo_top': lambda: tex_ammo(top=True),
     'prop_doorframe': lambda: (tex_doorframe(), None),
@@ -220,14 +262,26 @@ def _door(m, width, hgt=2.5, lintel=0.38, post=0.3, depth=0.45):
            [(0, 0), (u, 0), (u, 1), (0, 1)])
 
 
+def _wallbox(m, side, top, w, d, hgt, front_uv=((0, 1), (1, 1), (1, 0), (0, 0))):
+    """A box standing against a wall that faces -Y: its back on y = 0, its front at y = -d."""
+    a = w / 2
+    m.quad((side, False, 0), (-a, -d, 0), (a, -d, 0), (a, -d, hgt), (-a, -d, hgt), list(front_uv))
+    m.quad((side, False, 0), (a, -d, 0), (a, 0, 0), (a, 0, hgt), (a, -d, hgt), [(0.9, 1), (1, 1), (1, 0), (0.9, 0)])
+    m.quad((side, False, 0), (-a, 0, 0), (-a, -d, 0), (-a, -d, hgt), (-a, 0, hgt), [(0, 1), (0.1, 1), (0.1, 0), (0, 0)])
+    m.quad((top, False, 0), (-a, -d, hgt), (a, -d, hgt), (a, 0, hgt), (-a, 0, hgt), [(0, 1), (1, 1), (1, 0), (0, 0)])
+
+
 DOOR_WIDTHS = range(1, 13)
 
 
 def pieces(out):
-    """KPAmmo (the ammo supply case, the ASAmmo unit's model), KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
+    """KPAmmo (the ammo supply case, the ASAmmo unit's model), KPLockers and KPConsole (against a wall facing -Y), KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
     from tools.shipkit import ShipModel
     m = out['KPCol'] = ShipModel('KPCol', (0, 0, 0)); _column(m)
     m = out['KPAmmo'] = ShipModel('KPAmmo', (0, 0, 0)); _box(m, 'prop_ammo', 'prop_ammo_top', 0.95, 0.65, 0.5)
+    m = out['KPLockers'] = ShipModel('KPLockers', (0, 0, 0)); _wallbox(m, 'prop_locker', 'prop_crate_metal_top', 1.3, 0.42, 1.85)
+    m = out['KPConsole'] = ShipModel('KPConsole', (0, 0, 0))
+    _wallbox(m, 'prop_console', 'prop_console_top', 1.2, 0.55, 0.95)
     for w in DOOR_WIDTHS:
         m = out['KPDoor%d' % w] = ShipModel('KPDoor%d' % w, (0, 0, 0)); _door(m, w)
     m = out['KPCrateG'] = ShipModel('KPCrateG', (0, 0, 0)); _box(m, 'prop_crate_green', 'prop_crate_green_top', 1.1, 1.1, 0.9)
