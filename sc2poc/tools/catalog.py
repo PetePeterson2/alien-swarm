@@ -227,7 +227,7 @@ def font_styles():
     for name, font, size, align, color, lit in [
             ('ASSmall', reg, 18, 'Left', white, False), ('ASSmallR', reg, 15, 'Right', light, False),
             ('ASSmallDim', reg, 18, 'Left', dim, False), ('ASLarge', reg, 30, 'Left', white, False),
-            ('ASLow', bold, 20, 'Left', red, False), ('ASKeyR', bold, 22, 'Right', white, False),
+            ('ASLow', reg, 20, 'Left', red, False), ('ASKeyR', bold, 22, 'Right', white, False),
             ('ASKeyC', bold, 26, 'Center', white, False), ('ASQtyR', reg, 17, 'Right', blue, False),
             ('ASObjHead', reg, 22, 'Left', white, True), ('ASObj', reg, 20, 'Left', white, False),
             ('ASObjDone', reg, 20, 'Left', white, True), ('ASUse', reg, 22, 'Left', white, True),
