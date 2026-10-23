@@ -316,6 +316,18 @@ def _drum(m, side, top, r, z0, hgt, n=20):
            [(0.5 + 0.5 * math.cos(2 * math.pi * i / n), 0.5 - 0.5 * math.sin(2 * math.pi * i / n)) for i in range(n)])
 
 
+def _blob(m, w, d, y0=None):
+    """A soft multiplied shadow on the deck round a footprint w by d (centred, or from y0 to the wall at y = 0)."""
+    from tools.shipkit import UNLIT, MULTIPLY
+    a = w / 2 + 0.25
+    if y0 is None:
+        b0, b1 = -d / 2 - 0.25, d / 2 + 0.25
+    else:
+        b0, b1 = y0 - 0.3, 0.05
+    m.quad(('decal_blob', False, UNLIT, MULTIPLY), (-a, b0, 0.018), (a, b0, 0.018), (a, b1, 0.018), (-a, b1, 0.018),
+           [(0, 1), (1, 1), (1, 0), (0, 0)])
+
+
 DOOR_WIDTHS = range(1, 13)
 
 
@@ -326,14 +338,14 @@ def pieces(out):
     m = out['KPReactor'] = ShipModel('KPReactor', (0, 0, 0))
     _drum(m, 'prop_reactor', 'prop_reactor_top', 1.55, 2.5, 0.9)
     _drum(m, 'prop_column', 'prop_reactor_top', 1.75, 2.5, 0.18)
-    m = out['KPAmmo'] = ShipModel('KPAmmo', (0, 0, 0)); _box(m, 'prop_ammo', 'prop_ammo_top', 0.95, 0.65, 0.5)
-    m = out['KPLockers'] = ShipModel('KPLockers', (0, 0, 0)); _wallbox(m, 'prop_locker', 'prop_crate_metal_top', 1.3, 0.42, 1.85)
+    m = out['KPAmmo'] = ShipModel('KPAmmo', (0, 0, 0)); _box(m, 'prop_ammo', 'prop_ammo_top', 0.95, 0.65, 0.5); _blob(m, 0.95, 0.65)
+    m = out['KPLockers'] = ShipModel('KPLockers', (0, 0, 0)); _wallbox(m, 'prop_locker', 'prop_crate_metal_top', 1.3, 0.42, 1.85); _blob(m, 1.3, 0.42, -0.42)
     m = out['KPConsole'] = ShipModel('KPConsole', (0, 0, 0))
-    _wallbox(m, 'prop_console', 'prop_console_top', 1.2, 0.55, 0.95)
+    _wallbox(m, 'prop_console', 'prop_console_top', 1.2, 0.55, 0.95); _blob(m, 1.2, 0.55, -0.55)
     for w in DOOR_WIDTHS:
         m = out['KPDoor%d' % w] = ShipModel('KPDoor%d' % w, (0, 0, 0)); _door(m, w)
-    m = out['KPCrateG'] = ShipModel('KPCrateG', (0, 0, 0)); _box(m, 'prop_crate_green', 'prop_crate_green_top', 1.1, 1.1, 0.9)
-    m = out['KPCrateM'] = ShipModel('KPCrateM', (0, 0, 0)); _box(m, 'prop_crate_metal', 'prop_crate_metal_top', 0.9, 0.9, 0.8)
+    m = out['KPCrateG'] = ShipModel('KPCrateG', (0, 0, 0)); _box(m, 'prop_crate_green', 'prop_crate_green_top', 1.1, 1.1, 0.9); _blob(m, 1.1, 1.1)
+    m = out['KPCrateM'] = ShipModel('KPCrateM', (0, 0, 0)); _box(m, 'prop_crate_metal', 'prop_crate_metal_top', 0.9, 0.9, 0.8); _blob(m, 0.9, 0.9)
     m = out['KPCrateStack'] = ShipModel('KPCrateStack', (0, 0, 0))
     _box(m, 'prop_crate_green', 'prop_crate_green_top', 1.1, 1.1, 0.9)
     for p in m.parts.values():
@@ -346,7 +358,8 @@ def pieces(out):
             base = len(dst['pos'])
             dst['pos'].extend(np.array(v) + off for v in p['pos']); dst['nrm'].extend(p['nrm']); dst['uv'].extend(p['uv'])
             dst['tri'].extend((a + base, b + base, c + base) for a, b, c in p['tri'])
-    m = out['KPBarrel'] = ShipModel('KPBarrel', (0, 0, 0)); _barrel(m)
+    _blob(out['KPCrateStack'], 2.2, 1.1)
+    m = out['KPBarrel'] = ShipModel('KPBarrel', (0, 0, 0)); _barrel(m); _blob(m, 0.6, 0.6)
     m = out['KPBarrels'] = ShipModel('KPBarrels', (0, 0, 0))
     for off in ((-0.33, -0.2), (0.33, -0.2), (0.0, 0.36)):
         b = ShipModel('t', (0, 0, 0)); _barrel(b)
@@ -355,3 +368,4 @@ def pieces(out):
             base = len(dst['pos'])
             dst['pos'].extend(np.array(v) + (off[0], off[1], 0) for v in p['pos']); dst['nrm'].extend(p['nrm']); dst['uv'].extend(p['uv'])
             dst['tri'].extend((a + base, b2 + base, c + base) for a, b2, c in p['tri'])
+    _blob(m, 1.3, 1.2)

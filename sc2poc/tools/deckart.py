@@ -323,6 +323,14 @@ def light_shaft(w=128, h=256, tint=(255, 244, 220)):
     return _img(np.dstack([g * tint[0], g * tint[1], g * tint[2]]))
 
 
+def decal_blob(size=128):
+    """A soft contact shadow for a prop's footprint (multiplied): darkest in the middle, gone at the edge."""
+    yy, xx = np.mgrid[0:size, 0:size] / (size - 1) * 2 - 1
+    d = np.maximum(np.abs(xx), np.abs(yy)) * 0.6 + np.hypot(xx, yy) * 0.4
+    g = 255 * (1 - 0.55 * np.clip(1 - d, 0, 1) ** 0.8)
+    return _img(np.dstack([g, g, g]))
+
+
 def decal_shadow(w=64, h=64):
     """Contact shadow at a wall's foot: dark at row 0 (the wall), fading to white (no change)."""
     t = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
@@ -505,6 +513,7 @@ DECALS = {
 }
 MUL_DECALS = {
     'decal_shadow': decal_shadow,
+    'decal_blob': decal_blob,
     'decal_grime1': lambda: decal_grime(31),
     'decal_grime2': lambda: decal_grime(32),
     'decal_scorch': lambda: decal_grime(33, 'scorch'),
