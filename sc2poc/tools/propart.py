@@ -101,7 +101,35 @@ def tex_column(seed=45):
     return _img(a)
 
 
+def tex_doorframe(seed=46):
+    """swarm_bulkheaddoorframeskin: a dark steel beam with a band of yellow chevrons and bolted ends."""
+    w, h = 512, 64
+    a = np.array((84, 88, 92), float)[None, None] * (0.85 + 0.25 * _noise(0, 20, seed, 3, (h, w))[..., None])
+    yy, xx = np.mgrid[0:h - 24, 0:w]
+    stripe = ((xx + yy) // 14) % 2 == 0
+    a[12:h - 12] = np.where(stripe[..., None], np.array((214, 166, 34), float), np.array((30, 28, 26), float))
+    a[:12] *= 1.25; a[-12:] *= 0.6; a[10:12] *= 0.5; a[h - 12:h - 10] *= 0.5
+    k = np.clip((_noise(0, 8, seed + 1, 3, (h, w)) - 0.7) * 5, 0, 1)[..., None]
+    a = a * (1 - k) + np.array((96, 92, 86)) * k
+    return _img(a)
+
+
+def tex_doorpost(seed=47):
+    """The frame's posts: dark steel with a lit edge, bolts and a small green status light (row 0 the top)."""
+    w, h = 128, 640
+    a = np.array((78, 82, 88), float)[None, None] * (0.85 + 0.25 * _noise(0, 20, seed, 3, (h, w))[..., None])
+    a[:, :12] *= 1.4; a[:, -12:] *= 0.5
+    for y in range(40, h - 40, 60):
+        a[y:y + 8, 50:58] = (150, 150, 150)
+    a[300:330, 40:88] = (30, 32, 34)
+    emis = np.zeros((h, w, 3))
+    a[306:324, 48:80] = (60, 255, 120); emis[306:324, 48:80] = (40, 230, 90)
+    return _img(a), _img(emis)
+
+
 TEXTURES = {
+    'prop_doorframe': lambda: (tex_doorframe(), None),
+    'prop_doorpost': tex_doorpost,
     'prop_column': lambda: (tex_column(), None),
     'prop_crate_green': lambda: (tex_crate_green(), None), 'prop_crate_green_top': lambda: (tex_crate_green(top=True), None),
     'prop_crate_metal': lambda: (tex_crate_metal(), None), 'prop_crate_metal_top': lambda: (tex_crate_metal(top=True), None),
@@ -145,10 +173,40 @@ def _column(m, w=0.34, d=0.22, hgt=2.5):
            [(0, 0), (1, 0), (1, 1), (0, 1)])
 
 
+def _door(m, width, hgt=2.5, lintel=0.38, post=0.3, depth=0.45):
+    """A bulkhead frame round an opening ``width`` wide, centred on the wall plane (y = 0) and seen from both
+    sides: a post either side standing in the hull, and a chevron lintel across the top."""
+    a = width / 2
+    d = depth / 2
+    kp, kl = ('prop_doorpost', False, 0), ('prop_doorframe', False, 0)
+    for x0, x1 in ((-a - post, -a), (a, a + post)):
+        m.quad(kp, (x0, -d, 0), (x1, -d, 0), (x1, -d, hgt), (x0, -d, hgt), [(0, 1), (1, 1), (1, 0), (0, 0)])
+        m.quad(kp, (x1, d, 0), (x0, d, 0), (x0, d, hgt), (x1, d, hgt), [(0, 1), (1, 1), (1, 0), (0, 0)])
+        # The jamb facing the opening.
+        jx = x1 if x0 < 0 else x0
+        sgn = 1 if x0 < 0 else -1
+        p0, p1 = ((jx, -d), (jx, d)) if sgn > 0 else ((jx, d), (jx, -d))
+        m.quad(kp, (p0[0], p0[1], 0), (p1[0], p1[1], 0), (p1[0], p1[1], hgt), (p0[0], p0[1], hgt), [(0, 1), (0.3, 1), (0.3, 0), (0, 0)])
+        m.quad(('wall_trim', False, 0), (x0, -d, hgt + 0.014), (x1, -d, hgt + 0.014), (x1, d, hgt + 0.014), (x0, d, hgt + 0.014),
+               [(0, 0), (1, 0), (1, 1), (0, 1)])
+    z0 = hgt - lintel
+    u = (width + 2 * post) / 4.0
+    m.quad(kl, (-a, -d, z0), (a, -d, z0), (a, -d, hgt), (-a, -d, hgt), [(0, 1), (u, 1), (u, 0), (0, 0)])
+    m.quad(kl, (a, d, z0), (-a, d, z0), (-a, d, hgt), (a, d, hgt), [(0, 1), (u, 1), (u, 0), (0, 0)])
+    m.quad(kl, (-a, d, z0), (a, d, z0), (a, -d, z0), (-a, -d, z0), [(0, 1), (u, 1), (u, 0), (0, 0)])
+    m.quad(('wall_trim', False, 0), (-a, -d, hgt + 0.014), (a, -d, hgt + 0.014), (a, d, hgt + 0.014), (-a, d, hgt + 0.014),
+           [(0, 0), (u, 0), (u, 1), (0, 1)])
+
+
+DOOR_WIDTHS = range(1, 13)
+
+
 def pieces(out):
-    """KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
+    """KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
     from tools.shipkit import ShipModel
     m = out['KPCol'] = ShipModel('KPCol', (0, 0, 0)); _column(m)
+    for w in DOOR_WIDTHS:
+        m = out['KPDoor%d' % w] = ShipModel('KPDoor%d' % w, (0, 0, 0)); _door(m, w)
     m = out['KPCrateG'] = ShipModel('KPCrateG', (0, 0, 0)); _box(m, 'prop_crate_green', 'prop_crate_green_top', 1.1, 1.1, 0.9)
     m = out['KPCrateM'] = ShipModel('KPCrateM', (0, 0, 0)); _box(m, 'prop_crate_metal', 'prop_crate_metal_top', 0.9, 0.9, 0.8)
     m = out['KPCrateStack'] = ShipModel('KPCrateStack', (0, 0, 0))

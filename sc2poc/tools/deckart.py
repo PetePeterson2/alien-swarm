@@ -277,6 +277,34 @@ def decal_hazard(seed=11, w=256, h=64):
     return _img(a)
 
 
+def decal_cable(seed, size=512):
+    """Loose power cables snaking across the deck (multiplied): two thick rubber lines, a duller core where the
+    light catches them, and a soft shadow."""
+    r = np.random.default_rng(seed)
+    im = Image.new('L', (size, size), 0); core = Image.new('L', (size, size), 0); sh = Image.new('L', (size, size), 0)
+    d, dc, ds = ImageDraw.Draw(im), ImageDraw.Draw(core), ImageDraw.Draw(sh)
+    for k in range(2):
+        pts = []
+        x, y = 0.0, r.uniform(0.3, 0.7) * size
+        ang = r.uniform(-0.3, 0.3)
+        while x < size:
+            pts.append((x, y))
+            ang += r.normal(0, 0.18); ang = float(np.clip(ang, -0.7, 0.7))
+            x += 12 * np.cos(ang); y = float(np.clip(y + 12 * np.sin(ang), 40, size - 40))
+        width = int(r.integers(20, 28))
+        ds.line([(px + 6, py + 8) for px, py in pts], fill=140, width=width + 10)
+        d.line(pts, fill=255, width=width)
+        dc.line([(px, py - width * 0.18) for px, py in pts], fill=255, width=max(3, width // 4))
+    c = np.asarray(im).astype(float) / 255
+    hi = np.asarray(core.filter(ImageFilter.GaussianBlur(2))).astype(float) / 255
+    shade = np.asarray(sh.filter(ImageFilter.GaussianBlur(6))).astype(float) / 255
+    t = np.linspace(0, 1, size)[None, :]
+    fade = np.clip(np.minimum(t, 1 - t) * 8, 0, 1)
+    dark = np.clip(c * (0.82 - 0.3 * hi) + shade * (1 - c) * 0.35, 0, 1) * fade
+    g = 255 * (1 - dark)
+    return _img(np.dstack([g, g, g]))
+
+
 def decal_shadow(w=64, h=64):
     """Contact shadow at a wall's foot: dark at row 0 (the wall), fading to white (no change)."""
     t = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
@@ -436,6 +464,8 @@ MUL_DECALS = {
     'decal_grime2': lambda: decal_grime(32),
     'decal_scorch': lambda: decal_grime(33, 'scorch'),
     'decal_goo': lambda: decal_grime(34, 'goo'),
+    'decal_cable1': lambda: decal_cable(51),
+    'decal_cable2': lambda: decal_cable(52),
 }
 
 

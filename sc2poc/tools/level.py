@@ -407,6 +407,8 @@ DECAL_PIECES = {
     'KDGrime2': ('decal_grime2', 1.8, 1.8, True),
     'KDScorch': ('decal_scorch', 2.0, 2.0, True),
     'KDGoo': ('decal_goo', 2.2, 2.2, True),
+    'KDCable1': ('decal_cable1', 3.0, 3.0, True),
+    'KDCable2': ('decal_cable2', 3.0, 3.0, True),
 }
 
 
@@ -492,6 +494,28 @@ def decal_spots(floor, room, solid, seed=7):
             a, b = kind(x - 1, y), kind(x, y)
             if door(a, b):
                 spots.append(('KDHaz', x + 0.18 if b in corridor else x - 0.18, y + 0.5, 90.0))
+    # A bulkhead frame round each doorway: runs of threshold cells along a row or a column, with hull at both ends
+    # on the corridor's side.
+    def frame(a, b):
+        return a and b and a != b and 'lift' not in (a, b) and ((a in corridor) != (b in corridor))
+    for y in range(1, H):
+        run = []
+        for x in range(W + 1):
+            if x < W and frame(kind(x, y - 1), kind(x, y)):
+                run.append(x); continue
+            cy = y if run and kind(run[0], y) in corridor else y - 1
+            if run and len(run) <= 12 and all(not (0 <= xx < W) or not floor[cy, xx] for xx in (run[0] - 1, run[-1] + 1)):
+                spots.append(('KPDoor%d' % len(run), (run[0] + run[-1] + 1) / 2.0, float(y), 0.0))
+            run = []
+    for x in range(1, W):
+        run = []
+        for y in range(H + 1):
+            if y < H and frame(kind(x - 1, y), kind(x, y)):
+                run.append(y); continue
+            cx = x if run and kind(x, run[0]) in corridor else x - 1
+            if run and len(run) <= 12 and all(not (0 <= yy < H) or not floor[yy, cx] for yy in (run[0] - 1, run[-1] + 1)):
+                spots.append(('KPDoor%d' % len(run), float(x), (run[0] + run[-1] + 1) / 2.0, 90.0))
+            run = []
     # Grime everywhere, goo near the hives and labs, scorches where the fighting was.
     open_cells = [(x, y) for y in range(H) for x in range(W) if kind(x, y) and kind(x, y) != 'lift' and not solid[y, x]]
     for x, y in rng.sample(open_cells, len(open_cells) // 36):
@@ -530,10 +554,18 @@ def decal_spots(floor, room, solid, seed=7):
             oy = 0.12 if n[0] else -0.12
             piece = rng.choice(['KPBarrels', 'KPBarrels', 'KPCrateStack', 'KPBarrel', 'KPCrateM'])
             spots.append((piece, x + 0.5 + ox, y + 0.5 + oy, rng.choice([0.0, 90.0, 180.0, 270.0]) + rng.uniform(-12, 12)))
+    # Loose cables across the deck in the working rooms.
+    for x, y in rng.sample(open_cells, len(open_cells) // 120):
+        if kind(x, y) in ('bay', 'cargo', 'reactor', 'lab', 'mess', 'hall'):
+            spots.append((rng.choice(['KDCable1', 'KDCable2']), x + 0.5, y + 0.5, rng.uniform(0, 360)))
     # A warning sign in a few of the big rooms, clear of the walls.
     rooms = [(x, y) for x, y in open_cells if kind(x, y) in ('bay', 'cargo', 'reactor') and not any(
         solid[y + dy, x + dx] for dx in (-2, 0, 2) for dy in (-2, 0, 2) if 0 <= x + dx < W and 0 <= y + dy < H)]
-    for x, y in rng.sample(rooms, min(len(rooms), 3)):
+    signed = set()
+    for x, y in rng.sample(rooms, len(rooms)):
+        if room[y, x] in signed or len(signed) >= 3:
+            continue
+        signed.add(room[y, x])
         spots.append(('KDWarn', x + 0.5, y + 0.5, rng.choice([0.0, 90.0, 180.0, 270.0])))
     return spots + paint_spots()
 

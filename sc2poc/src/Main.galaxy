@@ -152,6 +152,10 @@ void AS_Init () {
     UISetFrameVisible(PlayerGroupAll(),c_syncFrameTypeTextTag,true);
     UISetDragSelectEnabled(PlayerGroupAll(),false);
     for(p=1;p<=AS_PLAYERS;p+=1) {as_on[p]=PlayerStatus(p)==c_playerStatusActive && PlayerType(p)==c_playerTypeUser;}
+    // Squad colours as the HUD draws them (debrief graph): blue, red, green, yellow; the swarm an orange-brown
+    // carapace nearer Alien Swarm's drones than SC2's purple.
+    PlayerSetColorIndex(1,2,true);PlayerSetColorIndex(2,1,true);PlayerSetColorIndex(3,7,true);PlayerSetColorIndex(4,5,true);
+    PlayerSetColorIndex(AS_HOSTILE,6,true);
     AS_BotsInit();
     for(p=1;p<=AS_PLAYERS;p+=1) {
         for(q=1;q<=AS_PLAYERS;q+=1) {if(q!=p) {PlayerSetAlliance(p,c_allianceIdPassive,q,true);PlayerSetAlliance(p,c_allianceIdVision,q,true);PlayerSetAlliance(p,c_allianceIdChat,q,true);}}
