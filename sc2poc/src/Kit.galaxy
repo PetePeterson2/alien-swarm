@@ -23,6 +23,7 @@ int as_kitCaps;
 int as_kitProps;
 int as_kitFloors;
 int as_kitDecals;
+int as_kitWallLamps;
 int as_kitBlockers;
 int as_kitLeaks;                // hull cells aliens can still walk on
 int as_kitShut;                 // deck cells aliens can no longer walk on
@@ -107,8 +108,17 @@ void AS_KitWall (string piece, fixed x, fixed y, int s) {
     as_kitWalls+=1;
 }
 // One two-unit bay of wall: a is its viewer-left cell, b the viewer-right one, (mx, my) the bay's midpoint.
+// The lamp boxes of a lit bay (KIT_WALLS 5) on a wall the camera faces throw their own light on the deck.
+void AS_KitWallLamp (fixed x, fixed y) {
+    if(as_kitWallLamps>=40) {return;}
+    UnitCreate(1,"ASLightWhite",c_unitCreateIgnorePlacement,0,Point(x,y),270.0);
+    UnitSetHeight(UnitLastCreated(),1.9,0.0);
+    if(as_kitUnitN<AS_KIT_UNITS) {as_kitUnit[as_kitUnitN]=UnitLastCreated();as_kitUnitN+=1;}
+    as_kitWallLamps+=1;
+}
 void AS_KitBay (int xa, int ya, int xb, int yb, int s, fixed mx, fixed my) {
     int pa=AS_FacePanel(xa,ya,s);int pb=AS_FacePanel(xb,yb,s);
+    if(pa==5 && pb==5 && s==0) {AS_KitWallLamp(mx,my-0.6);}
     if(pa>=0 && pa==pb) {AS_KitWall("KW"+IntToString(pa)+"F",mx,my,s);return;}
     if(pa>=0) {AS_KitWall("KW"+IntToString(pa)+"E",mx,my,s);}
     if(pb>=0) {AS_KitWall("KW"+IntToString(pb)+"O",mx,my,s);}
@@ -323,7 +333,7 @@ void AS_KitClear () {
     for(i=0;i<MinI(as_kitActorN,AS_KIT_ACTORS);i+=1) {ActorSend(as_kitActor[i],"Destroy");as_kitActor[i]=null;}
     for(i=0;i<as_kitUnitN;i+=1) {if(as_kitUnit[i]!=null) {UnitRemove(as_kitUnit[i]);}as_kitUnit[i]=null;}
     as_kitActorN=0;as_kitUnitN=0;
-    as_kitWalls=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitFloors=0;as_kitDecals=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
+    as_kitWalls=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitFloors=0;as_kitDecals=0;as_kitWallLamps=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
     as_kitReport="";as_kitStages="";as_probeReport="";
     AS_ProbeStop();
 }
