@@ -14,7 +14,7 @@ lobby and junction see the shaft's back.
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from tools.shipkit import ShipModel, _noise, _grime, _hazard, _img, NO_SHADOW_CAST, tex_wall
+from tools.shipkit import ShipModel, _noise, _grime, _hazard, _img, NO_SHADOW_CAST
 
 PANEL_H = 6.0          # height of one shaft panel
 DROP = 6.0             # how far a panel hangs below its unit's origin
@@ -184,7 +184,8 @@ def tex_door(w=256, h=320):
 
 def tex_window(seed=301, size=(512, 640)):
     """A hull wall with a long observation window: dark glass, reflections, the hangar's faint lights."""
-    plate, _ = tex_wall('plain', seed, (70, 78, 84), size)
+    from tools.wallart import wall_art
+    plate, _ = wall_art('dark', seed)            # the deck's own bulkhead (tools/wallart.py)
     a = np.asarray(plate).astype(float)
     w, h = size
     y0, y1 = int(h * 0.30), int(h * 0.62)

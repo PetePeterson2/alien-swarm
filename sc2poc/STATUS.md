@@ -215,3 +215,21 @@ A pass on what matters most in Alien Swarm: smooth movement, and shooting that r
 - **The fix:** `tools/catalog.py` now writes `CameraData.xml` with Doodad Royale's values: `TargetSmooth` 0.08 s, `FollowScrollLimit` 1000, and no screen-edge scrolling.
 - **Checked:** with it, the marine stays at the screen centre while the deck moves past.
 - **How it feels by hand.** Try `.\launch.ps1 -QA`: Ctrl+1 spawns drones, N toggles the numbers.
+
+## Visual overhaul after Alien Swarm (2026-10-23)
+
+The deck now looks like Alien Swarm's interiors instead of dark SC2 terrain under black slabs. Reference: the installed game's VPK textures (greymetalfloor, metalfloor3, metalgrate011a, swarm_metalfloorbrown, cleanwall1, colonywall1, techwall4, the crate and barrel skins), read for palette and pattern only, plus the four screenshots in the repo root. Everything is drawn from scratch with NumPy.
+
+- **Floors (`tools/deckart.py`):** plating per room kind laid by the kit (`AS_KitFloors`, `tools/level.py floor_pieces`): 4x4 pieces in four patterns, then 2x2, then single cells, uv'd from world position so they join without seams. Bays get brown-grey plates with hatches, halls diamond tread with grilles and glowing grates, ducts orange-lit grates, the mess pale tiles, the reactor dark blue plates with cyan running lights, cargo rooms the brown deck with orange bands, labs white tiles, the hive plating grown over with alien skin. The lift keeps its own platform.
+- **Walls (`tools/wallart.py`):** pale painted bays in courses (dark top rail, riveted panels, a waist band in beige, orange or hazard stripes, a dark kick plate) with fixtures that glow: lamp boxes, green screens, red alarm lamps and DANGER plates, vents, coloured pipe runs. Each wall piece now carries a pale lip along its top edge and a multiplied contact shadow at its foot. Struts with hazard-striped feet stand proud of long walls every four units. The hull tops are blue-grey plating instead of black.
+- **Decals:** hazard paint across every doorway, grime, scorches and goo (multiplied), warning signs, and floor paint: each big room's stencilled name ("DOCKING BAY 09"), a landing ring under the dropship and yellow guide lines round the bays and cargo rooms. Stock flat decals the plating would hide are dropped (blood splats become goo decals).
+- **Props (`tools/propart.py`):** green SynTek supply crates, grey metal crates and yellow toxic barrels replace the stock crates; barrels and crate stacks sit in room corners.
+- **Lighting (`tools/catalog.py`, `src/Fx.galaxy`):** room lamps are the stock large omni light of their colour scaled 1.7 (2.2 for the big kinds), which throws AS-sized pools. The presets have a cooler, brighter ambient, bloom (`HDRBloomThreshold`) and a stronger emissive multiplier.
+- **Camera:** pitch 60, FOV 48, distance 18 (was 40 and 24): closer and with more perspective, so wall faces read as in AS. The wheel still zooms 12 to 40.
+
+Found in the client:
+- **`Colorize=1` tints the whole picture one hue** (red at hue 0); it is a colourise, not a grade. Off.
+- **An M3 point light written by the map (`LITE`, bone 0 raised) drew nothing,** whatever its intensity; stock `LightOmni*Large` scaled with `SetScale` is what lights the pools.
+- **An alpha-blended quad (blend mode 1, RGBA DDS, colour channel RGBA) drew its clear parts opaque.** Floor paint is therefore two layers the client does draw: one multiplied (tints the deck where painted) and one added (lifts it).
+
+Kit totals for Distress Beacon: 444 walls, 467 floor pieces, 333 decals and props, 2,711 actors, built in 2.6 s; pathing unchanged (0 leaks). Map: 6.2 MB.
