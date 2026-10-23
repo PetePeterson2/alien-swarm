@@ -200,13 +200,13 @@ def wall_hive(seed=200):
     a = np.asarray(plate).astype(float)
     n = _noise(0, 40, seed + 4, 5, (WH, WW)); vein = np.abs(_noise(0, 18, seed + 9, 3, (WH, WW)) - 0.5) < 0.035
     cover = np.clip((n - 0.38) * 3.0 + np.linspace(-0.4, 0.5, WH)[:, None] + 0.1, 0, 1)
-    skin = np.array((92, 48, 70), float)[None, None] * (0.6 + 0.8 * _noise(0, 10, seed + 2, 3, (WH, WW))[..., None])
+    skin = np.array((70, 38, 52), float)[None, None] * (0.6 + 0.8 * _noise(0, 10, seed + 2, 3, (WH, WW))[..., None])
     a = a * (1 - cover[..., None]) + skin * cover[..., None]
-    a[vein & (cover > 0.3)] = (170, 80, 110)
+    a[vein & (cover > 0.3)] = (130, 66, 88)
     emis = np.zeros((WH, WW, 3))
     pods = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:WH, 0:WW]
-    for _ in range(7):
+    for _ in range(4):
         cx, cy, rad = pods.integers(20, WW - 20), pods.integers(WH // 3, WH - 30), pods.integers(10, 22)
         g = np.clip(1 - np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / rad, 0, 1) ** 1.5
         a += g[..., None] * np.array((80, 150, 40)); emis += g[..., None] * np.array((80, 200, 30))

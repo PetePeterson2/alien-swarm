@@ -84,7 +84,25 @@ def tex_barrel_top(seed=44):
     return _img(a)
 
 
+def tex_column(seed=45):
+    """A wall strut: dark steel channel with rivets, a lit edge and a hazard-striped foot (row 0 the top)."""
+    w, h = 128, 640
+    a = np.array((96, 102, 108), float)[None, None] * (0.85 + 0.25 * _noise(0, 20, seed, 3, (h, w))[..., None])
+    a[:, :10] *= 1.35; a[:, -10:] *= 0.55
+    a[:, 54:74] *= 0.75
+    for y in range(30, h - 80, 46):
+        for x in (24, w - 28):
+            a[y:y + 6, x:x + 6] = (150, 152, 154)
+    yy, xx = np.mgrid[0:70, 0:w]
+    stripe = ((xx + yy) // 14) % 2 == 0
+    a[h - 80:h - 10] = np.where(stripe[..., None], np.array((206, 160, 34), float), np.array((28, 26, 24), float))
+    a[h - 10:] *= 0.35
+    a[:18] *= 0.5
+    return _img(a)
+
+
 TEXTURES = {
+    'prop_column': lambda: (tex_column(), None),
     'prop_crate_green': lambda: (tex_crate_green(), None), 'prop_crate_green_top': lambda: (tex_crate_green(top=True), None),
     'prop_crate_metal': lambda: (tex_crate_metal(), None), 'prop_crate_metal_top': lambda: (tex_crate_metal(top=True), None),
     'prop_barrel': lambda: (tex_barrel(), None), 'prop_barrel_top': lambda: (tex_barrel_top(), None),
@@ -116,9 +134,21 @@ def _barrel(m, r=0.3, hgt=0.85, n=14):
            [(0.5 + 0.5 * math.cos(2 * math.pi * i / n), 0.5 - 0.5 * math.sin(2 * math.pi * i / n)) for i in range(n)])
 
 
+def _column(m, w=0.34, d=0.22, hgt=2.5):
+    """A strut standing proud of a wall that faces -Y: its face and sides out to y = -d, a cap on top."""
+    a = w / 2
+    key = ('prop_column', False, 0)
+    m.quad(key, (-a, -d, 0), (a, -d, 0), (a, -d, hgt), (-a, -d, hgt), [(0.1, 1), (0.9, 1), (0.9, 0), (0.1, 0)])
+    m.quad(key, (a, -d, 0), (a, 0, 0), (a, 0, hgt), (a, -d, hgt), [(0.0, 1), (0.25, 1), (0.25, 0), (0.0, 0)])
+    m.quad(key, (-a, 0, 0), (-a, -d, 0), (-a, -d, hgt), (-a, 0, hgt), [(0.75, 1), (1.0, 1), (1.0, 0), (0.75, 0)])
+    m.quad(('wall_trim', False, 0), (-a, -d, hgt + 0.013), (a, -d, hgt + 0.013), (a, 0.16, hgt + 0.013), (-a, 0.16, hgt + 0.013),
+           [(0, 0), (1, 0), (1, 1), (0, 1)])
+
+
 def pieces(out):
-    """KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
+    """KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
     from tools.shipkit import ShipModel
+    m = out['KPCol'] = ShipModel('KPCol', (0, 0, 0)); _column(m)
     m = out['KPCrateG'] = ShipModel('KPCrateG', (0, 0, 0)); _box(m, 'prop_crate_green', 'prop_crate_green_top', 1.1, 1.1, 0.9)
     m = out['KPCrateM'] = ShipModel('KPCrateM', (0, 0, 0)); _box(m, 'prop_crate_metal', 'prop_crate_metal_top', 0.9, 0.9, 0.8)
     m = out['KPCrateStack'] = ShipModel('KPCrateStack', (0, 0, 0))

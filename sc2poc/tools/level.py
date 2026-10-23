@@ -435,10 +435,25 @@ def paint_spots():
     spots = []
     for name, (x0, y0, x1, y1), kind in AREAS:
         if name.replace(' ', '').upper() in paint_names():
-            spots.append(('KN' + name.replace(' ', '').upper(), (x0 + x1) / 2.0, y0 + 1.5, 0.0))
+            spots.append(('KN' + name.replace(' ', '').upper(), (x0 + x1) / 2.0, y0 + 2.9, 0.0))
     for model, x, y, rot, scale, rad in PROPS:
         if model == 'Hercules':
             spots.append(('KNPad', x, y, 0.0))
+    # Yellow guide lines round the bays and cargo rooms, a unit and a half in from the walls.
+    floor, room = carve()
+    solid = blocked(floor)
+    for name, (x0, y0, x1, y1), kind in AREAS:
+        if kind not in ('bay', 'cargo') or x1 - x0 < 10 or y1 - y0 < 10:
+            continue
+        lx0, ly0, lx1, ly1 = x0 + 1.5, y0 + 1.5, x1 - 1.5, y1 - 1.5
+        for cx in np.arange(lx0 + 1, lx1 - 0.5, 2.0):
+            for cy in (ly0, ly1):
+                if not solid[int(cy), int(cx)] and not solid[int(cy), min(W - 1, int(cx + 0.9))] and not solid[int(cy), int(cx - 0.9)]:
+                    spots.append(('KNLine', float(cx), float(cy), 0.0))
+        for cy in np.arange(ly0 + 1, ly1 - 0.5, 2.0):
+            for cx in (lx0, lx1):
+                if not solid[int(cy), int(cx)] and not solid[min(H - 1, int(cy + 0.9)), int(cx)] and not solid[int(cy - 0.9), int(cx)]:
+                    spots.append(('KNLine', float(cx), float(cy), 90.0))
     return spots
 
 
@@ -447,7 +462,7 @@ def paint_pieces(slugs):
     layer that tints the deck and an added one that brightens it (tools/deckart.py paint_textures)."""
     from tools.shipkit import ShipModel, UNLIT, MULTIPLY, ADD
     out = {}
-    for slug, tex, a, b in [(s_, 'paint_' + s_.lower(), 3.0, 0.75) for s_ in slugs] + [('Pad', 'paint_pad', 2.0, 2.0)]:
+    for slug, tex, a, b in [(s_, 'paint_' + s_.lower(), 3.0, 0.75) for s_ in slugs] + [('Pad', 'paint_pad', 2.0, 2.0), ('Line', 'paint_line', 1.0, 0.12)]:
         m = out['KN' + slug] = ShipModel('KN' + slug, (0, 0, 0))
         for layer, blend, z in (('_m', MULTIPLY, 0.012), ('_a', ADD, 0.014)):
             m.quad((tex + layer, False, UNLIT, blend), (-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
@@ -488,6 +503,23 @@ def decal_spots(floor, room, solid, seed=7):
         else:
             piece = rng.choice(['KDGrime1', 'KDGrime2'])
         spots.append((piece, x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
+    # Struts standing proud of the long walls every four units, as Alien Swarm's bulkheads have, on the
+    # faces the camera sees (south, east and west); not near a corner, a door or the lift.
+    def wall(x, y):
+        return not (0 <= x < W and 0 <= y < H) or (not floor[y, x] and not in_void(x, y))
+
+    def deck(x, y):
+        return kind(x, y) is not None and kind(x, y) != 'lift'
+    for y in range(1, H):
+        for x in range(4, W - 2, 4):
+            if all(wall(x + i, y) and deck(x + i, y - 1) for i in (-2, -1, 0, 1)):
+                spots.append(('KPCol', float(x), float(y), 0.0))
+    for x in range(W - 1):
+        for y in range(4, H - 2, 4):
+            if all(wall(x, y + i) and deck(x + 1, y + i) for i in (-2, -1, 0, 1)):
+                spots.append(('KPCol', float(x + 1), float(y), 90.0))
+            if x > 0 and all(wall(x, y + i) and deck(x - 1, y + i) for i in (-2, -1, 0, 1)):
+                spots.append(('KPCol', float(x), float(y), 270.0))
     # Barrels and crate stacks tucked into the rooms' corners (cells with hull on two sides).
     for x, y in open_cells:
         if kind(x, y) not in ('bay', 'cargo', 'reactor', 'mess', 'lab'):

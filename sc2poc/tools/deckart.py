@@ -242,6 +242,27 @@ def floor_reactor(seed=9):
     return _img(a), _img(emis)
 
 
+def floor_hive(seed=10, cover_bias=0.0):
+    """The nest: dark plating grown over with brown-purple alien skin, raised veins, a few glowing pustules."""
+    a = np.asarray(floor_plate(seed, (80, 78, 80))).astype(float)
+    n = _noise(0, 70, seed + 4, 5, (S, S))
+    cover = np.clip((n - 0.47 + cover_bias) * 3.0, 0, 1)
+    skin = np.array((64, 36, 46), float)[None, None] * (0.65 + 0.7 * _noise(0, 14, seed + 2, 3, (S, S))[..., None])
+    a = a * (1 - cover[..., None]) + skin * cover[..., None]
+    vein = (np.abs(_noise(0, 30, seed + 9, 3, (S, S)) - 0.5) < 0.02) & (cover > 0.35)
+    a[vein] = (118, 62, 82)
+    emis = np.zeros((S, S, 3))
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:S, 0:S]
+    for _ in range(3):
+        cx, cy, rad = r.integers(30, S - 30), r.integers(30, S - 30), r.integers(8, 14)
+        if cover[cy, cx] < 0.5:
+            continue
+        g = np.clip(1 - np.hypot(xx - cx, yy - cy) / rad, 0, 1) ** 1.4
+        a += g[..., None] * np.array((50, 100, 24)); emis += g[..., None] * np.array((50, 140, 20))
+    return _img(a), _img(emis)
+
+
 # ------------------------------------------------------------------ decals
 def decal_hazard(seed=11, w=256, h=64):
     """Yellow and black hazard paint, worn through to the metal in places (opaque)."""
@@ -333,9 +354,17 @@ def _paint_split(im, tint=(1.0, 0.84, 0.30), lift=(64, 48, 6)):
     return _img(mul), _img(add)
 
 
+def paint_line(w=256, h=32, color=(226, 182, 40)):
+    """A worn yellow guide line (with alpha), two units long."""
+    a = np.zeros((h, w, 4)); a[..., :3] = color
+    a[6:h - 6, :, 3] = 225
+    a[..., 3] *= np.clip(0.5 + (_noise(0, 10, 93, 3, (h, w)) - 0.35) * 1.7, 0, 1)
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), 'RGBA')
+
+
 def paint_textures(names):
-    """name -> image: each room's stencilled name and the landing pad, as _m (multiplied) and _a (added) layers."""
-    src = {'paint_pad': paint_pad()}
+    """name -> image: each room's stencilled name, the landing pad and the guide line, as _m (multiplied) and _a (added) layers."""
+    src = {'paint_pad': paint_pad(), 'paint_line': paint_line()}
     for slug, text in names.items():
         src['paint_' + slug.lower()] = decal_text(text, 512, 128)
     out = {}
@@ -380,11 +409,12 @@ FLOORS = {
     'floor_hatch': lambda: (floor_hatch(), None),
     'floor_brown': lambda: (floor_brown(), None),
     'floor_reactor': lambda: floor_reactor(),
+    'floor_hive': lambda: floor_hive(),
+    'floor_hive2': lambda: floor_hive(24, 0.15),
 }
 
 # Each room kind's floor (tools/level.py KIT_KINDS): the main plating, the second plating mixed
-# in by 2x2 block, and the accent laid at most once per 4x4 block. The hive keeps the terrain and
-# its creep; the lift has its own platform.
+# in by 2x2 block, and the accent laid at most once per 4x4 block. The lift has its own platform.
 KIND_FLOORS = {
     'bay': ('floor_plate', 'floor_plate2', 'floor_hatch'),
     'hall': ('floor_diamond', 'floor_grille', 'floor_grate'),
@@ -393,6 +423,7 @@ KIND_FLOORS = {
     'reactor': ('floor_reactor', 'floor_plate2', 'floor_grate_blue'),
     'cargo': ('floor_brown', 'floor_plate', 'floor_hatch'),
     'lab': ('floor_lab', 'floor_lab', 'floor_tile2'),
+    'hive': ('floor_hive', 'floor_plate2', 'floor_hive2'),
 }
 
 DECALS = {

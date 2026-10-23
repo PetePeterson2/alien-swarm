@@ -150,13 +150,13 @@ void AS_KitTiles (int x0, int y0, int want) {
 }
 
 // ---- floor plating and decals -------------------------------------------
-// Deck cells of every kind but the hive (its terrain carries the creep) and the lift get plating
+// Deck cells of every kind but the lift get plating
 // (tools/level.py floor_pieces): aligned 4x4 pieces in one of four patterns, then 2x2, then single cells.
 int AS_KitFloorKind (int x, int y) {
     int k;
     if(x<0 || y<0 || x>=AS_W || y>=AS_H || as_kitFloorDone[x][y]) {return -1;}
     k=as_cell[x][y];
-    if(k<0 || k>=AS_KIND_HIVE) {return -1;}
+    if(k<0 || k>=AS_KIND_LIFT) {return -1;}
     return k;
 }
 bool AS_KitFloorFits (int x, int y, int n, int k) {
