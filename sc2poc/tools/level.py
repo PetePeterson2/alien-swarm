@@ -1,4 +1,4 @@
-﻿"""The derelict: one deck of the colony transport USCSS Halcyon Drift.
+"""The derelict: one deck of the colony transport USCSS Halcyon Drift.
 
 Everything about the place lives here: the rooms and corridors (carved out of
 solid hull on a one-unit grid), what each room is dressed with, where the
@@ -129,6 +129,37 @@ PROPS = [
 ]
 
 
+# Mission levels (tools/cargo.py) carry the same data plus the elevator and mission tables.
+LEVEL = 'deck'
+VOID = None
+LIFT = None
+WINDOWS = []
+
+
+def use(name):
+    """Swap in another level's data (build.py --level): every upper-case name of tools/<name>.py."""
+    global LEVEL
+    if name == 'deck':
+        return
+    import importlib
+    mod = importlib.import_module('tools.' + name)
+    for key, value in vars(mod).items():
+        if key.isupper() or key == 'shaft_columns':
+            globals()[key] = value
+    LEVEL = name
+
+
+def in_void(x, y):
+    """The black drop round the elevator platform: neither deck nor hull, nothing is drawn there."""
+    if VOID is None:
+        return False
+    x0, y0, x1, y1 = VOID
+    if not (x0 <= x < x1 and y0 <= y < y1):
+        return False
+    lx0, ly0, lx1, ly1 = LIFT
+    return not (lx0 <= x < lx1 and ly0 <= y < ly1)
+
+
 def carve():
     """(floor bool[H, W], room index int[H, W] with -1 for hull)."""
     floor = np.zeros((H, W), bool)
@@ -203,7 +234,11 @@ def hull_meshes(floor, room):
     Z = WALL_H
     for y in range(H):
         for x in range(W):
+            if in_void(x, y):
+                continue
             if floor[y, x]:
+                if kind_at(room, x, y) == 'lift':
+                    continue
                 # Ceiling over the deck, facing down: seen from a camera under it, culled from above.
                 m = model_for(x, y)
                 k = room[y, x]
@@ -219,7 +254,7 @@ def hull_meshes(floor, room):
             # Faces toward each open neighbour (counter-clockwise seen from the open side).
             for side, (dx, dy) in enumerate([(0, -1), (1, 0), (0, 1), (-1, 0)]):
                 nx, ny = x + dx, y + dy
-                if not (0 <= nx < W and 0 <= ny < H) or not floor[ny, nx]:
+                if not (0 <= nx < W and 0 <= ny < H) or not floor[ny, nx] or in_void(nx, ny):
                     continue
                 kind = kind_at(room, nx, ny)
                 if side == 0:   # face south at y
@@ -230,18 +265,92 @@ def hull_meshes(floor, room):
                     a, b = (x + 1, y + 1, 0), (x, y + 1, 0); along = -x - 1
                 else:           # face west at x
                     a, b = (x, y + 1, 0), (x, y, 0); along = -y - 1
-                tex = wall_texture(kind, nx, ny, side)
+                tex = 'wall_window' if (x, y) in WINDOWS else wall_texture(kind, nx, ny, side)
                 u0 = (along % 2) / 2.0
                 c = (b[0], b[1], Z); d = (a[0], a[1], Z)
                 m.quad((tex, False, 0), a, b, c, d, [(u0, 1.0), (u0 + 0.5, 1.0), (u0 + 0.5, 0.0), (u0, 0.0)])
     return models
 
 
+# ---- the modular hull kit (build.py --kit) -----------------------------------
+# The same walls, caps and ceiling as hull_meshes, but as a few reusable pieces
+# the script places when a level loads (src/Kit.galaxy), so the map carries no
+# per-level geometry. Walls come in two-unit bays: the full bay (F) and its
+# viewer-left (E) and viewer-right (O) halves, authored facing south with the
+# origin at the bay's midpoint on the face and turned by the script in 90-degree
+# steps. Ceiling and cap tiles are 4x4, 2x2 and 1x1, origin at their south-west
+# corner, uv'd from world position mod 4 so the three sizes join without seams.
+KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive']
+# Room kinds as the script numbers them, and the wall panels each draws from (indexes into KIT_WALLS).
+KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive']
+KIT_PANELS = {'bay': [0, 0, 2, 5, 3, 6], 'hall': [0, 2, 3, 1, 5, 2], 'duct': [2, 3, 2, 1], 'mess': [1, 1, 4, 5, 0],
+              'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7]}
+
+
+def _lit(x, y):
+    return (x * 7 + y * 13) % 5 == 0
+
+
+def kit_pieces():
+    """{piece name: ShipModel}: AS<name> catalog ids, Derelict/<name>.m3 meshes."""
+    from tools.shipkit import ShipModel, NO_SHADOW_CAST
+    out = {}
+    Z = WALL_H
+    for t, tex in enumerate(KIT_WALLS):
+        for part, (x0, x1) in {'F': (-1, 1), 'E': (-1, 0), 'O': (0, 1)}.items():
+            m = out.setdefault('KW%d%s' % (t, part), ShipModel('KW%d%s' % (t, part), (0, 0, 0)))
+            u0, u1 = (x0 + 1) / 2.0, (x1 + 1) / 2.0
+            m.quad((tex, False, 0), (x0, 0, 0), (x1, 0, 0), (x1, 0, Z), (x0, 0, Z), [(u0, 1.0), (u1, 1.0), (u1, 0.0), (u0, 0.0)])
+    for size in (4, 2, 1):
+        # Lit panels sit at fixed spots of the 4x4 pattern, so a tile is only placed where its corner's
+        # position mod 4 matches what it was authored for: 4x4 at 0, 2x2 at 0 or 2, 1x1 anywhere.
+        for ox in range(0, 4, size):
+            for oy in range(0, 4, size):
+                for hive in (False, True):
+                    name = 'K%s%d_%d%d' % ('D' if hive else 'C', size, ox, oy)
+                    m = out[name] = ShipModel(name, (0, 0, 0))
+                    for x in range(size):
+                        for y in range(size):
+                            gx, gy = ox + x, oy + y
+                            tex = 'ceiling' if _lit(gx, gy) and not hive else 'ceiling_dark'
+                            m.quad((tex, False, NO_SHADOW_CAST), (x, y, Z), (x, y + 1, Z), (x + 1, y + 1, Z), (x + 1, y, Z),
+                                   [(gx / 4, gy / 4), (gx / 4, (gy + 1) / 4), ((gx + 1) / 4, (gy + 1) / 4), ((gx + 1) / 4, gy / 4)])
+        name = 'KK%d' % size
+        m = out[name] = ShipModel(name, (0, 0, 0))
+        m.quad(('cap', False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
+               [(0, 0), (0.5 * size, 0), (0.5 * size, 0.5 * size), (0, 0.5 * size)])
+    return out
+
+
+def deck_rows(floor, room):
+    """The deck for the kit loader: one string per row, '#' hull, else the room kind's digit (KIT_KINDS)."""
+    rows = []
+    for y in range(H):
+        rows.append(''.join(str(KIT_KINDS.index(kind_at(room, x, y))) if floor[y, x] else '#' for x in range(W)))
+    return rows
+
+
+def generic_masks():
+    """Terrain for a level-agnostic map: plates everywhere with rust and wreckage patches, nothing per room."""
+    from tools.shipkit import _noise
+    M = 8
+    masks = np.zeros((8, H * M, W * M), np.float32)
+    masks[PLATES] = 1.0
+    rust = np.clip((_noise(0, 120, 31, 4, (H * M, W * M)) - 0.58) * 4, 0, 1)
+    wreck = np.clip((_noise(0, 90, 32, 4, (H * M, W * M)) - 0.62) * 4, 0, 1)
+    masks *= (1 - 0.8 * rust)[None]; masks[RUST] += 0.8 * rust
+    masks *= (1 - 0.7 * wreck)[None]; masks[WRECK] += 0.7 * wreck
+    masks = masks / (masks.sum(0) + 1e-6)[None]
+    q = np.rint(masks * 15).astype(np.uint8)
+    dominant = np.full((H, W), PLATES, np.uint8)
+    return q, dominant
+
+
 # Terrain layers: index -> texture (all stock).
 TEXTURES = ['BraxisAlphaDarkPlates', 'BraxisAlphaPlates', 'CastanarGrating', 'BraxisAlphaRust',
             'BraxisAlphaWreckedPlates', 'AvernusPanels', 'BraxisAlphaMesh', 'CharSponge']
 DARK, PLATES, GRATE, RUST, WRECK, PANEL, MESH, ORGANIC = range(8)
-ROOM_FLOOR = {'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK}
+ROOM_FLOOR = {'lift': GRATE, 'void': DARK, 'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK}
 
 
 def terrain_masks(floor, room):
@@ -251,7 +360,7 @@ def terrain_masks(floor, room):
     base = np.zeros((H, W), int)
     for y in range(H):
         for x in range(W):
-            base[y, x] = ROOM_FLOOR[kind_at(room, x, y)] if floor[y, x] else DARK
+            base[y, x] = ROOM_FLOOR[kind_at(room, x, y)] if floor[y, x] and not in_void(x, y) else DARK
     big = np.repeat(np.repeat(base, M, 0), M, 1)
     for k in range(8):
         masks[k] = (big == k).astype(np.float32)

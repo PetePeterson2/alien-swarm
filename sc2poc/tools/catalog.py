@@ -79,8 +79,12 @@ ONESHOTS = [
 FX_UNITS = ['Tracer', 'Laser', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2']
 
 
-def build(files, hull_models, props):
-    """Write every catalog into ``files``. ``hull_models`` are the M3 chunk names, ``props`` the stock models placed."""
+def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units=()):
+    """Write every catalog into ``files``. ``hull_models`` are the M3 chunk names, ``props`` the stock models placed.
+
+    The kit build (build.py --kit) passes neither and instead ``kit_models``, the hull kit's pieces, and
+    ``runtime_props``, the stock dressing, both as model actors the script creates (src/Kit.galaxy).
+    """
     cat = {k: ET.Element('Catalog') for k in ('Unit', 'Actor', 'Model', 'Light')}
 
     def unit(ident, model, scale, life=100, speed=0.0, radius=0.0, mobile=False, flying=False, collide=False, height=0.0):
@@ -138,6 +142,22 @@ def build(files, hull_models, props):
     for kind, model in LIGHT_MODELS.items():
         unit('ASLight' + kind.capitalize(), model, 1.0, 0)
     unit('ASFlashlight', 'FlashlightModel', 1.0, 0)
+    # Mission pieces moved by the script (tools/elevator.py): shaft panels, gates, bridges, platform, doors.
+    for name in mesh_units:
+        m = child(cat['Model'], 'CModel', id='AS' + name + 'Model', parent='Doodad')
+        child(m, 'Model', value='Derelict\\' + name + '.m3')
+        unit('AS' + name,'AS' + name + 'Model', 1.0, 0)
+    # Aliens crawling down the shaft walls during the elevator ride: model actors, walking forever.
+    for ident, model, scale in [('ASClimbDrone', 'Zergling', 1.25), ('ASClimbParasite', 'Broodling', 0.85),
+                                ('ASClimbRipper', 'ASRipperModel', 0.75), ('ASClimbUber', 'PrimalZergling', 1.35)]:
+        a = child(cat['Actor'], 'CActorModel', id=ident)
+        child(a, 'Model', value=model); child(a, 'Scale', value=scale)
+        child(a, 'On', Terms='ActorCreation', Send='AnimPlay Walk Walk PlayForever')
+        child(a, 'On', Terms='ActorCreation', Send='AnimSetTimeScale Walk 1.6')
+        child(a, 'FogVisibility', value='Visible')
+    # Mission markers: the turning alarm lamp on the lift, the objective beacon.
+    unit('ASAlarmLamp', 'AlarmLight', 0.8, 0)
+    unit('ASObjBeacon', 'Beacon_Terran', 0.9, 0)
     # The marines' own effect meshes (tools/fx.py).
     for name in FX_UNITS:
         m = child(cat['Model'], 'CModel', id='ASFx' + name + 'Model', parent='Doodad')
@@ -163,6 +183,17 @@ def build(files, hull_models, props):
         child(a, 'Model', value=model); child(a, 'Footprint', value='')
         child(a, 'On', index=0, Terms='ActorCreation', Send='AnimPlay Stand Stand PlayForever')
         child(a, 'RandomScaleRange', value='1,1')
+    for name in kit_models:
+        m = child(cat['Model'], 'CModel', id='AS' + name, parent='Doodad')
+        child(m, 'Model', value='Derelict\\' + name + '.m3')
+        a = child(cat['Actor'], 'CActorModel', id='AS' + name)
+        child(a, 'Model', value='AS' + name)
+        child(a, 'FogVisibility', value='Visible')
+    for model in sorted(runtime_props):
+        a = child(cat['Actor'], 'CActorModel', id='ASR_' + model)
+        child(a, 'Model', value=model)
+        child(a, 'On', Terms='ActorCreation', Send='AnimPlay Stand Stand PlayForever')
+        child(a, 'FogVisibility', value='Visible')
     # Lighting presets: L cycles them in game (src/Main.galaxy).
     presets = [
         # id, parent, ambient, exposure, key colour, key strength, fill strength

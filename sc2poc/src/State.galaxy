@@ -4,8 +4,8 @@
 // with forward declarations for every AS_ function in between.
 // =====================================================================
 
-const int AS_W = 96;
-const int AS_H = 80;
+const int AS_W = @W@;
+const int AS_H = @H@;
 const fixed AS_DT = 0.0625;
 const int AS_PLAYERS = 4;
 const int AS_HOSTILE = 15;
@@ -16,12 +16,40 @@ const int AS_WEAPONS = 10;
 bool as_qa = false;
 bool as_demo = false;                  // scripted firing range for screenshots (build.py --demo)
 string as_runId = "unset";
+bool as_mission;                       // a mission level (tools/cargo.py): src/Mission.galaxy runs it
+bool as_lowerLevel;                    // the squad has ridden down: the director uses the lower level's vents
+const fixed AS_RESPAWN = 10.0;         // a downed marine's wait in a mission
+int[5] as_deaths;
+bool[5] as_bot;                        // an AI marine (src/Bots.galaxy)
+bool as_auto = false;                  // autopilot QA run (build.py --auto rewrites this line)
+fixed[5] as_botVX;                     // a bot's wanted walk, unit vector
+fixed[5] as_botVY;
+// AI marines and the QA log (src/Bots.galaxy): declared here, the mission reads them.
+int as_botCount;
+fixed[5] as_botNextLook;
+fixed[5] as_botStuckAt;                 // when a bot last made progress toward the squad
+point[5] as_botLast;
+point[5] as_botGoalPt;                 // where a bot is walking, refreshed every fourth step
+int[5] as_botFoe;
+point[48] as_crumb;                    // the leader's trail, newest at as_crumbHead
+int as_crumbHead = -1;
+int as_crumbN;
+int as_leader;
+int as_routeN;
+fixed[48] as_routeX;
+fixed[48] as_routeY;
+int[48] as_routeWait;                  // 0 walk on, 1 until the door is open, 2 until the ride is over
+int as_routeAt;
+int as_logN;
+fixed[5] as_dmgTaken;
+sound as_amb;                          // the ambience bed (Main starts it, the mission swaps it below the lift)
+sound as_rideSnd;                      // the lift's running rumble
 
 fixed as_now;
 int as_tick;
 
 // ---- the deck ---------------------------------------------------------
-bool[96][80] as_wall;            // collision cells, from tools/level.py
+bool[@W@][@H@] as_wall;          // collision cells, from tools/level.py
 fixed as_floorZ = 8.0;
 
 // ---- marines ----------------------------------------------------------

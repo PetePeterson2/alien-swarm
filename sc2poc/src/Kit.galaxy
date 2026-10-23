@@ -1,0 +1,369 @@
+// =====================================================================
+// The hull kit: builds a deck from its strings when the level loads
+// (build.py --kit), instead of the hull meshes and pathing baked into the
+// map. Walls, caps and ceiling are copies of a few reusable pieces
+// (tools/level.py, kit_pieces); alien pathing is shut with pathing blocker units.
+// The QA probe and room tour run in both builds so the two can be compared.
+// =====================================================================
+
+int[@W@][@H@] as_cell;            // -1 hull, else the room kind (tools/level.py KIT_KINDS)
+int[@W@][@H@] as_kitMark;         // scratch: 1 a tile covers the cell, 2 a pathing block does
+bool[@W@][@H@] as_kitNear;        // hull cell within three of the deck: gets a cap
+bool[@W@][@H@] as_kitEdge;        // collision cell touching the deck: gets a pathing blocker
+string[8] as_kitPanels;         // per kind: the wall panels it draws from, one digit each
+int as_kitWalls;
+int as_kitTiles;
+int as_kitCaps;
+int as_kitProps;
+int as_kitBlockers;
+int as_kitLeaks;                // hull cells aliens can still walk on
+int as_kitShut;                 // deck cells aliens can no longer walk on
+fixed as_kitSecs;
+bool as_kitMode;                // this build loads its deck through the kit
+bool as_kitScriptPath = true;   // shut the hull with blocker units (false: the map's painted layer does it, build.py --kit-painted)
+bool as_kitBuilt;
+string as_kitReport = "";
+string as_probeReport = "";
+string as_kitStages = "";       // pathing readback at each stage, leaks/shut
+// Wall actors and their sides, so Ctrl+Y can mirror the turns if the client rotates the other way.
+actor[1024] as_kitWallA;
+int[1024] as_kitWallSide;
+fixed as_kitWallSign = 1.0;
+// Props and their doodad rotations, so Ctrl+B can find the turn that matches the baked doodads.
+actor[96] as_kitPropA;
+fixed[96] as_kitPropRot;
+fixed as_kitPropTurn = 0.0;
+
+void AS_DeckRow (int y, string s) {
+    int x;string c;
+    for(x=0;x<AS_W;x+=1) {
+        c=StringSub(s,x+1,x+1);
+        if(c=="#") {as_cell[x][y]= -1;}
+        else {as_cell[x][y]=StringToInt(c);}
+    }
+}
+bool AS_Floor (int x, int y) {
+    if(x<0 || y<0 || x>=AS_W || y>=AS_H) {return false;}
+    return as_cell[x][y]>=0;
+}
+void AS_KitTurn (actor a, fixed turn) {
+    // SetRotation's forward vector is where the model's -Y points (seen in the client: turn 0 sent as
+    // forward +Y showed every wall back to front). Counter-clockwise by turn degrees:
+    ActorSend(a,libNtve_gf_SetRotation(Sin(turn),0.0-Cos(turn),0.0,0.0,0.0,1.0));
+}
+actor AS_KitPiece (string piece, fixed x, fixed y) {
+    actor a=libNtve_gf_CreateActorAtPoint("AS"+piece,Point(x,y));
+    ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ));
+    return a;
+}
+
+// ---- walls ------------------------------------------------------------
+// Which panel a wall face shows, per two-unit bay so panels continue round a room.
+int AS_KitPanel (int kind, int bx, int by, int side) {
+    int h=(bx*37+by*101+side*59+(bx*by)%13)%211;
+    string s=as_kitPanels[kind];int n=StringLength(s);
+    if(kind==6 && h%5==0) {return 7;}
+    return StringToInt(StringSub(s,h%n+1,h%n+1));
+}
+// The panel on side s of hull cell (x, y) (0 south, 1 east, 2 north, 3 west), -1 when no face.
+int AS_FacePanel (int x, int y, int s) {
+    int nx=x;int ny=y;
+    if(x<0 || y<0 || x>=AS_W || y>=AS_H || AS_Floor(x,y)) {return -1;}
+    if(s==0) {ny-=1;}
+    else if(s==1) {nx+=1;}
+    else if(s==2) {ny+=1;}
+    else {nx-=1;}
+    if(!AS_Floor(nx,ny)) {return -1;}
+    return AS_KitPanel(as_cell[nx][ny],nx/2,ny/2,s);
+}
+void AS_KitWall (string piece, fixed x, fixed y, int s) {
+    actor a=AS_KitPiece(piece,x,y);
+    AS_KitTurn(a,IntToFixed(s)*90.0*as_kitWallSign);
+    if(as_kitWalls<1024) {as_kitWallA[as_kitWalls]=a;as_kitWallSide[as_kitWalls]=s;}
+    as_kitWalls+=1;
+}
+// One two-unit bay of wall: a is its viewer-left cell, b the viewer-right one, (mx, my) the bay's midpoint.
+void AS_KitBay (int xa, int ya, int xb, int yb, int s, fixed mx, fixed my) {
+    int pa=AS_FacePanel(xa,ya,s);int pb=AS_FacePanel(xb,yb,s);
+    if(pa>=0 && pa==pb) {AS_KitWall("KW"+IntToString(pa)+"F",mx,my,s);return;}
+    if(pa>=0) {AS_KitWall("KW"+IntToString(pa)+"E",mx,my,s);}
+    if(pb>=0) {AS_KitWall("KW"+IntToString(pb)+"O",mx,my,s);}
+}
+
+// ---- ceiling and caps -------------------------------------------------
+// Ceiling over deck cells (want 0 plain, 1 hive) or caps over near hull cells (want 2).
+bool AS_KitWants (int x, int y, int want) {
+    if(as_kitMark[x][y]==1) {return false;}
+    if(want==2) {return !AS_Floor(x,y) && as_kitNear[x][y];}
+    if(!AS_Floor(x,y)) {return false;}
+    return (as_cell[x][y]==7)==(want==1);
+}
+bool AS_KitFits (int x, int y, int n, int want) {
+    int i;int j;
+    for(i=0;i<n;i+=1) {for(j=0;j<n;j+=1) {if(!AS_KitWants(x+i,y+j,want)) {return false;}}}
+    return true;
+}
+void AS_KitTile (int x, int y, int n, int want) {
+    int i;int j;string piece;
+    for(i=0;i<n;i+=1) {for(j=0;j<n;j+=1) {as_kitMark[x+i][y+j]=1;}}
+    if(want==2) {piece="KK"+IntToString(n);as_kitCaps+=1;}
+    else {
+        piece="K"+StringSub("CD",want+1,want+1)+IntToString(n)+"_"+IntToString(x%4)+IntToString(y%4);
+        as_kitTiles+=1;
+    }
+    AS_KitPiece(piece,IntToFixed(x),IntToFixed(y));
+}
+// The biggest aligned tiles first: 4x4, then 2x2, then single cells.
+void AS_KitTiles (int x0, int y0, int want) {
+    int i;int j;int a;int b;
+    if(AS_KitFits(x0,y0,4,want)) {AS_KitTile(x0,y0,4,want);return;}
+    for(i=0;i<4;i+=2) {
+        for(j=0;j<4;j+=2) {
+            if(AS_KitFits(x0+i,y0+j,2,want)) {AS_KitTile(x0+i,y0+j,2,want);continue;}
+            for(a=0;a<2;a+=1) {for(b=0;b<2;b+=1) {if(AS_KitWants(x0+i+a,y0+j+b,want)) {AS_KitTile(x0+i+a,y0+j+b,1,want);}}}
+        }
+    }
+}
+
+// ---- alien pathing ----------------------------------------------------
+// PathingModify changes nothing on this map, whichever way it is called (tried in the client,
+// 2026-10-22: add unpathable, remove ground, add building). Stock pathing blocker units do the
+// job instead: 2x2 and 1x1 blockers over every collision cell that touches the deck (diagonals
+// too), a wall one cell thick. The deep hull needs none, nothing can reach it.
+void AS_KitEdges () {
+    int x;int y;int i;int j;
+    for(y=0;y<AS_H;y+=1) {
+        for(x=0;x<AS_W;x+=1) {
+            as_kitEdge[x][y]=false;
+            if(!as_wall[x][y]) {continue;}
+            for(i=MaxI(0,x-1);i<=MinI(AS_W-1,x+1);i+=1) {for(j=MaxI(0,y-1);j<=MinI(AS_H-1,y+1);j+=1) {if(!as_wall[i][j]) {as_kitEdge[x][y]=true;}}}
+        }
+    }
+}
+void AS_KitBlock (string kind, fixed x, fixed y) {
+    UnitCreate(1,kind,c_unitCreateIgnorePlacement,0,Point(x,y),0.0);
+    as_kitBlockers+=1;
+}
+void AS_KitPathing () {
+    int x;int y;
+    AS_KitEdges();as_kitBlockers=0;
+    for(y=0;y+1<AS_H;y+=2) {
+        for(x=0;x+1<AS_W;x+=2) {
+            if(!(as_wall[x][y] && as_wall[x+1][y] && as_wall[x][y+1] && as_wall[x+1][y+1])) {continue;}
+            if(!(as_kitEdge[x][y] || as_kitEdge[x+1][y] || as_kitEdge[x][y+1] || as_kitEdge[x+1][y+1])) {continue;}
+            AS_KitBlock("PathingBlocker2x2",IntToFixed(x+1),IntToFixed(y+1));
+            as_kitMark[x][y]=2;as_kitMark[x+1][y]=2;as_kitMark[x][y+1]=2;as_kitMark[x+1][y+1]=2;
+        }
+    }
+    for(y=0;y<AS_H;y+=1) {
+        for(x=0;x<AS_W;x+=1) {
+            if(as_kitEdge[x][y] && as_kitMark[x][y]!=2) {AS_KitBlock("PathingBlocker1x1",IntToFixed(x)+0.5,IntToFixed(y)+0.5);as_kitMark[x][y]=2;}
+        }
+    }
+}
+// Read the pathing back at every cell centre: edge cells the aliens could still cross, deck they no longer can.
+void AS_KitPathCheck () {
+    int x;int y;bool open;
+    AS_KitEdges();as_kitLeaks=0;as_kitShut=0;
+    for(y=0;y<AS_H;y+=1) {
+        for(x=0;x<AS_W;x+=1) {
+            open=PathingType(Point(IntToFixed(x)+0.5,IntToFixed(y)+0.5))==c_pathingGround;
+            if(as_kitEdge[x][y] && open) {as_kitLeaks+=1;}
+            if(!as_wall[x][y] && !open) {as_kitShut+=1;}
+        }
+    }
+}
+
+string AS_KitLS () {
+    return IntToString(as_kitLeaks)+"/"+IntToString(as_kitShut);
+}
+
+// ---- the build --------------------------------------------------------
+void AS_KitShow () {
+    AS_QaText(as_kitReport+"<n/>"+as_kitStages+"<n/>"+as_probeReport);
+}
+bool AS_KitT (bool testConds, bool runActions) {
+    int x;int y;int i;int j;timer t=TimerCreate();
+    TimerStart(t,3600.0,false,c_timeReal);
+    // Pathing calls made during map init do nothing: start once the game is running.
+    Wait(0.0625,c_timeGame);
+    if(as_kitScriptPath) {AS_KitPathStages();}
+    Wait(0.0,c_timeGame);
+    AS_KitBuildRest(t);
+    return true;
+}
+void AS_KitPathStages () {
+    // Pathing first, so aliens woken early already go round the walls; read back before and after.
+    AS_KitPathCheck();as_kitStages="read (edge leaks/deck shut): open map "+AS_KitLS();
+    AS_KitPathing();Wait(0.0,c_timeGame);AS_KitPathCheck();as_kitStages=as_kitStages+", blockers "+AS_KitLS();
+}
+void AS_KitBuildRest (timer t) {
+    int x;int y;int i;int j;
+    // Caps go on hull cells within three of the deck, as the baked hull does.
+    for(y=0;y<AS_H;y+=1) {
+        for(x=0;x<AS_W;x+=1) {
+            if(!AS_Floor(x,y)) {continue;}
+            for(i=MaxI(0,x-3);i<=MinI(AS_W-1,x+3);i+=1) {for(j=MaxI(0,y-3);j<=MinI(AS_H-1,y+3);j+=1) {as_kitNear[i][j]=true;}}
+        }
+        if(y%16==15) {Wait(0.0,c_timeGame);}
+    }
+    for(y=0;y<AS_H;y+=4) {
+        for(x=0;x<AS_W;x+=4) {AS_KitTiles(x,y,0);AS_KitTiles(x,y,1);AS_KitTiles(x,y,2);}
+        Wait(0.0,c_timeGame);
+    }
+    // Walls in bays: south and north faces along each row, east and west faces up each column.
+    for(y=0;y<AS_H;y+=1) {
+        for(x=0;x<AS_W;x+=2) {
+            AS_KitBay(x,y,x+1,y,0,IntToFixed(x+1),IntToFixed(y));
+            AS_KitBay(x+1,y,x,y,2,IntToFixed(x+1),IntToFixed(y+1));
+        }
+        if(y%8==7) {Wait(0.0,c_timeGame);}
+    }
+    for(x=0;x<AS_W;x+=1) {
+        for(y=0;y<AS_H;y+=2) {
+            AS_KitBay(x,y,x,y+1,1,IntToFixed(x+1),IntToFixed(y+1));
+            AS_KitBay(x,y+1,x,y,3,IntToFixed(x),IntToFixed(y+1));
+        }
+        if(x%8==7) {Wait(0.0,c_timeGame);}
+    }
+    AS_KitProps();
+    as_kitSecs=TimerGetElapsed(t);as_kitBuilt=true;
+    as_kitReport="KIT built in "+FixedToString(as_kitSecs,2)+" s real: "+IntToString(as_kitWalls)+" walls, "+IntToString(as_kitTiles)+" ceiling, "
+        +IntToString(as_kitCaps)+" caps, "+IntToString(as_kitProps)+" props = "+IntToString(as_kitWalls+as_kitTiles+as_kitCaps+as_kitProps)
+        +" actors.<n/>Pathing: "+IntToString(as_kitBlockers)+" blocker units, "+IntToString(as_kitLeaks)+" edge leaks, "
+        +IntToString(as_kitShut)+" deck cells shut.";
+    if(!as_kitScriptPath) {as_kitReport=as_kitReport+" (unused: painted pathing build)";}
+    AS_KitShow();
+}
+void AS_KitStart () {
+    TriggerExecute(TriggerCreate("AS_KitT"),false,false);
+}
+void AS_KitProp (string model, fixed x, fixed y, fixed rot, fixed scale) {
+    actor a=libNtve_gf_CreateActorAtPoint("ASR_"+model,Point(x,y));
+    ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ));
+    ActorSend(a,"SetScale "+FixedToString(scale,3));
+    if(as_kitProps<96) {as_kitPropA[as_kitProps]=a;as_kitPropRot[as_kitProps]=rot;}
+    as_kitProps+=1;
+    AS_KitPropFace(as_kitProps-1);
+}
+void AS_KitPropFace (int i) {
+    fixed f=as_kitPropRot[i]+as_kitPropTurn;
+    // A placed doodad's rotation turns the model counter-clockwise; same turn as the walls (AS_KitTurn).
+    if(i<96) {AS_KitTurn(as_kitPropA[i],f);}
+}
+
+// ---- QA: Ctrl+B props turn, Ctrl+Y walls mirror (Ctrl+M is the client's music toggle) ----
+void AS_KitPropsTurn (int p) {
+    int i;
+    as_kitPropTurn=ModF(as_kitPropTurn+90.0,360.0);
+    for(i=0;i<MinI(as_kitProps,96);i+=1) {AS_KitPropFace(i);}
+    AS_Message(p,"Prop turn "+FixedToString(as_kitPropTurn,0));
+}
+void AS_KitMirror (int p) {
+    int i;
+    as_kitWallSign= -as_kitWallSign;
+    for(i=0;i<MinI(as_kitWalls,1024);i+=1) {AS_KitTurn(as_kitWallA[i],IntToFixed(as_kitWallSide[i])*90.0*as_kitWallSign);}
+    AS_Message(p,"Wall turns mirrored");
+}
+
+// ---- QA: pathing dump to a bank (Documents/StarCraft II/.../Banks), one row per key; Ctrl+U writes it ----
+// '.' ground, '#' unpathable, 'B' building, 'C' cliff; '*' marks collision cells the probe would see as ground.
+void AS_KitDump (string section) {
+    int x;int y;int k;string row;bank b=BankLoad("ASPathDump",1);
+    for(y=0;y<AS_H;y+=1) {
+        row="";
+        for(x=0;x<AS_W;x+=1) {
+            k=PathingType(Point(IntToFixed(x)+0.5,IntToFixed(y)+0.5));
+            if(k==c_pathingGround) {
+                if(as_wall[x][y]) {row=row+"*";}
+                else {row=row+".";}
+            }
+            else if(k==c_pathingBuilding) {row=row+"B";}
+            else if(k==c_pathingCliff) {row=row+"C";}
+            else {row=row+"#";}
+        }
+        BankValueSetFromString(b,section,IntToString(100+y),row);
+    }
+    BankSave(b);
+}
+
+// ---- QA: Ctrl+U drops every script pathing change and walks the probe again ----
+void AS_KitUnpath (int p) {
+    PathingReset();PathingUpdate();AS_KitPathCheck();AS_KitDump("reset");
+    as_kitStages=as_kitStages+"<n/>after Ctrl+U reset "+AS_KitLS();
+    AS_ProbeRun();
+    AS_Message(p,"Script pathing cleared, probe walking");
+}
+
+// ---- QA: room tour (Ctrl+N) -------------------------------------------
+fixed[32] as_tourX;
+fixed[32] as_tourY;
+int as_tourCount;
+int as_tourAt= -1;
+void AS_Tour (int p) {
+    if(as_tourCount==0 || !as_alive[p]) {return;}
+    as_tourAt=(as_tourAt+1)%as_tourCount;
+    UnitSetPosition(as_m[p],Point(as_tourX[as_tourAt],as_tourY[as_tourAt]),false);
+    as_mvX[p]=0.0;as_mvY[p]=0.0;
+    AS_Message(p,"Tour "+IntToString(as_tourAt+1)+"/"+IntToString(as_tourCount)+": "+as_roomName[as_tourAt]);
+}
+
+// ---- QA: pathing probe (Ctrl+P, and once after load) ------------------
+// A drone outside the alien AI walks two legs from the same spot in the docking bay:
+// 0, thirteen units across the open bay (does native movement work at all), then
+// 1, to the crew mess: about 30 units by the South Passage, 28.5 straight through the hull.
+unit as_probe;
+int as_probeLeg;
+fixed as_probeStart;
+fixed as_probeLen;
+int as_probeSamples;
+int as_probeClips;
+point as_probeLast;
+fixed as_probeAuto = 4.0;
+string[2] as_probeLine;
+const fixed AS_PROBE_X0 = 11.5;
+const fixed AS_PROBE_Y0 = 11.5;
+point AS_ProbeTarget () {
+    if(as_probeLeg==0) {return Point(24.5,9.5);}
+    return Point(20.5,38.5);
+}
+void AS_ProbeStart () {
+    if(as_probe!=null) {UnitRemove(as_probe);}
+    UnitCreate(1,"ASDrone",c_unitCreateIgnorePlacement,AS_HOSTILE,Point(AS_PROBE_X0,AS_PROBE_Y0),0.0);
+    as_probe=UnitLastCreated();
+    UnitIssueOrder(as_probe,OrderTargetingPoint(AbilityCommand("move",0),AS_ProbeTarget()),c_orderQueueReplace);
+    as_probeLine[as_probeLeg]="PROBE leg "+IntToString(as_probeLeg)+" walking...";AS_ProbeShow();
+    as_probeStart=as_now;as_probeLen=0.0;as_probeSamples=0;as_probeClips=0;as_probeLast=Point(AS_PROBE_X0,AS_PROBE_Y0);
+}
+void AS_ProbeShow () {
+    as_probeReport=as_probeLine[0]+"<n/>"+as_probeLine[1];AS_KitShow();
+}
+void AS_ProbeRun () {
+    as_probeLeg=0;as_probeLine[0]="";as_probeLine[1]="";AS_ProbeStart();
+}
+void AS_KitPulse () {
+    point q;string s;point to=AS_ProbeTarget();
+    if(as_qa && as_probeAuto>0.0 && as_now>=as_probeAuto && (as_kitBuilt || !as_kitMode)) {
+        // The baked build reads its painted pathing back too, as the baseline for the kit's readback.
+        if(!as_kitMode) {AS_KitPathCheck();as_kitStages="read: baked "+AS_KitLS();}
+        as_probeAuto=0.0;AS_ProbeRun();
+    }
+    if(as_probe==null) {return;}
+    q=UnitGetPosition(as_probe);
+    if(as_tick%8==0) {
+        UnitIssueOrder(as_probe,OrderTargetingPoint(AbilityCommand("move",0),to),c_orderQueueReplace);
+        as_probeLine[as_probeLeg]="PROBE leg "+IntToString(as_probeLeg)+" at "+FixedToString(PointGetX(q),1)+","+FixedToString(PointGetY(q),1)
+            +" orders "+IntToString(UnitOrderCount(as_probe))+" speed now "+FixedToString(UnitGetPropertyFixed(as_probe,c_unitPropMovementSpeedCurrent,true),2);
+        AS_ProbeShow();
+    }
+    as_probeLen+=DistanceBetweenPoints(q,as_probeLast);as_probeLast=q;as_probeSamples+=1;
+    if(AS_Solid(PointGetX(q),PointGetY(q))) {as_probeClips+=1;}
+    if(DistanceBetweenPoints(q,to)<1.0 || as_now-as_probeStart>40.0) {
+        s="PROBE leg "+IntToString(as_probeLeg)+": "+FixedToString(as_now-as_probeStart,1)+" s, walked "+FixedToString(as_probeLen,1)+", "+IntToString(as_probeClips)+"/"
+            +IntToString(as_probeSamples)+" samples inside walls";
+        if(DistanceBetweenPoints(q,to)>=1.0) {s=s+", did NOT arrive";}
+        as_probeLine[as_probeLeg]=s;AS_ProbeShow();
+        UnitRemove(as_probe);as_probe=null;
+        if(as_probeLeg==0) {as_probeLeg=1;AS_ProbeStart();}
+    }
+}

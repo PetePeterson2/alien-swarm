@@ -63,8 +63,10 @@ bool AS_LineClear (fixed x0, fixed y0, fixed x1, fixed y1) {
 }
 
 // ---- spawning ---------------------------------------------------------
+point[5] as_respawnPt;
 void AS_MarineSpawn (int p) {
     point q=Point(@spawnX@+IntToFixed((p-1)%2)*1.2,@spawnY@+IntToFixed((p-1)/2)*1.2);
+    if(as_respawnPt[p]!=null) {q=as_respawnPt[p];}
     if(as_m[p]==null) {
         UnitCreate(1,"ASMarine",c_unitCreateIgnorePlacement,p,q,@spawnFacing@);
         as_m[p]=UnitLastCreated();
@@ -141,6 +143,7 @@ void AS_Camera (int p) {
 
 // ---- input ------------------------------------------------------------
 void AS_KeyMove (int p, int k, bool down) {
+    if(as_bot[p]) {return;}
     as_key[p][k]=down;
 }
 // Where the gun points: the cursor in the top-down view (kept as an offset from
@@ -156,7 +159,7 @@ void AS_AimUpdate (int p) {
 }
 void AS_MouseMoved (int p, fixed wx, fixed wy) {
     point here;
-    if(!AS_Person(p) || as_m[p]==null) {return;}
+    if(!AS_Person(p) || as_m[p]==null || as_bot[p]) {return;}
     here=UnitGetPosition(as_m[p]);
     as_mouseDX[p]=wx-PointGetX(here);as_mouseDY[p]=wy-PointGetY(here);as_mouseSeen[p]=true;
 }
@@ -185,7 +188,8 @@ void AS_Move (int p) {
     // Firing weighs the marine down a little; the minigun a lot.
     if(as_now-as_lastShot[p]<0.2) {speed*=as_gun[as_slot[p]].recoilSlow;}
     if(as_slot[p]==7 && as_spin[p]>0.2) {speed*=0.7;}
-    if(as_view[p]==0) {wx=s*speed;wy=f*speed;}
+    if(as_bot[p]) {wx=as_botVX[p]*speed;wy=as_botVY[p]*speed;}
+    else if(as_view[p]==0) {wx=s*speed;wy=f*speed;}
     else {
         yaw=CameraGetYaw(p);
         wx=(Cos(yaw)*f+Sin(yaw)*s)*speed;wy=(Sin(yaw)*f-Cos(yaw)*s)*speed;
@@ -238,6 +242,7 @@ void AS_HurtMarine (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock) {
         ang=ATan2(PointGetY(here)-fromY,PointGetX(here)-fromX);
         as_knockX[p]+=Cos(ang)*knock;as_knockY[p]+=Sin(ang)*knock;
     }
+    as_dmgTaken[p]+=dmg;
     if(as_god[p]) {dmg=0.0;}
     as_hp[p]-=dmg;as_hurtFlash[p]=as_now;
     AS_Fx("ASFxBlood",PointGetX(here),PointGetY(here),0.5,RandomFixed(0.0,360.0));
@@ -248,17 +253,23 @@ void AS_HurtMarine (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock) {
 void AS_MarineDie (int p) {
     point here=UnitGetPosition(as_m[p]);
     as_alive[p]=false;as_hp[p]=0.0;as_respawnAt[p]=as_now+4.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;
+    as_deaths[p]+=1;
+    if(as_mission) {as_respawnAt[p]=as_now+AS_RESPAWN;}
     AS_Fx("ASDieMarine",PointGetX(here),PointGetY(here),0.0,as_aim[p]);
     AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);
     libNtve_gf_ShowHideUnit(as_m[p],false);libNtve_gf_ShowHideUnit(as_muzzle[p],false);
     UnitSetPosition(as_m[p],Point(@spawnX@,@spawnY@),false);
     AS_TorchShow(p);
-    AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying in 4 seconds");
+    if(as_mission) {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying beside your squad in 10 seconds");}
+    else {AS_Message(p,"<c val=\"FF5040\">MARINE DOWN</c>  -  redeploying in 4 seconds");}
 }
 void AS_MarinePulse (int p) {
     point here;int i;
     if(!as_alive[p]) {
-        if(as_now>=as_respawnAt[p]) {AS_MarineSpawn(p);}
+        if(as_now>=as_respawnAt[p] && AS_CanRespawn(p)) {
+            if(as_mission) {as_respawnPt[p]=AS_RespawnPoint(p);}
+            AS_MarineSpawn(p);
+        }
         return;
     }
     if(as_infestUntil[p]>as_now) {

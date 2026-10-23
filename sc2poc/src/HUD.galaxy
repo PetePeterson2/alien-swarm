@@ -33,6 +33,14 @@ int[5] as_cSmall;
 int[5] as_cMsg;
 int[5] as_cCross;
 int[5][11] as_cSlot;
+int[5] as_cQa;              // kit comparison readout, top right (src/Kit.galaxy)
+int[5] as_cObj;             // mission objectives, under the mission line
+int[5] as_dProg;            // centre progress bar: door override, lift countdown, ride depth
+int[5] as_cProg;
+int[5] as_cProgText;
+int[5] as_cSquad;           // the rest of the squad, right side
+int[5] as_dDebrief;
+int[5] as_cDebrief;
 fixed[5] as_msgUntil;
 fixed[5] as_bigUntil;
 
@@ -107,6 +115,23 @@ void AS_HudCreate (int p) {
     as_cSmall[p]=AS_Label(d,p,c_anchorTop,0,72,1000,30,"ASHeadC","");
     as_cMsg[p]=AS_Label(d,p,c_anchorBottom,0,20,1000,30,"ASBodyC","");
     as_cCross[p]=AS_Label(d,p,c_anchorCenter,0,80,60,40,"ASCross","+");
+    // Mission: objectives under the mission line, a progress bar under the announcements, the squad on the right.
+    as_cObj[p]=AS_Label(as_dTop[p],p,c_anchorTopLeft,0,90,700,140,"ASBody","");
+    DialogSetSize(as_dTop[p],700,240);
+    d=AS_Panel(p,520,64,c_anchorTop,0,170);as_dProg[p]=d;
+    AS_Image(d,c_anchorTopLeft,0,30,520,14,AS_WHITE,Color(14.0,14.0,16.0));
+    as_cProg[p]=AS_Image(d,c_anchorTopLeft,0,30,1,14,AS_WHITE,Color(100.0,72.0,24.0));
+    as_cProgText[p]=AS_Label(d,p,c_anchorTopLeft,0,0,520,28,"ASHeadC","");
+    DialogSetVisible(d,AS_Me(p),false);
+    d=AS_Panel(p,300,160,c_anchorRight,24,-120);
+    as_cSquad[p]=AS_Label(d,p,c_anchorTopRight,0,0,300,160,"ASSmallR","");
+    d=AS_Panel(p,760,420,c_anchorCenter,0,-40);as_dDebrief[p]=d;
+    AS_Image(d,c_anchorTopLeft,0,0,760,420,AS_WHITE,Color(3.0,4.0,6.0));
+    as_cDebrief[p]=AS_Label(d,p,c_anchorTopLeft,40,24,680,380,"ASBody","");
+    DialogSetVisible(d,AS_Me(p),false);
+    // Kit comparison readout, top right.
+    d=AS_Panel(p,760,130,c_anchorTopRight,20,20);
+    as_cQa[p]=AS_Label(d,p,c_anchorTopRight,0,0,760,130,"ASSmallR","");
     // Help, toggled with H.
     d=AS_Panel(p,640,600,c_anchorCenter,0,0);as_dHelp[p]=d;
     AS_Image(d,c_anchorTopLeft,0,0,640,600,AS_WHITE,Color(3.0,4.0,6.0));
@@ -135,6 +160,10 @@ void AS_HudView (int p) {
 void AS_Message (int p, string s) {
     if(!AS_Person(p) || as_dCenter[p]==0) {return;}
     AS_Text(as_cMsg[p],p,s);as_msgUntil[p]=as_now+2.5;
+}
+void AS_QaText (string s) {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && as_cQa[p]!=0) {AS_Text(as_cQa[p],p,s);}}
 }
 void AS_Announce (int p, string big, string small) {
     if(!AS_Person(p) || as_dCenter[p]==0) {return;}
@@ -186,11 +215,12 @@ void AS_HudUpdate (int p) {
         if(k==w) {DialogControlSetPropertyAsString(as_cSlot[p][k],c_triggerControlPropertyStyle,AS_Me(p),"ASSlotOn");}
         else {DialogControlSetPropertyAsString(as_cSlot[p][k],c_triggerControlPropertyStyle,AS_Me(p),"ASSlot");}
     }
+    if(as_mission) {AS_MissionHud(p);}
     // Mission line.
     s="KILLS "+IntToString(as_kills[p])+"    ALIENS "+IntToString(as_alive2)+"    WAVE "+IntToString(as_wave);
     if(as_shotsFired[p]>0) {s=s+"    HITS "+IntToString(as_shotsHit[p]*100/as_shotsFired[p])+"%";}
     if(as_hordeLeft>0 || as_hordeUntil>as_now) {s=s+"    <c val=\"FF5040\">SWARM INBOUND</c>";}
-    else if(as_director) {s=s+"    next swarm "+FixedToString(MaxF(0.0,as_nextHorde-as_now),0)+" s";}
+    else if(as_director && !as_mission) {s=s+"    next swarm "+FixedToString(MaxF(0.0,as_nextHorde-as_now),0)+" s";}
     AS_Text(as_cTop2[p],p,s);
     s="<c val=\"FFBA40\">V</c> view: "+AS_ViewName(p)+"    <c val=\"FFBA40\">L</c> lights: "+as_lightName[as_light]+"    <c val=\"FFBA40\">T</c> director: ";
     if(as_director) {s=s+"ON";}else {s=s+"OFF";}
@@ -206,4 +236,61 @@ void AS_HurtPulse (int p) {
     if(as_alive[p] && as_hp[p]<30.0) {a=MinF(a,70.0+20.0*Sin(as_now*360.0));}
     if(!as_alive[p]) {a=30.0;}
     DialogSetTransparency(as_dHurt[p],a);
+}
+
+// ---- mission HUD ------------------------------------------------------
+string AS_Clock (fixed secs) {
+    int t=FixedToInt(secs);string sec=IntToString(t%60);
+    if(t%60<10) {sec="0"+sec;}
+    return IntToString(t/60)+":"+sec;
+}
+void AS_Progress (int p, bool show, fixed f, string s) {
+    DialogSetVisible(as_dProg[p],AS_Me(p),show);
+    if(!show) {return;}
+    DialogControlSetSize(as_cProg[p],AS_Me(p),MaxI(1,FixedToInt(520.0*AS_Clamp(f,0.0,1.0))),14);
+    AS_Text(as_cProgText[p],p,s);
+}
+void AS_MissionHud (int p) {
+    int k;string s="";string mark;int q;
+    AS_Text(as_cTop1[p],p,"CARGO ELEVATOR  //  COLONY LANDING BAY  //  "+AS_Clock(as_now-as_missionStart));
+    for(k=0;k<as_objCount;k+=1) {
+        if(as_objState[k]==0) {continue;}
+        if(as_objState[k]==2) {mark="<c val=\"6A8070\">[X]  "+as_objName[k]+"</c>";}
+        else {
+            mark="<c val=\"FFBA40\">[  ]</c>  "+as_objName[k];
+            if(as_objAt!=null) {mark=mark+"   <c val=\"8CFFA0\">"+AS_ObjBearing(p)+"</c>";}
+        }
+        s=s+mark+"<n/>";
+    }
+    AS_Text(as_cObj[p],p,s);
+    // Progress: the override, the countdown aboard, the depth on the way down.
+    if(as_stage==AS_ST_DOOR && as_hack>0.0) {AS_Progress(p,true,as_hack,"OVERRIDING SECURITY DOOR  "+IntToString(FixedToInt(as_hack*100.0))+"%");}
+    else if(as_stage==AS_ST_BOARD && as_boardAt>0.0) {AS_Progress(p,true,(as_now-as_boardAt)/5.0,"LIFT STARTING");}
+    else if(as_stage==AS_ST_ESCAPE && as_holdAt>0.0 && as_now<as_holdAt+AS_HOLD) {AS_Progress(p,true,(as_now-as_holdAt)/AS_HOLD,"TRANSIT CAR INBOUND  "+AS_Clock(as_holdAt+AS_HOLD-as_now));}
+    else if(as_stage==AS_ST_RIDE) {AS_Progress(p,true,as_scroll/AS_RIDE_LEN,"DESCENDING  -  DEPTH "+IntToString(FixedToInt(as_scroll*4.0))+" M");}
+    else {AS_Progress(p,false,0.0,"");}
+    // The rest of the squad.
+    s="";
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(q==p || !AS_Person(q)) {continue;}
+        if(as_alive[q]) {s=s+"MARINE "+IntToString(q)+"   "+IntToString(FixedToInt(MaxF(0.0,as_hp[q])))+" HP<n/>";}
+        else {s=s+"<c val=\"FF5040\">MARINE "+IntToString(q)+"   DOWN</c><n/>";}
+    }
+    AS_Text(as_cSquad[p],p,s);
+}
+void AS_Debrief (int p) {
+    int q;string s;int acc;
+    if(as_dDebrief[p]==0) {return;}
+    s="<c val=\"8CFFA0\">MISSION COMPLETE</c>  -  CARGO ELEVATOR<n/>Time "+AS_Clock(as_missionEnd-as_missionStart)+"<n/><n/>";
+    s=s+"<c val=\"FFBA40\">MARINE        KILLS      ACCURACY      DAMAGE TAKEN      DEATHS</c><n/>";
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(!AS_Person(q)) {continue;}
+        acc=0;
+        if(as_shotsFired[q]>0) {acc=as_shotsHit[q]*100/as_shotsFired[q];}
+        s=s+"MARINE "+IntToString(q)+"          "+IntToString(as_kills[q])+"            "+IntToString(acc)+"%              "
+            +IntToString(FixedToInt(as_dmgTaken[q]))+"                  "+IntToString(as_deaths[q])+"<n/>";
+    }
+    s=s+"<n/>The colony is below. Next: the surface bridge.<n/><n/><c val=\"6A8070\">Returning to the lobby in 30 seconds.</c>";
+    AS_Text(as_cDebrief[p],p,s);
+    DialogSetVisible(as_dDebrief[p],AS_Me(p),true);
 }

@@ -22,6 +22,9 @@ void AS_Populate (int r, int kind, int count) {
 // The deck as the marines find it.
 void AS_DirectorInit () {
     int r;
+    as_nextHorde=as_now+50.0;
+    // A mission places its own sleepers (AS_MissionPopulate).
+    if(as_mission) {return;}
     for(r=0;r<as_roomCount;r+=1) {
         if(as_roomKind[r]=="mess") {AS_Populate(r,AS_DRONE,4);AS_Populate(r,AS_BUZZER,2);}
         if(as_roomKind[r]=="reactor") {AS_Populate(r,AS_DRONE,5);AS_Populate(r,AS_RANGER,2);AS_Populate(r,AS_BOOMER,1);}
@@ -38,6 +41,8 @@ int AS_PickVent () {
     int v;int p;int best= -1;fixed score;fixed bestScore= -1000.0;fixed d;fixed nearest;point mq;bool seen;
     for(v=0;v<as_ventCount;v+=1) {
         nearest=1000.0;seen=false;
+        // The two levels of a mission do not join: only vents on the squad's own level.
+        if(as_mission && (PointGetX(as_vent[v])>93.0)!=as_lowerLevel) {continue;}
         for(p=1;p<=AS_PLAYERS;p+=1) {
             if(!AS_Person(p) || !as_alive[p]) {continue;}
             mq=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(mq,as_vent[v]);

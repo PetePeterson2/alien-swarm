@@ -1,0 +1,187 @@
+// =====================================================================
+// AI marines: fill the squad's empty slots in a mission, as Alien Swarm's
+// own bots do. A bot follows the squad leader (the first living human) by
+// the trail the leader leaves, holds the platform when the squad boards
+// the lift, stands on the transit platform at the end, shoots the nearest
+// alien it can see and uses its medkits.
+//
+// Autopilot (build.py --auto): player 1 is driven too, along the mission's
+// route (tools/cargo.py ROUTE), so a whole run plays itself for QA; every
+// stage is written to the ASAuto bank (AS_Log).
+// =====================================================================
+
+
+// ---- the QA log -------------------------------------------------------
+void AS_Log (string s) {
+    bank b;string k;
+    if(!as_qa && !as_auto) {return;}
+    b=BankLoad("ASAuto",1);
+    as_logN+=1;k=IntToString(1000+as_logN);
+    BankValueSetFromString(b,"log",k,"t="+FixedToString(as_now,1)+" stage="+IntToString(as_stage)+" "+s);
+    BankValueSetFromInt(b,"meta","lines",as_logN);
+    BankValueSetFromString(b,"meta","run",as_runId);
+    BankSave(b);
+}
+string AS_Where (int p) {
+    point q;
+    if(!AS_Person(p) || as_m[p]==null) {return "-";}
+    q=UnitGetPosition(as_m[p]);
+    return FixedToString(PointGetX(q),1)+","+FixedToString(PointGetY(q),1);
+}
+void AS_LogStatus () {
+    int p;string s="status aliens="+IntToString(as_alive2)+" living="+IntToString(AS_Living())+" ride="+IntToString(as_ride)+" scroll="+FixedToString(as_scroll,1)+" hack="+FixedToString(as_hack,2);
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(AS_Person(p)) {s=s+" p"+IntToString(p)+"@"+AS_Where(p)+"/hp"+IntToString(FixedToInt(as_hp[p]))+"/k"+IntToString(as_kills[p]);}
+    }
+    AS_Log(s);
+}
+
+// ---- following --------------------------------------------------------
+int AS_Leader () {
+    int p;
+    if(as_auto && as_alive[1]) {return 1;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && !as_bot[p] && as_alive[p]) {return p;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p) && as_alive[p]) {return p;}}
+    return 0;
+}
+void AS_CrumbPulse () {
+    point q;
+    as_leader=AS_Leader();
+    if(as_leader==0 || as_tick%4!=0) {return;}
+    q=UnitGetPosition(as_m[as_leader]);
+    if(as_crumbHead>=0 && DistanceBetweenPoints(q,as_crumb[as_crumbHead])<0.9) {return;}
+    as_crumbHead=(as_crumbHead+1)%48;as_crumb[as_crumbHead]=q;as_crumbN=MinI(48,as_crumbN+1);
+}
+// The newest point of the leader's trail this bot can walk straight to.
+point AS_TrailPoint (point at0) {
+    int k;int i;point c;
+    for(k=0;k<as_crumbN;k+=1) {
+        i=(as_crumbHead-k+48)%48;c=as_crumb[i];
+        if(AS_LineClear(PointGetX(at0),PointGetY(at0),PointGetX(c),PointGetY(c))) {return c;}
+    }
+    return null;
+}
+// Spots for each marine on the lift and the transit platform, so the squad spreads out.
+point AS_PostOf (int p, fixed x0, fixed y0, fixed x1, fixed y1) {
+    fixed cx=(x0+x1)*0.5;fixed cy=(y0+y1)*0.5;
+    return Point(cx-2.0+IntToFixed((p-1)%2)*4.0,cy-2.0+IntToFixed((p-1)/2)*4.0);
+}
+point AS_BotGoal (int p) {
+    point lq;point here=UnitGetPosition(as_m[p]);
+    if(as_auto && p==1) {return AS_RouteGoal();}
+    if(as_leader==0 || as_leader==p) {return null;}
+    lq=UnitGetPosition(as_m[as_leader]);
+    // Everyone aboard: hold a spot on the platform until the ride is over.
+    if((as_stage==AS_ST_BOARD && AS_InRect(lq,as_liftX0,as_liftY0,as_liftX1,as_liftY1)) || as_stage==AS_ST_RIDE) {
+        return AS_PostOf(p,as_liftX0,as_liftY0,as_liftX1,as_liftY1);
+    }
+    if(as_stage==AS_ST_ESCAPE && AS_InRect(lq,as_extX0,as_extY0,as_extX1,as_extY1)) {return AS_PostOf(p,as_extX0,as_extY0,as_extX1,as_extY1);}
+    if(DistanceBetweenPoints(here,lq)<2.6 && AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(lq),PointGetY(lq))) {return null;}
+    return AS_TrailPoint(here);
+}
+point AS_RouteGoal () {
+    point here=UnitGetPosition(as_m[1]);point to;
+    if(as_routeAt>=as_routeN) {return null;}
+    to=Point(as_routeX[as_routeAt],as_routeY[as_routeAt]);
+    if(DistanceBetweenPoints(here,to)<0.9) {
+        if(as_routeWait[as_routeAt]==1 && !as_doorOpen) {return null;}
+        if(as_routeWait[as_routeAt]==2 && as_ride<4) {return null;}
+        as_routeAt+=1;AS_Log("route waypoint "+IntToString(as_routeAt)+"/"+IntToString(as_routeN));
+        if(as_routeAt>=as_routeN) {return null;}
+        to=Point(as_routeX[as_routeAt],as_routeY[as_routeAt]);
+    }
+    return to;
+}
+
+// ---- fighting ---------------------------------------------------------
+int AS_BotFoe (int p) {
+    int i;int best= -1;fixed bd=11.0;fixed d;point here=UnitGetPosition(as_m[p]);point q;
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]==null || as_aKind[i]==AS_BIOMASS) {continue;}
+        if(as_aKind[i]==AS_EGG) {d=DistanceBetweenPoints(here,UnitGetPosition(as_a[i]))+4.0;}
+        else {d=DistanceBetweenPoints(here,UnitGetPosition(as_a[i]));}
+        if(d>=bd) {continue;}
+        q=UnitGetPosition(as_a[i]);
+        if(!AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(q),PointGetY(q))) {continue;}
+        bd=d;best=i;
+    }
+    return best;
+}
+void AS_BotPulse (int p) {
+    point here;point goal;fixed dx;fixed dy;fixed d;int q;point oq;fixed sx=0.0;fixed sy=0.0;int f;
+    if(!as_bot[p] || !as_alive[p]) {return;}
+    here=UnitGetPosition(as_m[p]);
+    // The trail search is the costly part: once every four steps, each bot on its own step.
+    if(as_tick%4==p%4 || as_botGoalPt[p]==null || (as_auto && p==1)) {as_botGoalPt[p]=AS_BotGoal(p);}
+    goal=as_botGoalPt[p];
+    AS_BotCatchUp(p,here);
+    as_botVX[p]=0.0;as_botVY[p]=0.0;
+    if(goal!=null) {
+        dx=PointGetX(goal)-PointGetX(here);dy=PointGetY(goal)-PointGetY(here);d=SquareRoot(dx*dx+dy*dy);
+        if(d>0.35) {as_botVX[p]=dx/d;as_botVY[p]=dy/d;}
+    }
+    // Keep a little room from the rest of the squad.
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(q==p || !AS_Person(q) || !as_alive[q]) {continue;}
+        oq=UnitGetPosition(as_m[q]);d=DistanceBetweenPoints(here,oq);
+        if(d<0.9 && d>0.01) {sx+=(PointGetX(here)-PointGetX(oq))/d*(0.9-d);sy+=(PointGetY(here)-PointGetY(oq))/d*(0.9-d);}
+    }
+    as_botVX[p]+=sx*1.5;as_botVY[p]+=sy*1.5;
+    // Pick a target a few times a second; shoot while it is in sight.
+    if(as_now>=as_botNextLook[p]) {as_botNextLook[p]=as_now+0.25;as_botFoe[p]=AS_BotFoe(p);}
+    f=as_botFoe[p];
+    if(f>=0 && as_a[f]!=null) {
+        oq=UnitGetPosition(as_a[f]);
+        as_mouseDX[p]=PointGetX(oq)-PointGetX(here);as_mouseDY[p]=PointGetY(oq)-PointGetY(here);as_trigger[p]=true;
+    }
+    else {
+        as_trigger[p]=false;
+        if(as_botVX[p]*as_botVX[p]+as_botVY[p]*as_botVY[p]>0.1) {as_mouseDX[p]=as_botVX[p]*4.0;as_mouseDY[p]=as_botVY[p]*4.0;}
+    }
+    as_mouseSeen[p]=true;
+    // Bots never run dry and patch themselves up.
+    if(as_reserve[p][as_slot[p]]<as_gun[as_slot[p]].mag) {as_reserve[p][as_slot[p]]=as_gun[as_slot[p]].reserve;}
+    if((as_hp[p]<45.0 || as_infestUntil[p]>as_now) && as_medkits[p]>0) {AS_UseMedkit(p);}
+}
+// Give the empty slots to bots (missions only), each with a different gun.
+void AS_BotsInit () {
+    int p;int n=0;
+    if(!as_mission) {return;}
+    if(as_auto) {as_bot[1]=true;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(as_on[p]) {continue;}
+        as_on[p]=true;as_bot[p]=true;n+=1;
+    }
+    as_botCount=n;
+}
+void AS_BotLoadout (int p) {
+    if(!as_bot[p] || (as_auto && p==1)) {return;}
+    if(p==2) {as_slot[p]=2;}
+    else if(p==3) {as_slot[p]=3;}
+    else {as_slot[p]=1;}
+}
+// A bot left far behind or wedged on a corner rejoins the leader, but only where no human sees it go.
+bool AS_HumanSees (point q) {
+    int h;point hq;
+    for(h=1;h<=AS_PLAYERS;h+=1) {
+        if(!AS_Person(h) || (as_bot[h] && !(as_auto && h==1)) || !as_alive[h]) {continue;}
+        hq=UnitGetPosition(as_m[h]);
+        if(DistanceBetweenPoints(hq,q)<15.0) {return true;}
+    }
+    return false;
+}
+void AS_BotCatchUp (int p, point here) {
+    point lq;point to;bool far;
+    if(as_leader==0 || as_leader==p || as_stage==AS_ST_RIDE) {as_botStuckAt[p]=as_now;return;}
+    if(as_botLast[p]==null || DistanceBetweenPoints(here,as_botLast[p])>0.5) {as_botLast[p]=here;as_botStuckAt[p]=as_now;}
+    lq=UnitGetPosition(as_m[as_leader]);
+    far=DistanceBetweenPoints(here,lq)>22.0;
+    if(!far && (as_now-as_botStuckAt[p]<6.0 || DistanceBetweenPoints(here,lq)<4.0)) {return;}
+    if(as_crumbN<4) {return;}
+    // A point a few steps back along the leader's trail, out of every human's sight.
+    to=as_crumb[(as_crumbHead-3+48)%48];
+    if(AS_HumanSees(here) || !AS_Free(PointGetX(to),PointGetY(to),AS_MARINE_R)) {return;}
+    UnitSetPosition(as_m[p],to,false);as_mvX[p]=0.0;as_mvY[p]=0.0;
+    as_botLast[p]=to;as_botStuckAt[p]=as_now;
+    AS_Log("bot "+IntToString(p)+" caught up");
+}

@@ -140,14 +140,17 @@ def terrain_binaries(width, height, heights, masks, textures, dominant):
 
 
 def painted_pathing(open_cells):
-    """PaintedPathingLayer: 512 x 512 half-cells, byte 0 = 1 open, 0 shut (proven in PUBG).
+    """PaintedPathingLayer: 512 x 512 half-cells of two bytes, (1, 1) open and (0, 0) shut.
 
+    Both bytes matter. With (1, 0) for open, PathingType still reads every cell back
+    correctly, but native movers stall in open floor (seen in the client, 2026-10-22).
+    The Editor-saved and doodad-royale/heist layers only use (1, 1), (0, 0) and (128, 128).
     `open_cells` is a bool array [h, w] of whole map cells.
     """
     h, w = open_cells.shape
     path = np.zeros((512, 512, 2), np.uint8)
     half = np.repeat(np.repeat(open_cells, 2, 0), 2, 1)
-    path[:h * 2, :w * 2, 0] = half.astype(np.uint8)
+    path[:h * 2, :w * 2, :] = half.astype(np.uint8)[:, :, None]
     return struct.pack('<4I', 0, 0, 512, 512) + path.tobytes()
 
 
