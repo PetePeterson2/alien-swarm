@@ -122,7 +122,7 @@ def floor_lab(seed=3, glow=True):
     return _img(_dirt(a, seed + 4, 0.14)), (_img(emis) if glow else None)
 
 
-def floor_diamond(seed=4, tone=(124, 124, 120)):
+def floor_diamond(seed=4, tone=(140, 140, 136)):
     """metalfloor011a: diamond tread plate, one plate of two units with a bevelled border."""
     base = np.array(tone, float)
     n = _noise(0, 50, seed, 4, (S, S))
@@ -144,7 +144,7 @@ def floor_diamond(seed=4, tone=(124, 124, 120)):
     return _img(_dirt(a, seed + 4, 0.28))
 
 
-def floor_grille(seed=5, tone=(128, 130, 130)):
+def floor_grille(seed=5, tone=(140, 142, 142)):
     """metalfloor3: plates of a unit punched with staggered slots over a dark void."""
     base = np.array(tone, float)
     n = _noise(0, 40, seed, 4, (S, S))
@@ -329,6 +329,17 @@ def decal_blob(size=128):
     d = np.maximum(np.abs(xx), np.abs(yy)) * 0.6 + np.hypot(xx, yy) * 0.4
     g = 255 * (1 - 0.55 * np.clip(1 - d, 0, 1) ** 0.8)
     return _img(np.dstack([g, g, g]))
+
+
+def run_light(w=128, h=32, tint=(150, 225, 255)):
+    """A floor running light (added): a bright capsule with a soft halo."""
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    dx = np.maximum(0, np.abs(xx - w / 2) - (w / 2 - h / 2)) / (h / 2)
+    dy = np.abs(yy - h / 2) / (h / 2)
+    d = np.hypot(dx, dy)
+    g = np.clip(1 - d, 0, 1) ** 2.2 + np.clip(1 - d / 0.45, 0, 1) * 0.6
+    g = np.clip(g, 0, 1)
+    return _img(np.dstack([g * tint[0], g * tint[1], g * tint[2]]))
 
 
 def decal_shadow(w=64, h=64):
@@ -521,6 +532,7 @@ MUL_DECALS = {
     'decal_cable1': lambda: decal_cable(51),
     'decal_cable2': lambda: decal_cable(52),
     'shaft_warm': lambda: light_shaft(),
+    'run_light': run_light,
     'shaft_cold': lambda: light_shaft(tint=(200, 226, 255)),
 }
 

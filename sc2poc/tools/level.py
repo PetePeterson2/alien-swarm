@@ -415,7 +415,10 @@ DECAL_PIECES = {
 
 
 def decal_pieces(out):
-    from tools.shipkit import ShipModel, NO_SHADOW_CAST, UNLIT, MULTIPLY
+    from tools.shipkit import ShipModel, NO_SHADOW_CAST, UNLIT, MULTIPLY, ADD
+    m = out['KDRun'] = ShipModel('KDRun', (0, 0, 0))
+    m.quad(('run_light', False, UNLIT, ADD), (-0.42, -0.09, 0.024), (0.42, -0.09, 0.024), (0.42, 0.09, 0.024), (-0.42, 0.09, 0.024),
+           [(0, 1), (1, 1), (1, 0), (0, 0)])
     for name, (tex, ln, wd, mul) in DECAL_PIECES.items():
         m = out[name] = ShipModel(name, (0, 0, 0))
         z = 0.02 if mul else 0.008
@@ -579,6 +582,19 @@ def decal_spots(floor, room, solid, seed=7):
             if run and len(run) <= 12 and all(not (0 <= yy < H) or not floor[yy, cx] for yy in (run[0] - 1, run[-1] + 1)):
                 spots.append(('KPDoor%d' % len(run), float(x), (run[0] + run[-1] + 1) / 2.0, 90.0))
             run = []
+    # Dashed running lights along the corridors' walls, every other cell.
+    for y in range(1, H - 1):
+        for x in range(1, W - 1):
+            if kind(x, y) != 'hall':
+                continue
+            if x % 2 == 0 and not floor[y + 1, x] and not in_void(x, y + 1):
+                spots.append(('KDRun', x + 0.5, y + 0.8, 0.0))
+            if x % 2 == 0 and not floor[y - 1, x] and not in_void(x, y - 1):
+                spots.append(('KDRun', x + 0.5, y + 0.2, 0.0))
+            if y % 2 == 0 and not floor[y, x + 1] and not in_void(x + 1, y):
+                spots.append(('KDRun', x + 0.8, y + 0.5, 90.0))
+            if y % 2 == 0 and not floor[y, x - 1] and not in_void(x - 1, y):
+                spots.append(('KDRun', x + 0.2, y + 0.5, 90.0))
     # Grime everywhere, goo near the hives and labs, scorches where the fighting was.
     open_cells = [(x, y) for y in range(H) for x in range(W) if kind(x, y) and kind(x, y) != 'lift' and not solid[y, x]]
     for x, y in rng.sample(open_cells, len(open_cells) // 36):
