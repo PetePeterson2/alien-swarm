@@ -230,6 +230,9 @@ The deck now looks like Alien Swarm's interiors instead of dark SC2 terrain unde
 Found in the client:
 - **`Colorize=1` tints the whole picture one hue** (red at hue 0); it is a colourise, not a grade. Off.
 - **An M3 point light written by the map (`LITE`, bone 0 raised) drew nothing,** whatever its intensity; stock `LightOmni*Large` scaled with `SetScale` is what lights the pools.
+- **A specular layer on the kit's materials (a grey map from the diffuse, specularity 12-24, multiplier up to 4) changed nothing visible,** so it was dropped.
 - **An alpha-blended quad (blend mode 1, RGBA DDS, colour channel RGBA) drew its clear parts opaque.** Floor paint is therefore two layers the client does draw: one multiplied (tints the deck where painted) and one added (lifts it).
 
-Kit totals for Distress Beacon: 444 walls, 467 floor pieces, 333 decals and props, 2,711 actors, built in 2.6 s; pathing unchanged (0 leaks). Map: 6.2 MB.
+Kit totals for Distress Beacon: 444 walls, 467 floor pieces, 333 decals and props, 2,711 actors, built in 2.6 s; pathing unchanged (0 leaks). Map: 6.3 MB. The hull terrain is all dark plates now (the plating covers every deck cell), and the derelict ambient was lowered so the lamp pools stand out.
+
+Checked: an `-Auto` campaign run still completes (Distress Beacon 52.3 s, Cargo Elevator 225.6 s, CAMPAIGN COMPLETE), with no script errors. Screenshots: `dist/screens/overhaul-*.jpg`, with `overhaul-compare.jpg` setting two Alien Swarm shots beside the before and after. Texture previews: `dist/deck-art.png`, `dist/wall-art.png`.
