@@ -833,6 +833,18 @@ def decal_spots(floor, room, solid, seed=7):
                  'orange': 'KVOrange', 'orangebig': 'KVOrange'}.get(lk)
         if shaft:
             spots.append((shaft, lx, ly, 0.0))
+    # An overhead girder across most big rooms, wall top to wall top, between the camera and the deck as AS's are.
+    for name, (x0, y0, x1, y1), k in AREAS:
+        if k not in ('bay', 'cargo', 'reactor') or x1 - x0 < 8 or y1 - y0 < 8 or rng.random() < 0.25:
+            continue
+        if (x1 - x0) >= (y1 - y0) or rng.random() < 0.3:
+            by = rng.randint(y0 + 2, y1 - 3) + 0.5
+            for bx in range(x0, x1, 2):
+                spots.append(('KPBeam', bx + 1.0, by, 0.0))
+        else:
+            bx = rng.randint(x0 + 2, x1 - 3) + 0.5
+            for by in range(y0, y1, 2):
+                spots.append(('KPBeam', bx, by + 1.0, 90.0))
     # A turning fan's shadow under a steady lamp in a few of the bigger rooms (the script turns it).
     for lx, ly, lk, fl in LIGHTS:
         if fl == 0 and kind(int(lx), int(ly)) in ('bay', 'cargo', 'reactor') and lk not in ('red', 'redbig') and rng.random() < 0.3:

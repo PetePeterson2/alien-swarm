@@ -397,7 +397,7 @@ DOOR_WIDTHS = range(1, 13)
 
 def pieces(out):
     """KPPipes (two pipes two units long, high along a wall facing -Y), KPAmmo (the ammo supply case, the ASAmmo unit's model), KPLockers and KPConsole (against a wall facing -Y), KPDoor<w> (a bulkhead frame round an opening w wide), KPCol (a wall strut), KPCrateG / KPCrateM (one crate), KPCrateStack (two and one on top), KPBarrel, KPBarrels (a cluster of three)."""
-    from tools.shipkit import ShipModel
+    from tools.shipkit import ShipModel, NO_SHADOW_CAST
     m = out['KPCol'] = ShipModel('KPCol', (0, 0, 0)); _column(m)
     m = out['KPPipes'] = ShipModel('KPPipes', (0, 0, 0))
     _pipe(m, 'prop_pipe_yellow', -0.14, 2.18, 0.09)
@@ -428,6 +428,17 @@ def pieces(out):
     _blob(out['KPCrateStack'], 2.2, 1.1)
     m = out['KPBarrel'] = ShipModel('KPBarrel', (0, 0, 0)); _barrel(m); _blob(m, 0.6, 0.6)
     m = out['KPBigPipe'] = ShipModel('KPBigPipe', (0, 0, 0)); _bigpipe(m); _blob(m, 4.2, 0.8)
+    # Two units of overhead girder spanning a room above the walls (AS's beams between the camera and the deck):
+    # a yellow perforated web on its sides, a dark flange on top; it casts no shadow on the play.
+    m = out['KPBeam'] = ShipModel('KPBeam', (0, 0, 0))
+    z0, z1, h = 2.62, 3.0, 0.16
+    web = ('prop_column', False, NO_SHADOW_CAST)
+    for y in (-h, h):
+        m.quad(web, (-1, y, z0), (1, y, z0), (1, y, z1), (-1, y, z1), [(0.1, 0.62), (0.1, 0.0), (0.9, 0.0), (0.9, 0.62)])
+    m.quad(('wall_trim', False, NO_SHADOW_CAST), (-1, -h - 0.03, z1), (1, -h - 0.03, z1), (1, h + 0.03, z1), (-1, h + 0.03, z1),
+           [(0, 1), (1, 1), (1, 0), (0, 0)])
+    m.quad(('wall_trim', False, NO_SHADOW_CAST), (-1, h + 0.03, z0), (1, h + 0.03, z0), (1, -h - 0.03, z0), (-1, -h - 0.03, z0),
+           [(0, 1), (1, 1), (1, 0), (0, 0)])
     m = out['KPBarrels'] = ShipModel('KPBarrels', (0, 0, 0))
     for off in ((-0.33, -0.2), (0.33, -0.2), (0.0, 0.36)):
         b = ShipModel('t', (0, 0, 0)); _barrel(b)
