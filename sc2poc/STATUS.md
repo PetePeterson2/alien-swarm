@@ -358,4 +358,4 @@ Not checked: how any of it looks. Nobody has looked at the client's screen: the 
 - Landing Bay opens outdoors: snow from the dock to the freight yard, cold blue, red and pink light on the dock, white floods over the yard.
 - "- RELOADING -" in red over the portrait.
 
-The build passes the static checks. Its autopilot run was still going at this commit.
+The build passes the static checks. Its autopilot run in a fresh client (no script errors) finished Landing Bay in 108.1 s. The ride took 100.3 s; the slow motion went from speed 2 to 0 and back to 2 a game second later, so SC2 honours it. Cargo Elevator finished in 272.6 s, then CAMPAIGN COMPLETE. Three AI marines died, spread out this time: one in Landing Bay, one on the ride, one in the escape.
