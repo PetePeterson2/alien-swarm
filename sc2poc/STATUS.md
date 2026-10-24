@@ -410,6 +410,7 @@ They only engage aliens on some player's screen (`AS_OnScreen`, the camera's foo
 - Dust motes drifting on screen, steam off the glowing grates and out of the wall pipe runs (a soft smoke sprite, not the ringed burst), one wall lamp in five failing or sputtering, light shafts under the steady lamps in their colour, and painted hard shadows (girder bands, grating cookies) under about half the room lamps.
 - A big yellow perforated girder spans most bays, stores and machine rooms overhead, above the walls, dark between the camera and the deck as the foreground beams of AS's rooms are (lb-05, lb-10). No collision.
 - Fat red pipes with yellow flanged joints on saddles along a north or side wall of some bays, stores and machine rooms (solid, like the crates). WATCH YOUR STEP stencils at both ends of the stair and the ramp. The drop off the dock is near-black night with a faint haze and a few distant lights, as AS's is (it was a bright blue lattice). Fan shadows turn slowly on the deck under some room lamps.
+- Blasts leave smoke hanging, rising and spreading as it thins.
 - Pink neon runs along the dock's edges at the railings' feet; the buildings rising out of the drop show pale concrete outer walls with a lit window here and there; damaged consoles spit sparks now and then.
 - The pump room glows sodium orange. Cargo Elevator opens on a dark bay with a grating walkway lit orange from below, as AS's does.
 - `dist/screens/visual-pass-compare.png` sets AS's captures beside renders of the same places.
@@ -439,7 +440,12 @@ They only engage aliens on some player's screen (`AS_OnScreen`, the camera's foo
 | 22 | AS's yellow-framed pale wall panels | 110.3 s | 280.6 s | 3 |
 | 23 | red flanged risers | 109.6 s | 283.8 s | 4 |
 | 24 | overhead girders | 108.8 s | 280.3 s | 4 |
+| 25 | smoke after blasts | 107.6 s | 279.6 s | 4 |
+
+A QA build started straight into Landing Bay with a human player 1 left idle at the dock (`build.py --start 0`) ran 340 s with no script errors: the human-only paths (the laser to the cursor's deck point, the on-screen test from a real camera) held, the AI squad held off the story director's wanderers (109 kills, no deaths) and held fire 1,104 times on aliens no one could see yet.
 
 Run 9 never started (the client sat in its menus; restarted). Run 17 raced an edit (built half-way through a change, so a wall mesh was missing: `Could not create actor ASKW9F`); run 18 is the same change built whole. A `-Demo` build fired all fifteen gun families for five minutes with no script errors.
+
+Pictures of this pass (CPU renders of the kit as laid out, approximate lighting): `dist/screens/visual-pass-compare.png` (AS beside the port), `dist/squad-ingame.png`, `dist/marine-preview.png`, `dist/marine-ingame.png`, `dist/scene-landingbay.png`, `dist/scene-cargo.png`, `dist/lift-preview.png`. `py tools/preview_scene.py <level> x,y,aim ...` renders any spot.
 
 Not seen on screen: all of it. In particular check by hand (`.\launch.ps1 -QA`): that the marine models and the laser turn smoothly and together, the suit tints, the gun swaps, the corpses, the new lens, and how the snow, girders, machinery tops and grating walkway look under SC2's lights.
