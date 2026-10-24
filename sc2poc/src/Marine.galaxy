@@ -190,6 +190,8 @@ void AS_MarineSpawn (int p) {
         UnitCreate(1,"ASLightYellow",c_unitCreateIgnorePlacement,0,q,0.0);as_muzzle[p]=UnitLastCreated();
         UnitCreate(1,"ASFxLaser",c_unitCreateIgnorePlacement,0,q,as_aim[p]);as_laser[p]=UnitLastCreated();
         UnitCreate(1,"ASFxLaserDot",c_unitCreateIgnorePlacement,0,q,0.0);as_laserDot[p]=UnitLastCreated();
+        UnitCreate(1,"ASFxLaserDot",c_unitCreateIgnorePlacement,0,q,0.0);as_laserFlare[p]=UnitLastCreated();
+        UnitSetScale(as_laserFlare[p],45.0,45.0,45.0);
         UnitSetHeight(as_torch[p],1.25,0.0);UnitSetHeight(as_glow[p],1.9,0.0);UnitSetHeight(as_muzzle[p],0.75,0.0);UnitSetHeight(as_laser[p],AS_GUN_Z,0.0);
         UnitSetHeight(as_laserDot[p],0.035,0.0);
         UnitSetScale(as_glow[p],45.0,45.0,45.0);
@@ -208,6 +210,7 @@ void AS_TorchShow (int p) {
     as_laserShown[p]=as_alive[p] && AS_GunHasLaser(p);
     libNtve_gf_ShowHideUnit(as_laser[p],as_laserShown[p]);
     libNtve_gf_ShowHideUnit(as_laserDot[p],as_laserShown[p]);
+    libNtve_gf_ShowHideUnit(as_laserFlare[p],as_laserShown[p]);
     if(as_torch[p]!=null) {
         if(AS_HasItem(p,AS_IT_FLASHLIGHT)) {UnitSetScale(as_torch[p],150.0,150.0,150.0);}
         else {UnitSetScale(as_torch[p],100.0,100.0,100.0);}
@@ -503,6 +506,7 @@ void AS_Attachments (int p) {
     // The beam mesh drops AS_LASER_DROP over its length (tools/fx.py LASER_DROP): its height scale sets the drop.
     UnitSetScale(as_laser[p],100.0,d*100.0,MaxF(2.0,(as_muzZ-as_laserZ[p])/AS_LASER_DROP*100.0));
     UnitSetPosition(as_laserDot[p],Point(as_muzX+c*d,as_muzY+s*d),true);UnitSetHeight(as_laserDot[p],as_laserZ[p],0.0);
+    UnitSetPosition(as_laserFlare[p],Point(as_muzX,as_muzY),true);UnitSetHeight(as_laserFlare[p],as_muzZ,0.0);
     if(as_lightOn[p]) {libNtve_gf_MakeModelFaceAngle(libNtve_gf_MainActorofUnit(as_torch[p]),aim);}
 }
 
@@ -709,6 +713,7 @@ void AS_SwapMarines (int a, int b) {
     u=as_muzzle[a];as_muzzle[a]=as_muzzle[b];as_muzzle[b]=u;
     u=as_laser[a];as_laser[a]=as_laser[b];as_laser[b]=u;
     u=as_laserDot[a];as_laserDot[a]=as_laserDot[b];as_laserDot[b]=u;
+    u=as_laserFlare[a];as_laserFlare[a]=as_laserFlare[b];as_laserFlare[b]=u;
     // The suits follow the slot's colour: both marines show their gun again in their new colour.
     as_gunShown[a]= -1;as_gunShown[b]= -1;
     n=as_prof[a];as_prof[a]=as_prof[b];as_prof[b]=n;

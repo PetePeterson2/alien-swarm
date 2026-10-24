@@ -386,7 +386,7 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 - A round flies several cells a step, more than its tracer streak is long, so before this the first you ever saw of it was well out in front of the marine whatever the muzzle. A round's first frame is now a line from the muzzle to it, as AS's tracers leave the barrel.
 - The flamer's jet leaves the nozzle blue-white hot and turns to orange fire (the user's AS flamer screenshot).
 - Reloading shows: the gun dips and turns in toward the body as the clip goes in, upper body only so the legs keep running, stretched to the reload's length.
-- No laser on a chainsaw or a carried case.
+- No laser on a chainsaw or a carried case; a small red flare glows at the emitter where the beam leaves the gun.
 - The laser ends where it should: on a bulkhead at gun height, on an alien at its body, and only under a player's cursor does it come down to the deck; the end height eases, so the beam's slope never snaps.
 - Weapons lying on the deck (dropped by a fallen marine, or waiting in a supply room) are the gun itself, the same parts the marines hold (`tools/marine.py gun_only`), not SC2's plasma-gun pickup.
 - Animations: stand, run forward, back-pedal and side-steps picked from the run's angle to the aim (the legs go where the marine moves, the gun stays on the aim), the rifle-butt swing, and a death where the body goes over and stays (`AS_MarineCorpse`) instead of SC2's marine death.
@@ -441,6 +441,7 @@ They only engage aliens on some player's screen (`AS_OnScreen`, the camera's foo
 | 23 | red flanged risers | 109.6 s | 283.8 s | 4 |
 | 24 | overhead girders | 108.8 s | 280.3 s | 4 |
 | 25 | smoke after blasts | 107.6 s | 279.6 s | 4 |
+| 26 | laser emitter flare | 110.6 s | 280.3 s | 5 |
 
 A QA build started straight into Landing Bay with a human player 1 left idle at the dock (`build.py --start 0`) ran 340 s with no script errors: the human-only paths (the laser to the cursor's deck point, the on-screen test from a real camera) held, the AI squad held off the story director's wanderers (109 kills, no deaths) and held fire 1,104 times on aliens no one could see yet.
 
