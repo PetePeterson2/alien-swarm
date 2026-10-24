@@ -114,19 +114,19 @@ void AS_Muzzle (int p, fixed aim) {
 
 // ---- the deck's collision --------------------------------------------
 bool AS_Solid (fixed x, fixed y) {
-    int cx=FixedToInt(x);int cy=FixedToInt(y);
+    int cx=AS_CX(x);int cy=AS_CY(y);
     if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return true;}
     return as_wall[cx][cy];
 }
 // Whether a body of radius r fits at (x, y): blocked cells, then the biomass growths.
 bool AS_Free (fixed x, fixed y, fixed r) {
-    int x0=FixedToInt(x-r);int x1=FixedToInt(x+r);int y0=FixedToInt(y-r);int y1=FixedToInt(y+r);int cx;int cy;int i;
+    int x0=AS_CX(x-r);int x1=AS_CX(x+r);int y0=AS_CY(y-r);int y1=AS_CY(y+r);int cx;int cy;int i;
     fixed nx;fixed ny;
     for(cx=x0;cx<=x1;cx+=1) {
         for(cy=y0;cy<=y1;cy+=1) {
             if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return false;}
             if(!as_wall[cx][cy]) {continue;}
-            nx=AS_Clamp(x,IntToFixed(cx),IntToFixed(cx+1));ny=AS_Clamp(y,IntToFixed(cy),IntToFixed(cy+1));
+            nx=AS_Clamp(x,IntToFixed(cx+as_ox),IntToFixed(cx+1+as_ox));ny=AS_Clamp(y,IntToFixed(cy+as_oy),IntToFixed(cy+1+as_oy));
             if((nx-x)*(nx-x)+(ny-y)*(ny-y)<r*r) {return false;}
         }
     }
@@ -143,7 +143,7 @@ bool AS_Free (fixed x, fixed y, fixed r) {
 // crossed: the 0.2 march it replaces took five, and could step over the corner
 // where two wall cells meet diagonally.
 fixed AS_RayWall (fixed x, fixed y, fixed angle, fixed limit) {
-    fixed c=Cos(angle);fixed s=Sin(angle);int cx=FixedToInt(x);int cy=FixedToInt(y);int sx=1;int sy=1;
+    fixed c=Cos(angle);fixed s=Sin(angle);int cx=FixedToInt(x);int cy=FixedToInt(y);int sx=1;int sy=1;int lx;int ly;
     fixed tx=10000.0;fixed ty=10000.0;fixed dx=10000.0;fixed dy=10000.0;fixed t;
     if(AS_Solid(x,y)) {return 0.0;}
     if(c>0.0001) {dx=1.0/c;tx=(IntToFixed(cx+1)-x)*dx;}
@@ -154,8 +154,9 @@ fixed AS_RayWall (fixed x, fixed y, fixed angle, fixed limit) {
         if(tx<ty) {t=tx;cx+=sx;tx+=dx;}
         else {t=ty;cy+=sy;ty+=dy;}
         if(t>=limit) {return limit;}
-        if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return MaxF(0.0,t-0.01);}
-        if(as_wall[cx][cy]) {return MaxF(0.0,t-0.01);}
+        lx=cx-as_ox;ly=cy-as_oy;
+        if(lx<0 || ly<0 || lx>=AS_W || ly>=AS_H) {return MaxF(0.0,t-0.01);}
+        if(as_wall[lx][ly]) {return MaxF(0.0,t-0.01);}
     }
     return limit;
 }
@@ -583,7 +584,7 @@ void AS_MarineCorpse (int p, fixed x, fixed y) {
     actor a=libNtve_gf_CreateActorAtPoint("ASDieMarine",Point(x,y));
     int g=as_gunShown[p];
     if(g<0) {g=AS_GunIndex(as_slot[p]);}
-    ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ));
+    ActorSend(a,libNtve_gf_SetPosition(x,y,AS_GroundZ(x,y)));
     ActorSend(a,"ModelSwap ASMarine"+as_gunName[g]);
     ActorSend(a,"SetTintColor "+AS_SuitTint(p));
     ActorSend(a,"AnimPlay Death Death PlayForever");

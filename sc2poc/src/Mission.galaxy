@@ -114,7 +114,7 @@ int AS_Scaled (int base) {
 }
 void AS_SetCell (int x0, int y0, int x1, int y1, bool solid) {
     int x;int y;
-    for(x=x0;x<x1;x+=1) {for(y=y0;y<y1;y+=1) {as_wall[x][y]=solid;}}
+    for(x=x0;x<x1;x+=1) {for(y=y0;y<y1;y+=1) {as_wall[x-as_ox][y-as_oy]=solid;}}
 }
 
 // ---- objectives -------------------------------------------------------
@@ -183,7 +183,7 @@ void AS_DoorPulse () {
     t=AS_Clamp((as_now-as_doorOpenAt)/1.4,0.0,1.0);
     UnitSetPosition(as_doorLeaf[0],Point(cx-1.0-1.9*t,cy),true);
     UnitSetPosition(as_doorLeaf[1],Point(cx+1.0+1.9*t,cy),true);
-    if(t>=0.6 && as_wall[as_doorX0][as_doorY0]) {
+    if(t>=0.6 && as_wall[as_doorX0-as_ox][as_doorY0-as_oy]) {
         AS_SetCell(as_doorX0,as_doorY0,as_doorX1,as_doorY1,false);
         for(i=0;i<4;i+=1) {if(as_doorBlock[i]!=null) {UnitRemove(as_doorBlock[i]);as_doorBlock[i]=null;}}
         AS_KitUnblock(as_doorX0,as_doorY0,as_doorX1,as_doorY1);
@@ -229,7 +229,7 @@ void AS_HackDone () {
     SoundPlayAtPoint(SoundLink("Doodad_SecurityGateDiagonalOpen",-1),PlayerGroupAll(),as_doorPanel,0.5,100.0,0.0);
     AS_All("DOOR OVERRIDDEN","Push through the crew quarters to the cargo elevator");AS_Log("door overridden");
     as_checkpoint=1;
-    AS_MarkAt(74.0,96.0);
+    AS_MarkAt(as_oxF+74.0,as_oyF+96.0);
 }
 
 // ---- scripted moments -------------------------------------------------
@@ -239,7 +239,7 @@ void AS_GalleryStart () {
     int k;
     for(k=0;k<as_winCount;k+=2) {as_burstAt[k/2]=as_now+0.5+IntToFixed(k/2)*1.3;}
     as_burstNext=0;AS_Log("gallery windows");
-    AS_Sound("Ultralisk_Attack",20.0,48.0,100.0,0.0);
+    AS_Sound("Ultralisk_Attack",as_oxF+20.0,as_oyF+48.0,100.0,0.0);
 }
 void AS_GalleryPulse () {
     int k;fixed x;fixed y;int n;int i;
@@ -259,7 +259,7 @@ void AS_GalleryPulse () {
 fixed as_ventBlowAt;
 actor as_ventFire;               // the fire the blast leaves, cleared with the level
 void AS_VentBlow () {
-    int p;point q;fixed x=17.5;fixed y=87.0;int i;
+    int p;point q;fixed x=as_oxF+17.5;fixed y=as_oyF+87.0;int i;
     AS_Log("vent blows");
     AS_Fx("ASFxBigBoom",x,y,0.6,0.0);AS_Fx("ASFxBoom",x+0.8,y+0.6,0.4,0.0);
     AS_Burst(x,y,1.0,3.0,"255,150,60",6);AS_Flash(x,y,1.0,3.2,"255,160,80");
@@ -272,7 +272,7 @@ void AS_VentBlow () {
     }
     for(i=0;i<AS_Scaled(3);i+=1) {AS_SpawnNear(AS_PARASITE,x+RandomFixed(-0.5,0.5),y+RandomFixed(-0.5,0.5),true);}
     as_ventFire=libNtve_gf_CreateActorAtPoint("ASR_DOM_Fire_Large",Point(x,y));
-    ActorSend(as_ventFire,libNtve_gf_SetPosition(x,y,as_floorZ));
+    ActorSend(as_ventFire,libNtve_gf_SetPosition(x,y,AS_GroundZ(x,y)));
 }
 
 // ---- the elevator -----------------------------------------------------
@@ -669,7 +669,7 @@ void AS_Climber (int kind) {
     if(kind==AS_PARASITE) {as_climbV[i]=as_climbV[i]*1.3;}
     // Head down the wall: nose (minus forward, for stock models) toward the floor, back to the wall.
     ActorSend(as_climbA[i],libNtve_gf_SetRotation(0.0,0.0,1.0,Cos(as_climbFace[i]),Sin(as_climbFace[i]),0.0));
-    ActorSend(as_climbA[i],libNtve_gf_SetPosition(x,y,as_floorZ+as_climbZ[i]));
+    ActorSend(as_climbA[i],libNtve_gf_SetPosition(x,y,AS_GroundZ(x,y)+as_climbZ[i]));
 }
 void AS_ClimbPulse () {
     int i;int j;fixed x;fixed y;
@@ -677,7 +677,7 @@ void AS_ClimbPulse () {
         if(as_climbA[i]==null) {continue;}
         // Down the wall, faster than the wall is rising.
         as_climbZ[i]-=as_climbV[i]*AS_DT;
-        if(as_climbZ[i]>0.6) {ActorSend(as_climbA[i],libNtve_gf_SetPosition(as_climbX[i],as_climbY[i],as_floorZ+as_climbZ[i]));continue;}
+        if(as_climbZ[i]>0.6) {ActorSend(as_climbA[i],libNtve_gf_SetPosition(as_climbX[i],as_climbY[i],AS_GroundZ(as_climbX[i],as_climbY[i])+as_climbZ[i]));continue;}
         ActorSend(as_climbA[i],"Destroy");as_climbA[i]=null;
         // Over the rail and onto the deck.
         x=AS_Clamp(as_climbX[i]+Cos(as_climbFace[i])*1.6,as_liftX0+0.6,as_liftX1-0.6);y=AS_Clamp(as_climbY[i]+Sin(as_climbFace[i])*1.6,as_liftY0+0.6,as_liftY1-0.6);
@@ -826,7 +826,7 @@ bool AS_HoldPulse (int on) {
         if(as_now>=as_holdWave && as_hordeLeftN<=0) {
             // The director's own horde size grows wave on wave (30 and more by now): the hold's are sized to the squad.
             as_holdWave=as_now+12.0;AS_ScriptedHorde(AS_Scaled(6));
-            if(as_now>as_holdAt+25.0) {AS_SpawnNear(AS_BOOMER,111.0,43.0,true);}
+            if(as_now>as_holdAt+25.0) {AS_SpawnNear(AS_BOOMER,as_oxF+111.0,as_oyF+43.0,true);}
         }
         return true;
     }
@@ -835,8 +835,8 @@ bool AS_HoldPulse (int on) {
         AS_All("TRANSIT CAR ARRIVED","Everyone onto the platform");AS_Log("car arrived");
         // No more swarms: what is left is getting the squad aboard.
         as_director=false;as_hordeLeftN=0;
-        SoundPlayAtPoint(SoundLink("Doodad_TrainDockingDoorOpen",-1),PlayerGroupAll(),Point(111.0,20.0),0.5,100.0,0.0);
-        AS_Flash(111.0,20.0,1.5,6.0,"255,240,200");
+        SoundPlayAtPoint(SoundLink("Doodad_TrainDockingDoorOpen",-1),PlayerGroupAll(),Point(as_oxF+111.0,as_oyF+20.0),0.5,100.0,0.0);
+        AS_Flash(as_oxF+111.0,as_oyF+20.0,1.5,6.0,"255,240,200");
         GameSetLighting("ASDerelict",2.0);
         AS_MarkAt((as_extX0+as_extX1)*0.5,(as_extY0+as_extY1)*0.5);
     }
@@ -917,7 +917,7 @@ void AS_MissionInit () {
     as_objState[0]=1;
     if(as_level==AS_LV_BAY) {as_objState[1]=1;as_objState[2]=1;}
     AS_MissionPopulate();
-    if(as_level==AS_LV_BAY) {AS_MarkAt(30.0,42.0);}
+    if(as_level==AS_LV_BAY) {AS_MarkAt(as_oxF+30.0,as_oyF+42.0);}
     else {AS_MarkAt(PointGetX(as_doorPanel),PointGetY(as_doorPanel));}
     AS_Log("mission start "+as_levelTitle[as_level]+", marines "+IntToString(AS_Humans())+", bots "+IntToString(as_botCount));
 }
@@ -974,13 +974,13 @@ void AS_SkipAhead (int p) {
     if(as_level==AS_LV_BAY) {AS_BaySkip();return;}
     if(as_stage<=AS_ST_DOOR) {
         if(as_stage==AS_ST_LAND) {AS_ZoneEnter("door");}
-        as_hack=1.0;AS_HackPulse();AS_SquadTo(18.0,66.0);
+        as_hack=1.0;AS_HackPulse();AS_SquadTo(as_oxF+18.0,as_oyF+66.0);
     }
-    else if(as_stage==AS_ST_LIFT) {AS_SquadTo(70.0,91.0);}
-    else if(as_stage==AS_ST_BOARD) {AS_SquadTo(84.0,94.0);}
+    else if(as_stage==AS_ST_LIFT) {AS_SquadTo(as_oxF+70.0,as_oyF+91.0);}
+    else if(as_stage==AS_ST_BOARD) {AS_SquadTo(as_oxF+84.0,as_oyF+94.0);}
     else if(as_stage==AS_ST_RIDE) {if(as_ride==2) {as_scroll=MaxF(as_scroll,AS_RIDE_LEN-14.0);as_rideClock=MaxF(as_rideClock,60.0);}}
     else if(as_stage==AS_ST_ESCAPE && as_holdAt>0.0) {as_holdAt=MinF(as_holdAt,as_now-AS_HOLD+3.0);}
-    else if(as_stage==AS_ST_ESCAPE) {AS_SquadTo(109.0,26.0);}
+    else if(as_stage==AS_ST_ESCAPE) {AS_SquadTo(as_oxF+109.0,as_oyF+26.0);}
 }
 
 // =====================================================================
@@ -1019,8 +1019,8 @@ void AS_BayInit () {
     as_bayStage=0;as_bayDropship=0.0;as_bayExitAt=0.0;as_bayComputer=0;as_bayHoldStop=0.0;as_bayDoorForce=0.0;
     as_lineN=0;as_lineUntil=0.0;as_weldWatch="";
     // The Bloodhound at the clamps on the dock's east side.
-    as_bayShip=libNtve_gf_CreateActorAtPoint("ASR_Hercules",Point(55.0,8.5));
-    ActorSend(as_bayShip,libNtve_gf_SetPosition(55.0,8.5,as_floorZ));
+    as_bayShip=libNtve_gf_CreateActorAtPoint("ASR_Hercules",Point(as_oxF+55.0,as_oyF+8.5));
+    ActorSend(as_bayShip,libNtve_gf_SetPosition(as_oxF+55.0,as_oyF+8.5,AS_GroundZ(as_oxF+55.0,as_oyF+8.5)));
     ActorSend(as_bayShip,"SetScale 0.8");
     AS_KitTurn(as_bayShip,180.0);
 }
@@ -1039,7 +1039,7 @@ void AS_BayPulse () {
     // The dropship lifts off the clamps and away.
     if(as_bayDropship>0.0 && as_bayShip!=null) {
         t=as_now-as_bayDropship;
-        ActorSend(as_bayShip,libNtve_gf_SetPosition(55.0+t*t*0.9,8.5+t*0.3,as_floorZ+t*t*0.25));
+        ActorSend(as_bayShip,libNtve_gf_SetPosition(as_oxF+55.0+t*t*0.9,as_oyF+8.5+t*0.3,AS_GroundZ(as_oxF+55.0,as_oyF+8.5)+t*t*0.25));
         if(t>6.0) {ActorSend(as_bayShip,"Destroy");as_bayShip=null;}
     }
     // The holdout spawners stop eight seconds after the hack is done.
@@ -1097,7 +1097,7 @@ void AS_WeldWatchPulse () {
 }
 // The tank room's west wall gives way (a 10% chance as the squad passes): drone jumpers come through it.
 void AS_WallBurst () {
-    fixed x=12.0;fixed y=106.0;
+    fixed x=as_oxF+12.0;fixed y=as_oyF+106.0;
     AS_Fx("ASFxBigBoom",x,y,1.0,0.0);AS_Burst(x,y,1.0,1.5,"200,190,170",5);
     AS_Sound("Doodad_SecurityGateDiagonalImpact",x,y,100.0,0.0);AS_ShakeAll(0.15,0.5);
     AS_Log("wall burst");
@@ -1185,14 +1185,14 @@ void AS_BaySkip () {
     if(as_bayStage==0) {
         d=AS_DoorNamed("gate_east");
         if(d>=0) {AS_PanelHacked(d,0);}
-        AS_SquadTo(32.5,40.0);
+        AS_SquadTo(as_oxF+32.5,as_oyF+40.0);
     }
     else if(as_bayStage<=2) {
         d=AS_DoorNamed("tank_s");if(d>=0) {as_drSeal[d]=0.0;AS_DoorSeamShow(d);}
         d=AS_DoorNamed("tank_n");if(d>=0) {as_drSeal[d]=0.0;AS_DoorSeamShow(d);}
         as_bayStage=3;AS_Objective(0,2);
-        AS_SquadTo(30.5,131.5);
+        AS_SquadTo(as_oxF+30.5,as_oyF+131.5);
     }
     else if(as_objState[1]!=2) {as_cpHacked[as_bayComputer]=true;as_cpLocked[as_bayComputer]=false;AS_MissionHackDone(as_bayComputer,0);as_cpDone[as_bayComputer]=1.0;AS_MissionDownloaded(as_bayComputer,0);}
-    else {d=AS_DoorNamed("control");if(d>=0 && !as_drBroken[d]) {AS_DoorBreak(d);}AS_SquadTo(48.5,131.0);}
+    else {d=AS_DoorNamed("control");if(d>=0 && !as_drBroken[d]) {AS_DoorBreak(d);}AS_SquadTo(as_oxF+48.5,as_oyF+131.0);}
 }

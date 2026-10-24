@@ -22,7 +22,8 @@ sys.path.insert(0, str(ROOT / 'tools/vendor'))
 sys.path.insert(0, str(ROOT))
 import mpyq
 import numpy as np
-from tools import alien, marine, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout, uiart
+from tools import alien, marine, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout, uiart, heights
+from tools import pack as packer
 
 NAME = 'AlienPOC'
 TITLE = 'Halcyon Drift'
@@ -135,6 +136,20 @@ COMPONENT_LIST = b'''<?xml version="1.0" encoding="utf-8"?>
 </Components>'''
 
 
+# The level being written sits at this origin in the map (tools/pack.py): every position and rectangle
+# build.py writes for it is moved there. The cell tables (rows, heights) stay the level's own.
+OX, OY = 0, 0
+
+
+def at(x, y):
+    return x + OX, y + OY
+
+
+def rect(r):
+    x0, y0, x1, y1 = r
+    return x0 + OX, y0 + OY, x1 + OX, y1 + OY
+
+
 def objects(spawn):
     """Placed objects: only the start locations. The deck itself is built by the script (src/Kit.galaxy)."""
     root = ET.Element('PlacedObjects', Version='27')
@@ -163,10 +178,20 @@ def pad(rows, width, height, fill):
     return rows + [fill * width] * (height - len(rows))
 
 
-def level_galaxy(n, solid, room, floor, MW, MH):
-    """Level n (the one tools/level.py has in use): AS_LevelRows<n>, collision and the deck for the kit;
-    AS_LevelData<n>, the spawn, lamps, vents, ammo, rooms, eggs, biomass and creep; AS_KitProps<n>, the dressing."""
-    out = ['void AS_LevelRows%d () {' % n]
+def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
+    """Level n (the one tools/level.py has in use), at place (ox, oy, lift) in the map: AS_LevelRows<n>, its origin,
+    collision, the deck for the kit and the cells' floor heights; AS_LevelData<n>, the spawn, lamps, vents, ammo,
+    rooms, eggs, biomass and creep; AS_KitProps<n>, the dressing."""
+    ox, oy, dz = place[:3]
+    base = L.FLOOR + dz
+    out = ['void AS_LevelRows%d () {' % n,
+           '    as_ox=%d;as_oy=%d;as_oxF=%d.0;as_oyF=%d.0;as_lw=%d;as_lh=%d;' % (ox, oy, ox, oy, L.W, L.H),
+           '    AS_HeightsClear(%.6f);' % base]
+    for y, x0, x1, z, slope in heights.runs(hts['cellz'] + dz, hts['slope']):
+        if z != base or slope:
+            out.append('    AS_HeightRun(%d,%d,%d,%.6f,%s);' % (y, x0, x1, z, 'true' if slope else 'false'))
+    for x, y, piece, turn, z, rise in hts['stairs']:
+        out.append('    AS_HeightStair(%d,%d,"%s",%.1f,%.6f,%.6f);' % (x, y, piece, turn, z + dz, rise))
     for y, row in enumerate(pad(L.galaxy_tables(solid), MW, MH, '1')):
         out.append('    AS_WallRow(%d,"%s");' % (y, row))
     for y, row in enumerate(pad(L.deck_rows(floor, room), MW, MH, '#')):
@@ -174,6 +199,7 @@ def level_galaxy(n, solid, room, floor, MW, MH):
     out += ['}', 'void AS_KitProps%d () {' % n]
     for model, x, y, rot, scale, rad in L.PROPS:
         # Flat stock decals would lie under the floor plating: blood becomes goo, the rest goes.
+        x, y = at(x, y)
         if model == 'BloodSplats':
             out.append('    AS_KitDecal("KDGoo",%.2f,%.2f,%.1f);' % (x, y, rot))
         elif model.startswith('KP'):
@@ -183,32 +209,34 @@ def level_galaxy(n, solid, room, floor, MW, MH):
         elif model not in FLAT_PROPS:
             out.append('    AS_KitProp("%s",%.2f,%.2f,%.1f,%.3f);' % (model, x, y, rot, scale))
     for piece, x, y, rot in L.decal_spots(floor, room, solid):
-        out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % (piece, x, y, rot))
+        out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % ((piece,) + at(x, y) + (rot,)))
     out += ['}', 'void AS_LevelData%d () {' % n, '    int i;']
-    out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (L.SPAWN + (L.SPAWN_FACING,)))
-    spots = tour_spots(solid)[:64]
+    out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (at(*L.SPAWN) + (L.SPAWN_FACING,)))
+    spots = [at(x, y) for x, y in tour_spots(solid)[:64]]
     for i, (x, y) in enumerate(spots):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))
     out.append('    as_tourCount=%d;as_tourAt= -1;' % len(spots))
     for x, y, kind, flick in L.LIGHTS + L.corridor_lamps(floor, room):
-        out.append('    AS_Lamp(%.2f,%.2f,"%s",%d);' % (x, y, kind, flick))
+        out.append('    AS_Lamp(%.2f,%.2f,"%s",%d);' % (at(x, y) + (kind, flick)))
     for i, (x, y) in enumerate(L.VENTS):
-        out.append('    as_vent[%d]=Point(%.2f,%.2f);' % (i, x, y))
+        out.append('    as_vent[%d]=Point(%.2f,%.2f);' % ((i,) + at(x, y)))
     out.append('    as_ventCount=%d;' % len(L.VENTS))
     for i, (x, y) in enumerate(L.AMMO):
-        out.append('    AS_AmmoCrate(%d,%.2f,%.2f);' % (i, x, y))
+        out.append('    AS_AmmoCrate(%d,%.2f,%.2f);' % ((i,) + at(x, y)))
     out.append('    as_ammoCount=%d;' % len(L.AMMO))
-    for i, (name, (x0, y0, x1, y1), kind) in enumerate(L.AREAS):
+    for i, (name, r, kind) in enumerate(L.AREAS):
+        x0, y0, x1, y1 = rect(r)
         out.append('    as_roomX0[%d]=%d.0;as_roomY0[%d]=%d.0;as_roomX1[%d]=%d.0;as_roomY1[%d]=%d.0;as_roomKind[%d]="%s";as_roomName[%d]="%s";'
                    % (i, x0, i, y0, i, x1, i, y1, i, kind, i, name))
     out.append('    as_roomCount=%d;' % len(L.AREAS))
     for x, y in L.EGGS:
-        out.append('    AS_SpawnAlien(AS_EGG,%.2f,%.2f,false);' % (x, y))
+        out.append('    AS_SpawnAlien(AS_EGG,%.2f,%.2f,false);' % at(x, y))
     for x, y, r in L.BIOMASS:
+        x, y = at(x, y)
         out.append('    i=AS_SpawnAlien(AS_BIOMASS,%.2f,%.2f,false);if(i>=0) {as_aRadius[i]=%.2f;}' % (x, y, r))
         out.append('    AS_Creep(%.2f,%.2f,%.2f);' % (x, y, r + 1.5))
     for x, y, r in getattr(L, 'CREEP', [(43.0, 67.0, 9.0), (36.0, 70.0, 3.0), (50.0, 70.0, 3.0), (75.0, 63.0, 4.0), (81.0, 66.0, 3.0), (60.0, 65.0, 2.5)]):
-        out.append('    AS_Creep(%.2f,%.2f,%.2f);' % (x, y, r))
+        out.append('    AS_Creep(%.2f,%.2f,%.2f);' % (at(x, y) + (r,)))
     out.append('}')
     return '\n'.join(out)
 
@@ -236,48 +264,80 @@ def level_common():
 def mission_galaxy(n):
     """AS_MissionData<n>: level n's mission tables (tools/level.py and tools/cargo.py)."""
     out = ['void AS_MissionData%d () {' % n]
-    for i, (name, (x0, y0, x1, y1)) in enumerate(L.ZONES):
+    for i, (name, r) in enumerate(L.ZONES):
+        x0, y0, x1, y1 = rect(r)
         out.append('    as_zoneName[%d]="%s";as_zoneX0[%d]=%d.0;as_zoneY0[%d]=%d.0;as_zoneX1[%d]=%d.0;as_zoneY1[%d]=%d.0;as_zoneHit[%d]=false;'
                    % (i, name, i, x0, i, y0, i, x1, i, y1, i))
     out.append('    as_zoneCount=%d;' % len(L.ZONES))
     for i, (x, y) in enumerate(L.CHECKPOINTS):
+        x, y = at(x, y)
         out.append('    as_cpX[%d]=%.2f;as_cpY[%d]=%.2f;' % (i, x, i, y))
     out.append('    as_cpCount=%d;' % len(L.CHECKPOINTS))
-    out.append('    as_extX0=%d.0;as_extY0=%d.0;as_extX1=%d.0;as_extY1=%d.0;' % L.EXTRACT)
-    out.append('    as_doorPanel=Point(%.2f,%.2f);' % L.CONSOLE)
+    out.append('    as_extX0=%d.0;as_extY0=%d.0;as_extX1=%d.0;as_extY1=%d.0;' % rect(L.EXTRACT))
+    out.append('    as_doorPanel=Point(%.2f,%.2f);' % at(*L.CONSOLE))
     for i, (x, y, wait) in enumerate(L.ROUTE):
+        x, y = at(x, y)
         out.append('    as_routeX[%d]=%.2f;as_routeY[%d]=%.2f;as_routeWait[%d]=%d;' % (i, x, i, y, i, wait))
     out.append('    as_routeN=%d;as_routeAt=0;' % len(L.ROUTE))
     for i, (x, y) in enumerate(L.WINDOWS):
+        x, y = at(x, y)
         out.append('    as_winX[%d]=%d.0;as_winY[%d]=%d.0;' % (i, x, i, y))
     out.append('    as_winCount=%d;' % len(L.WINDOWS))
     kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3}
-    for name, (x0, y0, x1, y1), kind, seal, panel in getattr(L, 'DOORS', []):
-        px, py = panel if panel else (0.0, 0.0)
+    for name, r, kind, seal, panel in getattr(L, 'DOORS', []):
+        x0, y0, x1, y1 = rect(r)
+        px, py = at(*panel) if panel else (0.0, 0.0)
         out.append('    AS_Door("%s",%d,%d,%d,%d,%d,%.2f,%.2f,%.2f);' % (name, x0, y0, x1, y1, kinds[kind], seal, px, py))
+    # A spawner's 13th field and a trigger's 5th, when there, are options (src/Objects.galaxy AS_SpawnerOpts,
+    # AS_TriggerOpts): spawners {start, near (cells), jitter, order (1 MoveTo, 2 MoveToIgnoringMarines), target (x, y)},
+    # triggers {name, off, need (marines inside: n, or -1 all living), aliens}.
     for sp in getattr(L, 'SPAWNERS', []):
-        out.append('    AS_Spawner("%s",%.2f,%.2f,%s,%d,%d,%.2f,%d,%d,%d,%d,%d);' % sp)
-    for (x0, y0, x1, y1), once, chance, acts in getattr(L, 'TRIGGERS', []):
+        out.append('    AS_Spawner("%s",%.2f,%.2f,%s,%d,%d,%.2f,%d,%d,%d,%d,%d);' % ((sp[0],) + at(sp[1], sp[2]) + tuple(sp[3:12])))
+        if len(sp) > 12:
+            o = sp[12]
+            tx, ty = at(*o['target']) if 'target' in o else (0.0, 0.0)
+            out.append('    AS_SpawnerOpts(%s,%.2f,%.2f,%d,%.2f,%.2f);' % ('true' if o.get('start') else 'false', o.get('near', 9.3),
+                                                                     o.get('jitter', 0.25), o.get('order', 0), tx, ty))
+    for r, once, chance, acts, *opts in getattr(L, 'TRIGGERS', []):
+        x0, y0, x1, y1 = rect(r)
         out.append('    AS_Trigger(%.2f,%.2f,%.2f,%.2f,%s,%.2f);' % (x0, y0, x1, y1, 'true' if once else 'false', chance))
         for act, arg, delay in acts:
             out.append('    AS_TriggerDo("%s","%s",%.2f);' % (act, arg, delay))
+        if opts:
+            o = opts[0]
+            out.append('    AS_TriggerOpts("%s",%s,%d,%s);' % (o.get('name', ''), 'true' if o.get('off') else 'false', o.get('need', 1),
+                                                              'true' if o.get('aliens') else 'false'))
+    # The map's other logic (src/Objects.galaxy): outputs on named events, random timers, counters, movers on paths.
+    for ev, act, arg, delay in getattr(L, 'ONS', []):
+        out.append('    AS_On("%s","%s","%s",%.2f);' % (ev, act, arg, delay))
+    for name, lo, hi, on in getattr(L, 'TIMERS', []):
+        out.append('    AS_Timer("%s",%.2f,%.2f,%s);' % (name, lo, hi, 'true' if on else 'false'))
+    for name, top in getattr(L, 'COUNTERS', []):
+        out.append('    AS_Counter("%s",%d);' % (name, top))
+    for name, model, speed, nodes in getattr(L, 'MOVERS', []):
+        out.append('    AS_Mover("%s","%s",%.2f);' % (name, model, speed))
+        for x, y, z, node in nodes:
+            out.append('    AS_MoverPoint(%.2f,%.2f,%.2f,"%s");' % (at(x, y) + (z, node)))
     if hasattr(L, 'COMPUTER'):
         hd, ent, interval, download = L.COMPUTER_HACK
-        out.append('    AS_Terminal(%.2f,%.2f,true,%d,%d,%.2f,%.2f,true);' % (L.COMPUTER + (hd, ent, interval, download)))
+        out.append('    AS_Terminal(%.2f,%.2f,true,%d,%d,%.2f,%.2f,true);' % (at(*L.COMPUTER) + (hd, ent, interval, download)))
     for (x, y), owner, mail in getattr(L, 'PDAS', []):
+        x, y = at(x, y)
         out.append('    AS_Pda(%.2f,%.2f,"%s",%d);' % (x, y, owner, mail))
     rows, cols, wires = getattr(L, 'PANEL_WIRES', (2, 5, 2))
     out.append('    as_pnRows=%d;as_pnCols=%d;as_pnWires=%d;' % (rows, cols, wires))
-    sx, sy = getattr(L, 'SENTRY_SPOT', (0.0, 0.0))
+    sx, sy = at(*L.SENTRY_SPOT) if hasattr(L, 'SENTRY_SPOT') else (0.0, 0.0)
     out.append('    as_sentrySpotX=%.2f;as_sentrySpotY=%.2f;' % (sx, sy))
-    out.append('    as_outX0=%d.0;as_outY0=%d.0;as_outX1=%d.0;as_outY1=%d.0;' % getattr(L, 'OUTDOORS', (0, 0, 0, 0)))
+    out.append('    as_outX0=%d.0;as_outY0=%d.0;as_outX1=%d.0;as_outY1=%d.0;' % (rect(L.OUTDOORS) if hasattr(L, 'OUTDOORS') else (0, 0, 0, 0)))
     if L.LIFT is not None:
-        out.append('    as_liftX0=%d.0;as_liftY0=%d.0;as_liftX1=%d.0;as_liftY1=%d.0;' % L.LIFT)
-        out.append('    as_doorX0=%d;as_doorY0=%d;as_doorX1=%d;as_doorY1=%d;' % L.DOOR)
-        out.append('    as_liftPanel=Point(%.2f,%.2f);' % L.LIFT_PANEL)
+        out.append('    as_liftX0=%d.0;as_liftY0=%d.0;as_liftX1=%d.0;as_liftY1=%d.0;' % rect(L.LIFT))
+        out.append('    as_doorX0=%d;as_doorY0=%d;as_doorX1=%d;as_doorY1=%d;' % rect(L.DOOR))
+        out.append('    as_liftPanel=Point(%.2f,%.2f);' % at(*L.LIFT_PANEL))
+        bridge_in, bridge_out = rect(L.BRIDGE_IN), rect(L.BRIDGE_OUT)
         for k in range(4):
-            out.append('    as_brIn[%d]=%d;as_brOut[%d]=%d;' % (k, L.BRIDGE_IN[k], k, L.BRIDGE_OUT[k]))
+            out.append('    as_brIn[%d]=%d;as_brOut[%d]=%d;' % (k, bridge_in[k], k, bridge_out[k]))
         for i, (x, y, w, face, side) in enumerate(L.shaft_columns()):
+            x, y = at(x, y)
             out.append('    as_colX[%d]=%.2f;as_colY[%d]=%.2f;as_colW[%d]=%d.0;as_colFace[%d]=%.1f;as_colSide[%d]="%s";' % (i, x, i, y, i, w, i, face, i, side))
         out.append('    as_colCount=%d;' % len(L.shaft_columns()))
     else:
@@ -287,11 +347,11 @@ def mission_galaxy(n):
     out.append('void AS_LevelThings%d () {' % n)
     out.append('    int i;')
     for kind, x, y in getattr(L, 'SLEEPERS', []):
-        out.append('    i=AS_SpawnAlien(%s,%.2f,%.2f,false);' % (kind, x, y))
+        out.append('    i=AS_SpawnAlien(%s,%.2f,%.2f,false);' % ((kind,) + at(x, y)))
     for x, y in getattr(L, 'BARRELS', []):
-        out.append('    i=AS_SpawnAlien(AS_BARREL,%.2f,%.2f,false);' % (x, y))
+        out.append('    i=AS_SpawnAlien(AS_BARREL,%.2f,%.2f,false);' % at(x, y))
     for kind, x, y in getattr(L, 'PICKUPS', []):
-        out.append('    AS_LevelPickup("%s",%.2f,%.2f);' % (kind, x, y))
+        out.append('    AS_LevelPickup("%s",%.2f,%.2f);' % ((kind,) + at(x, y)))
     out.append('}')
     return '\n'.join(out)
 
@@ -309,8 +369,23 @@ def mission_common():
         L.use(name)
         for key, text in getattr(L, 'LINES', {}).items():
             out.append('    if(key=="%s") {return "%s";}' % (key, text.replace('"', "'")))
+    # asw_info_message texts (tools/<level>.py INFO {key: (title, body)}), as "title|body".
+    out += ['    return "";', '}', 'string AS_InfoText (string key) {']
+    for name, *_ in LEVELS:
+        L.use(name)
+        for key, (title, body) in getattr(L, 'INFO', {}).items():
+            out.append('    if(key=="%s") {return "%s|%s";}' % (key, title.replace('"', "'"), body.replace('"', "'")))
     out += ['    return "";', '}']
     return '\n'.join(out)
+
+
+# Words the Galaxy compiler will not take as a name: its keywords and types, and C's (near is; far is not).
+RESERVED = set('''near auto break breakpoint case catch char class const continue default delete do double else enum extern
+false float for friend goto if include inline int long mutable namespace native new null operator private protected public
+register return short signed sizeof static struct switch template this throw true try typedef typename union unsigned using
+virtual void volatile while abilcmd actor actorscope aifilter bank bool byte camerainfo color datetime doodad fixed handle
+generichandle marker order playergroup point region revealer sound soundlink string text timer transmissionsource trigger
+unit unitfilter unitgroup unitref wave waveinfo wavetarget'''.split())
 
 
 SIGNATURE = re.compile(r'^(void|bool|int|fixed|string|point|unit|actor|playergroup|trigger|text|color)\s+(AS_\w+)\s*\(([^;{)]*)\)\s*\{', re.M)
@@ -432,6 +507,11 @@ def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=
         else:
             stated = True
     assert not late, 'local declared after a statement at MapScript lines %s' % late[:10]
+    # Nor a parameter or local named with a reserved word or a type ("Invalid parameter" for `fixed near`).
+    named = re.findall(r'\b(?:int|fixed|bool|string|point|unit|actor|bank|text|color|timer|trigger|playergroup|unitgroup|region|abilcmd|order|sound)'
+                       r'(?:\[[^\]]*\])*\s+(\w+)\s*[=;,)]', bare)
+    reserved = sorted(set(named) & RESERVED)
+    assert not reserved, 'reserved word used as a name: %s' % reserved
     unresolved = sorted(set(re.findall(r'\b(AS_[A-Z]\w*)\s*\(', code)) - seen)
     assert not unresolved, 'called but never defined: %s' % unresolved
     return 'include "TriggerLibs/NativeLib"\n' + code + '\nvoid InitMap () {\n    libNtve_InitLib();\n    AS_Init();\n}\n'
@@ -454,38 +534,50 @@ def ui_textures(levels):
 
 
 def compose(qa, demo=False, auto=False, start=-1):
-    """Every level in one map: the terrain is a blank floor the size of the biggest level, and the script
-    builds whichever level is being played from its strings (src/Kit.galaxy), then the next."""
+    """Every level in one map. Each level has its own part of the map and its real floor heights in the terrain
+    (tools/heights.py); levels overlap where their floors agree (tools/pack.py). The script builds whichever
+    level is being played from its strings (src/Kit.galaxy), then the next."""
+    global OX, OY
     levels, missions, pieces, props, floors, report, maps = [], [], {}, set(), set(), [], []
     paint, signs = {}, {}
-    sizes = []
+    sizes, hts = [], []
     for name, *_ in LEVELS:
         L.use(name)
         sizes.append((L.W, L.H))
-    MAP_SIZE = (max(w for w, h in sizes), max(h for w, h in sizes))
+        floor, room = L.carve()
+        hts.append(heights.level_heights(vars(L), L.deck_rows(floor, room), L.FLOOR))
+        floors.add(L.FLOOR)
+    assert len(floors) == 1, 'levels with different base heights: %s' % floors
+    # The cell tables are as big as the biggest level; the map holds every level, packed.
+    TABLES = (max(w for w, h in sizes), max(h for w, h in sizes))
+    packed = packer.pack([{'w': w, 'h': h, 'vert': t['vert'], 'vmask': t['vmask']} for (w, h), t in zip(sizes, hts)], base=L.FLOOR)
+    W, H = packed['size']
+    places = packed['places']
     for n, (name, *_) in enumerate(LEVELS):
         L.use(name)
+        OX, OY = places[n][:2]
         floor, room = L.carve()
         solid = L.blocked(floor)
-        levels.append(level_galaxy(n, solid, room, floor, *MAP_SIZE))
+        levels.append(level_galaxy(n, solid, room, floor, *TABLES, places[n], hts[n]))
         maps.append((floor, np.array([[L.in_void(x, y) for x in range(L.W)] for y in range(L.H)])))
         missions.append(mission_galaxy(n))
         props |= {p[0] for p in L.PROPS if p[0] not in FLAT_PROPS and not p[0].startswith('KP')}
         paint.update(L.paint_names())
         signs.update(L.sign_names())
-        floors.add(L.FLOOR)
         if L.LIFT is not None:
             pieces.update(elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR))
         pieces.update(elevator.door_meshes())
-        report.append('%s %dx%d' % (name, L.W, L.H))
-    assert len(floors) == 1, 'levels at different deck heights share one terrain: %s' % floors
-    W, H = MAP_SIZE
+        report.append('%s %dx%d at %d,%d, lifted %+.2f, %d slope cells'
+                      % (name, L.W, L.H, places[n][0], places[n][1], places[n][2], hts[n]['slope'].sum()))
+    report.append('map %dx%d' % (W, H))
+    OX, OY = places[0][:2]
     L.use(LEVELS[0][0])
     files = {}
-    # Terrain: one flat deck for every level, plates with rust and wreckage, every cell open until the script shuts the hull.
-    heights = np.full((H + 1, W + 1), L.FLOOR)
+    # Terrain: every level's floor heights, plates with rust and wreckage, every cell open until the script shuts the hull.
+    terrain = packed['terrain']
+    assert 0.0 <= terrain.min() and terrain.max() < 250.0, 'terrain heights out of range'
     masks, dominant = L.generic_masks(W, H)
-    files.update(basemap.terrain_binaries(W, H, heights, masks, L.TEXTURES, dominant))
+    files.update(basemap.terrain_binaries(W, H, terrain, masks, L.TEXTURES, dominant))
     files['t3Terrain.xml'] = basemap.terrain_xml(W, H, 'Korhal', 'KorhalCliff0', L.TEXTURES, L.FLOOR)
     files['PaintedPathingLayer'] = basemap.painted_pathing(np.ones((H, W), bool))
     players = [(0, 3, 0, '')] + [(s, 1, -1, 'Terr') for s in range(1, SEATS + 1)] + [(15, 4, 0, '')]
@@ -531,10 +623,12 @@ def compose(qa, demo=False, auto=False, start=-1):
     files.update(alien.build())
     files.update(marine.build())
     ui, frames = ui_textures(maps)
+    # The minimap squares are in each level's own cells: moved to its place in the map.
+    frames = [(x0 + p[0], y0 + p[1], size) for (x0, y0, size), p in zip(frames, places)]
     files.update(ui)
     catalog.build(files, [], set(), kit_models=sorted(models), runtime_props=props, mesh_units=sorted(pieces))
-    files['Objects'] = objects(L.SPAWN)
-    files['MapScript.galaxy'] = script(levels, missions, W, H, qa, demo, auto, start, bank, frames).encode()
+    files['Objects'] = objects(at(*L.SPAWN))
+    files['MapScript.galaxy'] = script(levels, missions, *TABLES, qa, demo, auto, start, bank, frames).encode()
     return files, report
 
 

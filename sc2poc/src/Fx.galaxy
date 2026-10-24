@@ -29,7 +29,7 @@ unit AS_FxUnit (string kind, fixed x, fixed y, fixed z, fixed facing, fixed sx, 
     int i=as_fxNext;
     as_fxNext=(as_fxNext+1)%AS_FXN;
     if(as_fx[i]!=null) {UnitRemove(as_fx[i]);as_fx[i]=null;}
-    if(x<0.5 || y<0.5 || x>IntToFixed(AS_W)-0.5 || y>IntToFixed(AS_H)-0.5) {return null;}
+    if(x<as_oxF+0.5 || y<as_oyF+0.5 || x>as_oxF+IntToFixed(as_lw)-0.5 || y>as_oyF+IntToFixed(as_lh)-0.5) {return null;}
     UnitCreate(1,kind,c_unitCreateIgnorePlacement,0,Point(x,y),facing-90.0);
     as_fx[i]=UnitLastCreated();as_fxLife[i]=life;as_fxBorn[i]=as_tick;as_fxRot[i]="";
     // Facing on the actor as well: the unit's own facing alone did not turn the meshes.
@@ -74,7 +74,7 @@ void AS_Ring (fixed x, fixed y, fixed radius, string tint, int life) {
 // A stock model played once where something happened (deaths, impacts).
 void AS_Fx (string kind, fixed x, fixed y, fixed z, fixed facing) {
     actor a=libNtve_gf_CreateActorAtPoint(kind,Point(x,y));
-    ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ+z));
+    ActorSend(a,libNtve_gf_SetPosition(x,y,AS_GroundZ(x,y)+z));
     // Stock models take SetRotation with the nose along minus the forward vector (PUBG's BG_ShipAim).
     ActorSend(a,libNtve_gf_SetRotation(0.0-Cos(facing),0.0-Sin(facing),0.0,0.0,0.0,1.0));
 }

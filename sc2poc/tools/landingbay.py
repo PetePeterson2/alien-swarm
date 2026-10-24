@@ -24,6 +24,8 @@ Coordinates are map units, x east, y north. Cells are 1 x 1.
 W, H = 64, 144
 FLOOR = 8.0
 WALL_H = 2.5
+# Real floor heights (tools/heights.py): the map, the Hammer point of cell (0, 0) and units per cell, the trace's fit.
+HEIGHTS = ('asi-jac1-landingbay_01', -9007.0, -9513.0, 79.82)
 
 AREAS = [
     ('Dropship Dock',      (47, 3, 59, 14), 'bay'),

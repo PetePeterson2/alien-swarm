@@ -106,9 +106,9 @@ point AS_DirectorSpot () {
     if(south>9999.0) {return null;}
     for(k=0;k<80;k+=1) {
         if(k==40) {ahead=!ahead;}
-        x=RandomFixed(1.0,IntToFixed(AS_W)-1.0);
-        if(ahead) {y=RandomFixed(south,MinF(IntToFixed(AS_H)-1.0,north+AS_HORDE_FAR));}
-        else {y=RandomFixed(MaxF(1.0,south-AS_HORDE_FAR),north);}
+        x=RandomFixed(as_oxF+1.0,as_oxF+IntToFixed(as_lw)-1.0);
+        if(ahead) {y=RandomFixed(south,MinF(as_oyF+IntToFixed(as_lh)-1.0,north+AS_HORDE_FAR));}
+        else {y=RandomFixed(MaxF(as_oyF+1.0,south-AS_HORDE_FAR),north);}
         if(!AS_Free(x,y,0.45) || !AS_Reachable(x,y)) {continue;}
         nearest=1000.0;
         for(p=1;p<=AS_PLAYERS;p+=1) {
@@ -232,7 +232,7 @@ void AS_ReachRefresh () {
     for(x=0;x<AS_W;x+=1) {for(y=0;y<AS_H;y+=1) {as_reach[x][y]=false;}}
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(!AS_Person(p) || !as_alive[p]) {continue;}
-        q=UnitGetPosition(as_m[p]);x=FixedToInt(PointGetX(q));y=FixedToInt(PointGetY(q));
+        q=UnitGetPosition(as_m[p]);x=AS_CX(PointGetX(q));y=AS_CY(PointGetY(q));
         if(x<0 || y<0 || x>=AS_W || y>=AS_H || as_reach[x][y]) {continue;}
         as_reach[x][y]=true;as_bfsQ[tail]=x*1000+y;tail+=1;
     }
@@ -249,7 +249,7 @@ void AS_ReachRefresh () {
     as_reachAt=as_now;
 }
 bool AS_Reachable (fixed x, fixed y) {
-    int cx=FixedToInt(x);int cy=FixedToInt(y);
+    int cx=AS_CX(x);int cy=AS_CY(y);
     if(as_now-as_reachAt>=1.0) {AS_ReachRefresh();}
     if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return false;}
     return as_reach[cx][cy];

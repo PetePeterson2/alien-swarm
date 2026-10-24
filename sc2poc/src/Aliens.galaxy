@@ -37,7 +37,7 @@ int AS_SpawnAlien (int kind, fixed x, fixed y, bool awake) {
     as_aBurnUntil[i]=0.0;as_aStunUntil[i]=0.0;as_aFreezeUntil[i]=0.0;as_aLeapUntil[i]=0.0;as_aParent[i]= -1;as_aChildren[i]=0;
     as_aSpawnAt[i]=as_now+RandomFixed(1.0,3.0);as_aBornAt[i]=as_now;
     as_aStuckX[i]=x;as_aStuckY[i]=y;as_aStuckAt[i]=as_now;
-    as_aX[i]=x;as_aY[i]=y;as_aSpawner[i]= -1;
+    as_aX[i]=x;as_aY[i]=y;as_aSpawner[i]= -1;as_aGoal[i]=0;
     as_aFlashUntil[i]=0.0;as_aFlinchUntil[i]=0.0;as_aFlinchNext[i]=0.0;as_aTagDmg[i]=0.0;as_aTagBy[i]=0;as_aTagKind[i]=0;
     UnitSetPropertyFixed(as_a[i],c_unitPropLifeMax,MaxF(1.0,as_aHp[i]));UnitSetPropertyFixed(as_a[i],c_unitPropLife,MaxF(1.0,as_aHp[i]));
     if(!AS_IsThing(kind)) {
@@ -322,6 +322,8 @@ void AS_AlienThink (int i) {
     if(as_aFlinchUntil[i]>as_now) {return;}
     if(k==AS_EGG) {AS_EggThink(i);return;}
     if(AS_IsThing(k)) {return;}
+    // Sent somewhere by its spawner (src/Objects.galaxy AS_AlienGoal).
+    if(as_aGoal[i]>0 && AS_AlienGoal(i,q)) {return;}
     // Asleep: a wanderer waits until a marine comes near, or is heard firing.
     p=AS_Nearest(q,1000.0);
     if(p==0) {if(as_now>=as_aNextOrder[i]) {AS_Halt(i);as_aNextOrder[i]=as_now+1.0;}return;}

@@ -432,6 +432,7 @@ def kit_pieces():
             m.quad(('decal_shadow', False, UNLIT, MULTIPLY), (x0, -SHADOW, 0.016), (x1, -SHADOW, 0.016), (x1, 0, 0.016), (x0, 0, 0.016),
                    [(u0, 1.0), (u1, 1.0), (u1, 0.0), (u0, 0.0)])
     floor_pieces(out)
+    stair_pieces(out)
     decal_pieces(out)
     from tools import propart
     propart.pieces(out)
@@ -532,6 +533,39 @@ def floor_pieces(out):
                     name = 'KF%d%s%d%d' % (k, s1, px, py)
                     m = out[name] = ShipModel(name, (0, 0, 0))
                     cell(m, tex, 0, 0, px, py)
+
+
+STAIR_STEPS = 4             # treads in a one-cell flight; five risers of a fifth of the rise each
+
+
+def stair_pieces(out):
+    """The slope cells' pieces (tools/heights.py stairs), one cell with the origin at its centre, rising one unit:
+    the script turns them and scales them up by the cell's rise, so the plating follows the terrain under it.
+    KStair is a flight rising north: grating treads with a yellow nosing, plate risers and solid sides, as AS's
+    stair props are. KRamp1 (north-east corner up) and KRamp3 (south-west corner down) are plates for the cells
+    where flights meet, folded along the diagonal that keeps them over the terrain."""
+    from tools.shipkit import ShipModel
+    n = STAIR_STEPS
+    rise, run = 1.0 / (n + 1), 1.0 / n
+    m = out['KStair'] = ShipModel('KStair', (0, 0, 0))
+    tread, nosing, riser, side = ('floor_mgrate', False, 0), ('rail', False, 0), ('floor_plate2', False, 0), ('wall_trim', False, 0)
+    for i in range(n):
+        y0, y1, z = -0.5 + i * run, -0.5 + (i + 1) * run, (i + 1) * rise
+        m.quad(tread, (-0.5, y0, z), (0.5, y0, z), (0.5, y1, z), (-0.5, y1, z),
+               [(0, 1 - y0 / 2), (0.5, 1 - y0 / 2), (0.5, 1 - y1 / 2), (0, 1 - y1 / 2)])
+        m.quad(nosing, (-0.5, y0, z + 0.003), (0.5, y0, z + 0.003), (0.5, y0 + 0.05, z + 0.003), (-0.5, y0 + 0.05, z + 0.003),
+               [(0, 0), (1, 0), (1, 1), (0, 1)])
+        m.quad(side, (0.5, y0, 0), (0.5, y1, 0), (0.5, y1, z), (0.5, y0, z), [(0, 1), (run, 1), (run, 1 - z), (0, 1 - z)])
+        m.quad(side, (-0.5, y1, 0), (-0.5, y0, 0), (-0.5, y0, z), (-0.5, y1, z), [(0, 1), (run, 1), (run, 1 - z), (0, 1 - z)])
+    for i in range(n + 1):
+        y, z0, z1 = -0.5 + i * run, i * rise, (i + 1) * rise
+        m.quad(riser, (-0.5, y, z0), (0.5, y, z0), (0.5, y, z1), (-0.5, y, z1), [(0, 1), (0.5, 1), (0.5, 1 - rise / 2), (0, 1 - rise / 2)])
+    sw, se, ne, nw = (-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)
+    plate = ('floor_plate2', False, 0)
+    for name, up, tris in (('KRamp1', {ne}, ((sw, se, ne), (sw, ne, nw))), ('KRamp3', {se, ne, nw}, ((sw, se, nw), (se, ne, nw)))):
+        m = out[name] = ShipModel(name, (0, 0, 0))
+        for tri in tris:
+            m.poly(plate, [(x, y, 1.0 if (x, y) in up else 0.0) for x, y in tri], [((x + 0.5) / 2, 1 - (y + 0.5) / 2) for x, y in tri])
 
 
 # Decal pieces, origin at their centre, laid by the script (AS_KitDecal) from each level's decal_spots.

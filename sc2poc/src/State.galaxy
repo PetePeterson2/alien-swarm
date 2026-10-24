@@ -122,8 +122,52 @@ fixed AS_InfestTotal () {
 }
 
 // ---- the deck ---------------------------------------------------------
+// Every level has its own part of the map (build.py packs them, overlapping where their floors agree:
+// tools/pack.py). Positions are map coordinates; the cell tables are the level's own, cell (0, 0) at its origin.
 bool[@W@][@H@] as_wall;          // collision cells, from tools/level.py
-fixed as_floorZ = 8.0;
+fixed[@W@][@H@] as_cz;           // each cell's floor height (tools/heights.py); hull cells take their deck's
+bool[@W@][@H@] as_cslope;        // a deck cell whose floor is the slope between two heights: a stair piece, not plating
+const int AS_STAIRS = 512;       // the slope cells' pieces (tools/heights.py stairs), laid by AS_KitStairs
+int as_stN;
+int[AS_STAIRS] as_stX;
+int[AS_STAIRS] as_stY;
+string[AS_STAIRS] as_stPiece;
+fixed[AS_STAIRS] as_stTurn;
+fixed[AS_STAIRS] as_stZ;
+fixed[AS_STAIRS] as_stRise;
+int as_ox;                       // the level's origin in the map, and its size in cells
+int as_oy;
+fixed as_oxF;
+fixed as_oyF;
+int as_lw;
+int as_lh;
+// The level's cell under a map point, -1 off the level.
+int AS_CX (fixed x) {return FixedToInt(x)-as_ox;}
+int AS_CY (fixed y) {return FixedToInt(y)-as_oy;}
+// The ground's height at a map point (the terrain carries the level's real floor heights).
+fixed AS_GroundZ (fixed x, fixed y) {return WorldHeight(c_heightMapGround,Point(x,y));}
+// The floor height of the cell under a map point: flat over a whole cell, so flat pieces lie on it.
+fixed AS_CellZ (fixed x, fixed y) {
+    int cx=AS_CX(x);int cy=AS_CY(y);
+    if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return AS_GroundZ(x,y);}
+    return as_cz[cx][cy];
+}
+void AS_HeightsClear (fixed z) {
+    int x;int y;
+    for(x=0;x<AS_W;x+=1) {for(y=0;y<AS_H;y+=1) {as_cz[x][y]=z;as_cslope[x][y]=false;}}
+    as_stN=0;
+}
+// Slope cell x, y's piece: turned counter-clockwise, its foot at z, scaled up to the rise.
+void AS_HeightStair (int x, int y, string piece, fixed turn, fixed z, fixed rise) {
+    if(as_stN>=AS_STAIRS) {return;}
+    as_stX[as_stN]=x;as_stY[as_stN]=y;as_stPiece[as_stN]=piece;as_stTurn[as_stN]=turn;as_stZ[as_stN]=z;as_stRise[as_stN]=rise;
+    as_stN+=1;
+}
+// Cells x0 .. x1-1 of row y at height z (build.py, a run of equal cells at a time).
+void AS_HeightRun (int y, int x0, int x1, fixed z, bool slope) {
+    int x;
+    for(x=x0;x<x1;x+=1) {as_cz[x][y]=z;as_cslope[x][y]=slope;}
+}
 
 // ---- marines: the eight profiles (profiles.res) -----------------------
 const int AS_CL_OFFICER = 0;
@@ -586,6 +630,10 @@ bool[5] as_numbers;                    // damage numbers on (N toggles)
 fixed as_shotLead;                     // how long ago, within this step, the shot being fired was due
 fixed as_slowMo;                       // adrenaline: the swarm moves at a third of its speed until then
 int[96] as_aSpawner;                   // the spawner an alien came from, -1 none (src/Objects.galaxy)
+int[96] as_aGoal;                      // its spawner's order (AlienOrders): 0 none, 1 move to the goal and fight
+                                       // what it meets on the way, 2 move there ignoring marines (src/Objects.galaxy)
+fixed[96] as_aGoalX;
+fixed[96] as_aGoalY;
 
 string[19] as_kindUnit;
 string[19] as_kindDie;

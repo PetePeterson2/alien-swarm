@@ -2,7 +2,8 @@
 
 The client's screen can't be looked at from here, so this is the way to judge the deck's look: it lays the
 floors, walls, caps, the open drop and the railings exactly as src/Kit.galaxy does (same pieces, same
-patterns, same panel picks, the same textures), lights them from the level's lamp list (stock omni lights,
+patterns, same panel picks, the same textures, each piece at its cell's real floor height, tools/heights.py;
+slope cells get their stair pieces), lights them from the level's lamp list (stock omni lights,
 roughly: a coloured pool round each, Lambert on the surface) over the derelict lighting preset's ambient and
 key, and puts a marine (tools/marine.py, tinted as player 1) at the camera's centre with its laser sight.
 It is an approximation of SC2's renderer (no shadows, no bloom, guessed light falloff), not a screenshot.
@@ -31,12 +32,12 @@ TEX_SIZE = 256
 
 
 class Camera:
-    def __init__(self, tx, ty):
+    def __init__(self, tx, ty, tz=0.0):
         p = math.radians(PITCH)
         self.fwd = np.array([0.0, math.cos(p), -math.sin(p)])
         self.up = np.array([0.0, math.sin(p), math.cos(p)])
         self.right = np.array([1.0, 0.0, 0.0])
-        self.eye = np.array([tx, ty, TARGET_Z]) - DIST * self.fwd
+        self.eye = np.array([tx, ty, TARGET_Z + tz]) - DIST * self.fwd
         self.f = 1 / math.tan(math.radians(FOV) / 2)
 
     def project(self, P):
@@ -109,9 +110,9 @@ class Scene:
         light = np.zeros((H, W, 3)) + AMBIENT
         n = self.nrm
         light += KEY[0] * np.clip(n @ KEY[1], 0, 1)[..., None]
-        for x, y, kind, big in lamps:
+        for x, y, kind, big, z in lamps:
             r = 7.0 if big else 5.4
-            d = np.array([x, y, LAMP_Z]) - self.pos
+            d = np.array([x, y, LAMP_Z + z]) - self.pos
             dist = np.linalg.norm(d, axis=-1)
             near = dist < r
             if not near.any():
@@ -152,25 +153,31 @@ def load_textures():
     return out
 
 
-def place(scene, tex, model, x, y, turn=0.0):
+def place(scene, tex, model, x, y, turn=0.0, z=0.0, zscale=1.0):
     c, s = math.cos(math.radians(turn)), math.sin(math.radians(turn))
-    R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+    R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]]) @ np.diag((1.0, 1.0, zscale))
     for key, part in model.parts.items():
         name, two, flags = key[:3]
         mode = key[3] if len(key) > 3 else 0
         if name not in tex:
             continue
         d, e = tex[name]
-        P = np.asarray(part['pos']) @ R.T + (x, y, 0); UV = np.asarray(part['uv']); N = np.asarray(part['nrm']) @ R.T
+        P = np.asarray(part['pos']) @ R.T + (x, y, z); UV = np.asarray(part['uv'])
+        N = np.asarray(part['nrm']) @ np.linalg.inv(R); N = N / np.linalg.norm(N, axis=1, keepdims=True)
         unlit = bool(flags & 0x4) and mode == 0
         for t in part['tri']:
             t = list(t)
             scene.tri(P[t], UV[t], d, e, normal=N[t[0]], unlit=unlit, mode=mode)
 
 
-def lay_level(scene, tex, pieces, rows, tx, ty):
+def lay_level(scene, tex, pieces, rows, tx, ty, hts):
     x0, x1, y0, y1 = int(tx) - 10, int(tx) + 11, int(ty) - 6, int(ty) + 11
     Wd, Hd = len(rows[0]), len(rows)
+    cz, slope, vert = hts['cellz'] - L.FLOOR, hts['slope'], hts['vert'] - L.FLOOR
+
+    def zat(x, y):
+        x, y = int(math.floor(x)), int(math.floor(y))
+        return float(cz[min(max(y, 0), Hd - 1), min(max(x, 0), Wd - 1)])
 
     def cell(x, y):
         if not (0 <= x < Wd and 0 <= y < Hd):
@@ -181,7 +188,7 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
         return cell(x, y).isdigit()
 
     def kind(x, y):
-        return int(cell(x, y)) if floor(x, y) else -1
+        return int(cell(x, y)) if floor(x, y) and not slope[y, x] else -1
     # Floors (AS_KitFloors): aligned 4x4 pieces where a block is all one kind, else 2x2, else single cells.
     done = set()
 
@@ -190,37 +197,50 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
         return h in ((1, 2, 5, 6) if k == 1 else (2, 6))
 
     def fits(x, y, n, k):
-        return all(kind(x + i, y + j) == k and (x + i, y + j) not in done for i in range(n) for j in range(n))
+        return all(kind(x + i, y + j) == k and (x + i, y + j) not in done and zat(x + i, y + j) == zat(x, y) for i in range(n) for j in range(n))
     for by in range(max(0, y0 - y0 % 4), y1 + 4, 4):
         for bx in range(max(0, x0 - x0 % 4), x1 + 4, 4):
             k = kind(bx, by)
             if 0 <= k < 8 and fits(bx, by, 4, k):
                 done.update((bx + i, by + j) for i in range(4) for j in range(4))
-                place(scene, tex, pieces['KF%d%d' % (k, (bx // 4 * 7 + by // 4 * 13 + (bx // 4) * (by // 4)) % 4)], bx, by)
+                place(scene, tex, pieces['KF%d%d' % (k, (bx // 4 * 7 + by // 4 * 13 + (bx // 4) * (by // 4)) % 4)], bx, by, z=zat(bx, by))
                 continue
             for i in (0, 2):
                 for j in (0, 2):
                     k = kind(bx + i, by + j)
                     if 0 <= k < 8 and fits(bx + i, by + j, 2, k):
                         done.update((bx + i + a, by + j + b) for a in range(2) for b in range(2))
-                        place(scene, tex, pieces['KF%d%s' % (k, 'U' if second(k, bx + i, by + j) else 'T')], bx + i, by + j)
+                        place(scene, tex, pieces['KF%d%s' % (k, 'U' if second(k, bx + i, by + j) else 'T')], bx + i, by + j, z=zat(bx + i, by + j))
                         continue
                     for a in range(2):
                         for b in range(2):
                             k = kind(bx + i + a, by + j + b)
                             if 0 <= k < 8 and (bx + i + a, by + j + b) not in done:
                                 done.add((bx + i + a, by + j + b))
-                                place(scene, tex, pieces['KF%d%s%d%d' % (k, 'R' if second(k, bx + i + a, by + j + b) else 'S', (bx + i + a) % 2, (by + j + b) % 2)], bx + i + a, by + j + b)
+                                place(scene, tex, pieces['KF%d%s%d%d' % (k, 'R' if second(k, bx + i + a, by + j + b) else 'S', (bx + i + a) % 2, (by + j + b) % 2)], bx + i + a, by + j + b, z=zat(bx + i + a, by + j + b))
+    # Slope cells: the terrain between its four corner heights, and over it the stair or ramp piece (AS_KitStairs).
+    ground = np.full((8, 8, 3), 0.23)
+    for y in range(max(0, y0), min(Hd, y1)):
+        for x in range(max(0, x0), min(Wd, x1)):
+            if floor(x, y) and slope[y, x]:
+                P = np.array([[x, y, vert[y, x]], [x + 1, y, vert[y, x + 1]], [x + 1, y + 1, vert[y + 1, x + 1]], [x, y + 1, vert[y + 1, x]]])
+                n = np.cross(P[1] - P[0], P[3] - P[0]); n = n / np.linalg.norm(n)
+                UV = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], float)
+                scene.tri(P[[0, 1, 2]], UV[[0, 1, 2]], ground, normal=n)
+                scene.tri(P[[0, 2, 3]], UV[[0, 2, 3]], ground, normal=n)
+    for x, y, piece, turn, z, rise in hts['stairs']:
+        if x0 <= x < x1 and y0 <= y < y1:
+            place(scene, tex, pieces[piece], x + 0.5, y + 0.5, turn, z - L.FLOOR + 0.004, rise)
     # Caps on hull and the drawn drop on open cells, one cell at a time (the kit merges them into bigger tiles).
     for y in range(y0, y1):
         for x in range(x0, x1):
             c = cell(x, y)
             if c in '#w':
-                place(scene, tex, pieces['KK1'], x, y)
+                place(scene, tex, pieces['KK1'], x, y, z=zat(x, y))
             elif c == 'o':
-                place(scene, tex, pieces['KO1_%d%d' % (x % 4, y % 4)], x, y)
+                place(scene, tex, pieces['KO1_%d%d' % (x % 4, y % 4)], x, y, z=zat(x, y))
             elif c == 'm':
-                place(scene, tex, pieces['KM1_%d%d' % (x % 4, y % 4)], x, y)
+                place(scene, tex, pieces['KM1_%d%d' % (x % 4, y % 4)], x, y, z=zat(x, y))
     # Walls in two-unit bays (AS_KitBay, AS_FacePanel, AS_KitPanel).
     panels = {L.KIT_KINDS.index(k): ''.join(map(str, v)) for k, v in L.KIT_PANELS.items()}
 
@@ -235,21 +255,26 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
             return -1
         if c == 'w':
             return 8
-        kk = kind(nx, ny); bx, by = nx // 2, ny // 2
+        kk = int(cell(nx, ny)); bx, by = nx // 2, ny // 2
         h = (bx * 37 + by * 101 + s * 59 + (bx * by) % 13) % 211
         p = panels[kk]
         if kk == 6 and h % 5 == 0:
             return 7
         return int(p[h % len(p)])
 
+    def face_z(x, y, s):
+        # AS_FaceZ: a wall stands on the floor it faces.
+        return zat(x + (0, 1, 0, -1)[s], y + (-1, 0, 1, 0)[s])
+
     def bay(xa, ya, xb, yb, s, mx, my):
         pa, pb = face(xa, ya, s), face(xb, yb, s)
-        if pa >= 0 and pa == pb:
-            place(scene, tex, pieces['KW%dF' % pa], mx, my, s * 90.0); return
+        za, zb = face_z(xa, ya, s), face_z(xb, yb, s)
+        if pa >= 0 and pa == pb and za == zb:
+            place(scene, tex, pieces['KW%dF' % pa], mx, my, s * 90.0, za); return
         if pa >= 0:
-            place(scene, tex, pieces['KW%dE' % pa], mx, my, s * 90.0)
+            place(scene, tex, pieces['KW%dE' % pa], mx, my, s * 90.0, za)
         if pb >= 0:
-            place(scene, tex, pieces['KW%dO' % pb], mx, my, s * 90.0)
+            place(scene, tex, pieces['KW%dO' % pb], mx, my, s * 90.0, zb)
     for y in range(y0, y1):
         for x in range(x0 - x0 % 2, x1, 2):
             bay(x, y, x + 1, y, 0, x + 1, y)
@@ -268,7 +293,7 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
             spots.append(('KPCrateG' if int(px + py) % 3 else 'KPCrateM', px, py, rot))
     for piece, px, py, rot in spots:
         if piece in pieces and x0 - 3 <= px <= x1 + 3 and y0 - 3 <= py <= y1 + 3:
-            place(scene, tex, pieces[piece], px, py, rot)
+            place(scene, tex, pieces[piece], px, py, rot, zat(px, py))
     # Railings where the deck meets the open night.
     for y in range(y0, y1):
         for x in range(x0, x1):
@@ -276,10 +301,10 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
                 continue
             for s, (nx, ny, mx, my) in enumerate(((x, y - 1, x + .5, y), (x + 1, y, x + 1, y + .5), (x, y + 1, x + .5, y + 1), (x - 1, y, x, y + .5))):
                 if floor(nx, ny):
-                    place(scene, tex, pieces['KRail'], mx, my, s * 90.0)
+                    place(scene, tex, pieces['KRail'], mx, my, s * 90.0, zat(nx, ny))
 
 
-def draw_marine(scene, x, y, aim, gun='Rifle', tint=(0.62, 0.72, 0.84), seq='Stand', t=0.0):
+def draw_marine(scene, x, y, aim, gun='Rifle', tint=(0.62, 0.72, 0.84), seq='Stand', t=0.0, z=0.0):
     import m3
     from tools import marine as M
     from tools.alien import _posed
@@ -289,18 +314,18 @@ def draw_marine(scene, x, y, aim, gun='Rifle', tint=(0.62, 0.72, 0.84), seq='Sta
     pos, nrm, uv = _posed(model, seq, t)
     c, s = math.cos(math.radians(aim)), math.sin(math.radians(aim))
     R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-    P = pos @ R.T + (x, y, 0); N = nrm @ R.T
+    P = pos @ R.T + (x, y, z); N = nrm @ R.T
     faces = np.asarray(model.divisions[0].faces).reshape(-1, 3)
     for f in faces:
         nn = N[f].mean(0); nn /= np.linalg.norm(nn) + 1e-9
         scene.tri(P[f], uv[f], dd, ee, tint=np.array(tint), normal=nn)
     _, muzzle = M.geometry(gun)
-    return np.array([x, y, 0]) + R @ np.asarray(muzzle)
+    return np.array([x, y, z]) + R @ np.asarray(muzzle)
 
 
-def laser(img, cam, start, aim, length):
+def laser(img, cam, start, aim, length, deck=0.0):
     """The laser sight as the script lays it: from the muzzle down to the deck at its far end, with its dot."""
-    end = start + np.array([math.cos(math.radians(aim)) * length, math.sin(math.radians(aim)) * length, 0.03 - start[2]])
+    end = start + np.array([math.cos(math.radians(aim)) * length, math.sin(math.radians(aim)) * length, deck + 0.03 - start[2]])
     a, b = cam.project(start), cam.project(end)
     glow = Image.new('RGB', (W, H)); d = ImageDraw.Draw(glow)
     d.line([tuple(a[:2]), tuple(b[:2])], fill=(150, 18, 14), width=7)
@@ -316,18 +341,25 @@ def render(level, tx, ty, aim, gun='Rifle', laser_len=3.5):
     L.use(level)
     floor, room = L.carve()
     rows = L.deck_rows(floor, room)
+    from tools import heights
+    hts = heights.level_heights(vars(L), rows, L.FLOOR)
+    cz = hts['cellz'] - L.FLOOR
+
+    def zat(x, y):
+        return float(cz[min(max(int(y), 0), cz.shape[0] - 1), min(max(int(x), 0), cz.shape[1] - 1)])
     tex = load_textures()
     pieces = L.kit_pieces()
     pieces.update(L.paint_pieces(sorted(L.paint_names())))
     pieces.update(L.sign_pieces(sorted(L.sign_names())))
     # The camera leans toward the cursor (AS_LeanUpdate): with the cursor laser_len ahead, about this much.
-    cam = Camera(tx + math.cos(math.radians(aim)) * 0.6, ty + math.sin(math.radians(aim)) * 0.6)
+    cam = Camera(tx + math.cos(math.radians(aim)) * 0.6, ty + math.sin(math.radians(aim)) * 0.6, zat(tx, ty))
     scene = Scene(cam)
-    lay_level(scene, tex, pieces, rows, tx, ty)
-    muzzle = draw_marine(scene, tx, ty, aim, gun)
-    lamps = [(x, y, k.replace('big', ''), 'big' in k) for x, y, k, _ in L.LIGHTS + L.corridor_lamps(*L.carve()) if abs(x - tx) < 16 and abs(y - ty) < 16]
+    lay_level(scene, tex, pieces, rows, tx, ty, hts)
+    muzzle = draw_marine(scene, tx, ty, aim, gun, z=zat(tx, ty))
+    lamps = [(x, y, k.replace('big', ''), 'big' in k, zat(x, y)) for x, y, k, _ in L.LIGHTS + L.corridor_lamps(*L.carve()) if abs(x - tx) < 16 and abs(y - ty) < 16]
     img = scene.shade(lamps)
-    img = laser(img, cam, muzzle, aim, laser_len)
+    ex, ey = tx + math.cos(math.radians(aim)) * laser_len, ty + math.sin(math.radians(aim)) * laser_len
+    img = laser(img, cam, muzzle, aim, laser_len, zat(ex, ey))
     return Image.fromarray(np.clip(img * 255, 0, 255).astype(np.uint8))
 
 

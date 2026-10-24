@@ -7,6 +7,11 @@
 //                    objectives, commander lines, hints, the odd random ambush
 //   asw_door         doors that open for marines, lock until hacked, weld shut,
 //                    are cut open with a welder, or are bashed down by aliens
+//   outputs          named events (a spawner's last alien dead, a timer, a counter
+//                    full, a mover passing a path node, a relay) and what they do,
+//                    the map's OnX outputs (tools/<level>.py ONS)
+//   logic_timer      random timers (TIMERS); math_counter counters (COUNTERS);
+//   func_tracktrain  movers along path_track nodes (MOVERS); asw_info_message (INFO)
 // The spawner rules are asw_spawner.cpp / asw_base_spawner.cpp's: CanSpawn refuses
 // while MaxLiveAliens are alive, once the supply is spent (unless infinite), and,
 // without SpawnIfMarinesAreNear, while a marine is within NearDistance; skill outside
@@ -36,6 +41,12 @@ int[64] as_spState;                          // 1 waiting for inputs, 2 spawning
 int[64] as_spLive;
 int[64] as_spMade;
 fixed[64] as_spNext;
+fixed[64] as_spNear;                         // NearDistance in cells
+fixed[64] as_spJitter;                       // the interval varies by this fraction either way
+int[64] as_spOrder;                          // AlienOrders for what it spawns (as_aGoal), and the target
+fixed[64] as_spTX;
+fixed[64] as_spTY;
+bool[64] as_spDeadFired;                     // OnAllSpawnedDead has fired
 
 void AS_Spawner (string name, fixed x, fixed y, int kind, int num, int maxLive, fixed interval, int inf, int minSkill, int maxSkill, int ifNear, int burrow) {
     int i=as_spN;
@@ -44,8 +55,20 @@ void AS_Spawner (string name, fixed x, fixed y, int kind, int num, int maxLive, 
     as_spName[i]=name;as_spX[i]=x;as_spY[i]=y;as_spKind[i]=kind;as_spNum[i]=num;as_spMaxLive[i]=maxLive;
     as_spInt[i]=MaxF(0.25,interval);as_spInf[i]=inf!=0;as_spMin[i]=minSkill;as_spMax[i]=maxSkill;
     as_spIfNear[i]=ifNear!=0;as_spBurrow[i]=burrow!=0;as_spState[i]=1;as_spLive[i]=0;as_spMade[i]=0;as_spNext[i]=0.0;
+    as_spNear[i]=AS_NEAR_DIST;as_spJitter[i]=0.25;as_spOrder[i]=0;as_spTX[i]=0.0;as_spTY[i]=0.0;as_spDeadFired[i]=false;
     // Easy: an infinite spawner runs dry after at least eight (asw_spawner.cpp MissionStart).
     if(as_skill==1 && as_spInf[i]) {as_spInf[i]=false;as_spNum[i]=MaxI(as_spNum[i],8);}
+}
+// The spawner made last, beyond the defaults: SpawnerState 0 (spawning from the start), its NearDistance in
+// cells, its interval jitter, and AlienOrders (1 MoveTo, 2 MoveToIgnoringMarines) with the target.
+void AS_SpawnerOpts (bool start, fixed nearDist, fixed jitter, int orders, fixed tx, fixed ty) {
+    int i=as_spN-1;
+    if(i<0) {return;}
+    as_spNear[i]=nearDist;as_spJitter[i]=AS_Clamp(jitter,0.0,0.9);as_spOrder[i]=orders;as_spTX[i]=tx;as_spTY[i]=ty;
+    if(start) {
+        if(AS_SpawnerValid(i)) {as_spState[i]=2;as_spNext[i]=as_now;}
+        else {as_spState[i]=3;}
+    }
 }
 // The skill gate: Brutal is treated as Insane.
 bool AS_SpawnerValid (int i) {
@@ -79,27 +102,58 @@ bool AS_MarineWithin (fixed x, fixed y, fixed r) {
 // An alien leaves the level (killed, latched on, cleared): its spawner may send another.
 void AS_AlienGone (int i) {
     int s=as_aSpawner[i];
-    as_aSpawner[i]= -1;
-    if(s>=0 && s<as_spN) {as_spLive[s]=MaxI(0,as_spLive[s]-1);}
+    as_aSpawner[i]= -1;as_aGoal[i]=0;
+    if(s>=0 && s<as_spN) {as_spLive[s]=MaxI(0,as_spLive[s]-1);AS_SpawnerDeadCheck(s);}
+}
+// OnAllSpawnedDead: a finite spawner has sent its last and every one of them is gone.
+void AS_SpawnerDeadCheck (int i) {
+    if(as_spDeadFired[i] || as_spState[i]!=3 || as_spLive[i]>0 || as_spMade[i]==0) {return;}
+    as_spDeadFired[i]=true;
+    AS_Fire("alldead:"+as_spName[i]);
+}
+// One alien out of spawner i now; -1 when none could be placed.
+int AS_SpawnerSpawn (int i) {
+    int j;
+    if(as_alive2>=AS_MAXALIEN-8) {return -1;}
+    j=AS_SpawnNear(as_spKind[i],as_spX[i],as_spY[i],true);
+    if(j<0) {return -1;}
+    as_aSpawner[j]=i;as_spLive[i]+=1;as_spMade[i]+=1;
+    if(as_spOrder[i]>0) {as_aGoal[j]=as_spOrder[i];as_aGoalX[j]=as_spTX[i];as_aGoalY[j]=as_spTY[i];}
+    // Burrowed aliens dig up out of the deck, the rest come out of the vents.
+    if(as_spBurrow[i]) {AS_Fx("ASFxBlood",as_aX[j],as_aY[j],0.0,0.0);AS_Burst(as_aX[j],as_aY[j],0.2,0.7,"120,100,70",3);}
+    else {AS_Burst(as_aX[j],as_aY[j],0.5,0.5,"90,90,90",2);}
+    AS_DirectorAlienAdded(j);
+    AS_Fire("spawned:"+as_spName[i]);
+    if(!as_spInf[i] && as_spMade[i]>=as_spNum[i]) {as_spState[i]=3;AS_SpawnerDeadCheck(i);}
+    return j;
+}
+// SpawnOneAlien: one now from each spawner of the name that is valid on this skill and not spent.
+void AS_SpawnerOne (string name) {
+    int i;
+    for(i=0;i<as_spN;i+=1) {
+        if(as_spName[i]!=name || !AS_SpawnerValid(i) || as_spState[i]==3) {continue;}
+        if(as_spMaxLive[i]>0 && as_spLive[i]>=as_spMaxLive[i]) {continue;}
+        AS_SpawnerSpawn(i);
+    }
 }
 void AS_SpawnerPulse () {
-    int i;int j;
+    int i;
     for(i=0;i<as_spN;i+=1) {
         if(as_spState[i]!=2 || as_now<as_spNext[i]) {continue;}
-        as_spNext[i]=as_now+as_spInt[i]*RandomFixed(0.75,1.25);
-        if(!as_spInf[i] && as_spMade[i]>=as_spNum[i]) {as_spState[i]=3;continue;}
+        as_spNext[i]=as_now+as_spInt[i]*RandomFixed(1.0-as_spJitter[i],1.0+as_spJitter[i]);
+        if(!as_spInf[i] && as_spMade[i]>=as_spNum[i]) {as_spState[i]=3;AS_SpawnerDeadCheck(i);continue;}
         if(as_spMaxLive[i]>0 && as_spLive[i]>=as_spMaxLive[i]) {continue;}
-        if(!as_spIfNear[i] && AS_MarineWithin(as_spX[i],as_spY[i],AS_NEAR_DIST)) {continue;}
-        if(as_alive2>=AS_MAXALIEN-8) {continue;}
-        j=AS_SpawnNear(as_spKind[i],as_spX[i],as_spY[i],true);
-        if(j<0) {continue;}
-        as_aSpawner[j]=i;as_spLive[i]+=1;as_spMade[i]+=1;
-        // Burrowed aliens dig up out of the deck, the rest come out of the vents.
-        if(as_spBurrow[i]) {AS_Fx("ASFxBlood",as_aX[j],as_aY[j],0.0,0.0);AS_Burst(as_aX[j],as_aY[j],0.2,0.7,"120,100,70",3);}
-        else {AS_Burst(as_aX[j],as_aY[j],0.5,0.5,"90,90,90",2);}
-        AS_DirectorAlienAdded(j);
-        if(!as_spInf[i] && as_spMade[i]>=as_spNum[i]) {as_spState[i]=3;}
+        if(!as_spIfNear[i] && AS_MarineWithin(as_spX[i],as_spY[i],as_spNear[i])) {continue;}
+        AS_SpawnerSpawn(i);
     }
+}
+// An alien under a spawner's order: off to its goal, until it is there (or, for MoveTo, a marine is near).
+bool AS_AlienGoal (int i, point q) {
+    point to=Point(as_aGoalX[i],as_aGoalY[i]);
+    if(DistanceBetweenPoints(q,to)<1.5) {as_aGoal[i]=0;return false;}
+    if(as_aGoal[i]==1 && AS_Nearest(q,9.0)>0) {as_aGoal[i]=0;return false;}
+    if(as_now>=as_aNextOrder[i]) {as_aAwake[i]=true;AS_Order(i,to);as_aNextOrder[i]=as_now+1.0;}
+    return true;
 }
 void AS_SpawnersClear () {
     int i;
@@ -119,6 +173,10 @@ fixed[48] as_trChance;
 bool[48] as_trDone;
 int[48] as_trAct0;                           // first action, and how many
 int[48] as_trActN;
+string[48] as_trName;                        // for enable and disable
+bool[48] as_trOff;                           // StartDisabled, or disabled since
+int[48] as_trNeed;                           // marines inside it takes: 1 any; n (playersrequired, at most the living); -1 all living
+bool[48] as_trAliens;                        // fired by aliens instead of marines
 const int AS_TRACTS = 128;
 int as_actN;
 string[128] as_actDo;
@@ -136,6 +194,31 @@ void AS_Trigger (fixed x0, fixed y0, fixed x1, fixed y1, bool once, fixed chance
     as_trN+=1;
     as_trX0[i]=x0;as_trY0[i]=y0;as_trX1[i]=x1;as_trY1[i]=y1;as_trOnce[i]=once;as_trChance[i]=chance;as_trDone[i]=false;
     as_trAct0[i]=as_actN;as_trActN[i]=0;
+    as_trName[i]="";as_trOff[i]=false;as_trNeed[i]=1;as_trAliens[i]=false;
+}
+// The trigger made last, beyond the defaults: its name, StartDisabled, marines needed inside, alien-only.
+void AS_TriggerOpts (string name, bool off, int need, bool aliens) {
+    int i=as_trN-1;
+    if(i<0) {return;}
+    as_trName[i]=name;as_trOff[i]=off;as_trNeed[i]=need;as_trAliens[i]=aliens;
+}
+// How many aliens (not things) stand in the rectangle.
+int AS_AliensIn (fixed x0, fixed y0, fixed x1, fixed y1) {
+    int i;int n=0;
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]==null || AS_IsThing(as_aKind[i])) {continue;}
+        if(AS_InRect(UnitGetPosition(as_a[i]),x0,y0,x1,y1)) {n+=1;}
+    }
+    return n;
+}
+// Whether trigger i is touched now.
+bool AS_TriggerTouched (int i) {
+    int n;
+    if(as_trAliens[i]) {return AS_AliensIn(as_trX0[i],as_trY0[i],as_trX1[i],as_trY1[i])>0;}
+    n=AS_CountIn(as_trX0[i],as_trY0[i],as_trX1[i],as_trY1[i]);
+    if(n<=0) {return false;}
+    if(as_trNeed[i]<0) {return n>=AS_Living();}
+    return n>=MinI(MaxI(1,as_trNeed[i]),AS_Living());
 }
 // An action of the trigger made last.
 void AS_TriggerDo (string act, string arg, fixed delay) {
@@ -165,10 +248,22 @@ string AS_PickOne (string opts) {
     if(at>=1) {s=StringSub(s,1,at-1);}
     return s;
 }
+// The map's inputs: spawners (StartSpawning, StopSpawning, SpawnOneAlien, a random pick), triggers and timers
+// (Enable, Disable), relays (fire an event), counters (Add), movers (forward, back, stop) and info messages;
+// anything else is the mission's (src/Mission.galaxy AS_MissionAction).
 void AS_Action (string act, string arg) {
     if(act=="spawn") {AS_SpawnerStart(arg);}
     else if(act=="stop") {AS_SpawnerStop(arg);}
+    else if(act=="spawnone") {AS_SpawnerOne(arg);}
     else if(act=="pick") {arg=AS_PickOne(arg);if(arg=="") {AS_Log("random pick: nothing");}else {AS_Log("random pick: "+arg);AS_SpawnerStart(arg);}}
+    else if(act=="enable") {AS_LogicEnable(arg,true);}
+    else if(act=="disable") {AS_LogicEnable(arg,false);}
+    else if(act=="fire") {AS_Fire(arg);}
+    else if(act=="count") {AS_CounterAdd(arg);}
+    else if(act=="move") {AS_MoverGo(arg,1);}
+    else if(act=="moveback") {AS_MoverGo(arg,-1);}
+    else if(act=="movestop") {AS_MoverGo(arg,0);}
+    else if(act=="info") {AS_InfoMessage(arg);}
     else {AS_MissionAction(act,arg);}
 }
 void AS_TriggerPulse () {
@@ -176,10 +271,11 @@ void AS_TriggerPulse () {
     for(k=0;k<AS_PENDING;k+=1) {
         if(as_pendDo[k]!="" && as_now>=as_pendAt[k]) {AS_Action(as_pendDo[k],as_pendArg[k]);as_pendDo[k]="";}
     }
+    AS_TimerPulse();AS_MoverPulse();
     if(as_tick%4!=1) {return;}
     for(i=0;i<as_trN;i+=1) {
-        if(as_trDone[i]) {continue;}
-        inside=AS_CountIn(as_trX0[i],as_trY0[i],as_trX1[i],as_trY1[i])>0;
+        if(as_trDone[i] || as_trOff[i]) {continue;}
+        inside=AS_TriggerTouched(i);
         if(!inside) {continue;}
         if(as_trOnce[i]) {as_trDone[i]=true;}
         // trigger_asw_chance rolls once, on the first touch.
@@ -191,4 +287,157 @@ void AS_TriggersClear () {
     int k;
     as_trN=0;as_actN=0;
     for(k=0;k<AS_PENDING;k+=1) {as_pendDo[k]="";}
+    AS_LogicClear();
+}
+
+// ---- outputs: named events and what they do ---------------------------------
+// Events: "alldead:<spawner>", "spawned:<spawner>", "timer:<timer>", "max:<counter>", "pass:<path node>",
+// "arrived:<mover>", or any name a relay fires.
+const int AS_OUTPUTS = 128;
+int as_onN;
+string[128] as_onEv;
+string[128] as_onDo;
+string[128] as_onArg;
+fixed[128] as_onDelay;
+void AS_On (string ev, string act, string arg, fixed delay) {
+    if(as_onN>=AS_OUTPUTS) {return;}
+    as_onEv[as_onN]=ev;as_onDo[as_onN]=act;as_onArg[as_onN]=arg;as_onDelay[as_onN]=delay;as_onN+=1;
+}
+void AS_Fire (string ev) {
+    int k;bool any=false;
+    for(k=0;k<as_onN;k+=1) {
+        if(as_onEv[k]!=ev) {continue;}
+        any=true;AS_ActionLater(as_onDo[k],as_onArg[k],as_onDelay[k]);
+    }
+    if(any) {AS_Log("event "+ev);}
+}
+
+// ---- logic_timer: fires "timer:<name>" every lo .. hi seconds while on ---------
+const int AS_TIMERS = 16;
+int as_tiN;
+string[16] as_tiName;
+fixed[16] as_tiLo;
+fixed[16] as_tiHi;
+bool[16] as_tiOn;
+fixed[16] as_tiNext;
+void AS_Timer (string name, fixed lo, fixed hi, bool on) {
+    int i=as_tiN;
+    if(i>=AS_TIMERS) {return;}
+    as_tiN+=1;
+    as_tiName[i]=name;as_tiLo[i]=MaxF(0.1,lo);as_tiHi[i]=MaxF(as_tiLo[i],hi);as_tiOn[i]=on;
+    as_tiNext[i]=as_now+RandomFixed(as_tiLo[i],as_tiHi[i]);
+}
+void AS_TimerPulse () {
+    int i;
+    for(i=0;i<as_tiN;i+=1) {
+        if(!as_tiOn[i] || as_now<as_tiNext[i]) {continue;}
+        as_tiNext[i]=as_now+RandomFixed(as_tiLo[i],as_tiHi[i]);
+        AS_Fire("timer:"+as_tiName[i]);
+    }
+}
+// Enable or Disable: triggers and timers of the name.
+void AS_LogicEnable (string name, bool on) {
+    int k;
+    for(k=0;k<as_trN;k+=1) {if(as_trName[k]==name) {as_trOff[k]=!on;}}
+    for(k=0;k<as_tiN;k+=1) {
+        if(as_tiName[k]!=name) {continue;}
+        if(on && !as_tiOn[k]) {as_tiNext[k]=as_now+RandomFixed(as_tiLo[k],as_tiHi[k]);}
+        as_tiOn[k]=on;
+    }
+}
+
+// ---- math_counter: "count" adds one; at its max it fires "max:<name>" ---------
+const int AS_COUNTERS = 16;
+int as_ctN;
+string[16] as_ctName;
+int[16] as_ctMax;
+int[16] as_ctAt;
+void AS_Counter (string name, int max) {
+    if(as_ctN>=AS_COUNTERS) {return;}
+    as_ctName[as_ctN]=name;as_ctMax[as_ctN]=max;as_ctAt[as_ctN]=0;as_ctN+=1;
+}
+void AS_CounterAdd (string name) {
+    int k;
+    for(k=0;k<as_ctN;k+=1) {
+        if(as_ctName[k]!=name || as_ctAt[k]>=as_ctMax[k]) {continue;}
+        as_ctAt[k]+=1;
+        if(as_ctAt[k]==as_ctMax[k]) {AS_Fire("max:"+name);}
+    }
+}
+
+// ---- movers: an actor along its path nodes (func_tracktrain, func_movelinear) --
+// Forward runs it toward its last node, back toward its first; each node it reaches fires "pass:<node>",
+// the end "arrived:<name>". Heights are over the ground.
+const int AS_MOVERS = 8;
+const int AS_MOVER_POINTS = 64;
+int as_moN;
+string[8] as_moName;
+string[8] as_moModel;
+actor[8] as_moA;
+fixed[8] as_moSpeed;
+int[8] as_moP0;                  // its first node, and how many
+int[8] as_moPN;
+int[8] as_moAt;                  // the node it last reached
+int[8] as_moGo;                  // 1 forward, -1 back, 0 stopped
+fixed[8] as_moX;
+fixed[8] as_moY;
+fixed[8] as_moZ;
+int as_mpN;
+fixed[64] as_mpX;
+fixed[64] as_mpY;
+fixed[64] as_mpZ;
+string[64] as_mpNode;
+void AS_Mover (string name, string model, fixed speed) {
+    int i=as_moN;
+    if(i>=AS_MOVERS) {return;}
+    as_moN+=1;
+    as_moName[i]=name;as_moModel[i]=model;as_moA[i]=null;as_moSpeed[i]=MaxF(0.1,speed);as_moP0[i]=as_mpN;as_moPN[i]=0;as_moAt[i]=0;as_moGo[i]=0;
+}
+// A node of the mover made last; the first is where it starts.
+void AS_MoverPoint (fixed x, fixed y, fixed z, string node) {
+    int i=as_moN-1;
+    if(i<0 || as_mpN>=AS_MOVER_POINTS) {return;}
+    as_mpX[as_mpN]=x;as_mpY[as_mpN]=y;as_mpZ[as_mpN]=z;as_mpNode[as_mpN]=node;as_mpN+=1;as_moPN[i]+=1;
+    if(as_moPN[i]==1) {
+        as_moX[i]=x;as_moY[i]=y;as_moZ[i]=z;
+        as_moA[i]=libNtve_gf_CreateActorAtPoint(as_moModel[i],Point(x,y));
+        ActorSend(as_moA[i],libNtve_gf_SetPosition(x,y,AS_GroundZ(x,y)+z));
+    }
+}
+void AS_MoverGo (string name, int dir) {
+    int k;
+    for(k=0;k<as_moN;k+=1) {if(as_moName[k]==name) {as_moGo[k]=dir;}}
+}
+void AS_MoverPulse () {
+    int i;int n;fixed step;fixed dx;fixed dy;fixed dz;fixed d;
+    for(i=0;i<as_moN;i+=1) {
+        if(as_moGo[i]==0 || as_moA[i]==null) {continue;}
+        n=as_moAt[i]+as_moGo[i];
+        if(n<0 || n>=as_moPN[i]) {as_moGo[i]=0;AS_Fire("arrived:"+as_moName[i]);continue;}
+        n=as_moP0[i]+n;
+        dx=as_mpX[n]-as_moX[i];dy=as_mpY[n]-as_moY[i];dz=as_mpZ[n]-as_moZ[i];
+        d=SquareRoot(dx*dx+dy*dy+dz*dz);step=as_moSpeed[i]*AS_DT;
+        if(d<=step) {
+            as_moX[i]=as_mpX[n];as_moY[i]=as_mpY[n];as_moZ[i]=as_mpZ[n];as_moAt[i]+=as_moGo[i];
+            if(as_mpNode[n]!="") {AS_Fire("pass:"+as_mpNode[n]);}
+        }
+        else {as_moX[i]+=dx/d*step;as_moY[i]+=dy/d*step;as_moZ[i]+=dz/d*step;}
+        ActorSend(as_moA[i],libNtve_gf_SetPosition(as_moX[i],as_moY[i],AS_GroundZ(as_moX[i],as_moY[i])+as_moZ[i]));
+    }
+}
+// With the level's triggers (AS_TriggersClear): its outputs, timers, counters and movers.
+void AS_LogicClear () {
+    int k;
+    as_onN=0;as_tiN=0;as_ctN=0;
+    for(k=0;k<as_moN;k+=1) {if(as_moA[k]!=null) {ActorSend(as_moA[k],"Destroy");as_moA[k]=null;}}
+    as_moN=0;as_mpN=0;
+}
+
+// ---- asw_info_message: a titled message for the whole squad (tools/<level>.py INFO) --
+void AS_InfoMessage (string key) {
+    string s=AS_InfoText(key);int at=StringFind(s,"|",c_stringCase);
+    if(s=="") {AS_Log("info message missing: "+key);return;}
+    if(at<1) {AS_All(s,"");}
+    else {AS_All(StringSub(s,1,at-1),StringSub(s,at+1,StringLength(s)));}
+    AS_Log("info message "+key);
 }
