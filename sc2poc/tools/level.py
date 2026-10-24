@@ -477,6 +477,10 @@ def kit_pieces():
     for z in (0.55, 1.0):
         _box(m, rail, -0.5, 0.0, z - 0.05, 0.5, 0.05, z)
     _box(m, ('wall_trim', False, 0), -0.5, 0.0, 0.0, 0.5, 0.03, 0.14)
+    # The pink neon edge strip AS's dock has along its drops, glowing on the deck at the railing's foot.
+    from tools.shipkit import UNLIT, ADD
+    m.quad(('run_pink', False, UNLIT, ADD), (-0.5, -0.13, 0.022), (0.5, -0.13, 0.022), (0.5, -0.01, 0.022), (-0.5, -0.01, 0.022),
+           [(0, 1), (1, 1), (1, 0), (0, 0)])
     return out
 
 

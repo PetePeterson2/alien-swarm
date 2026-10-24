@@ -14,7 +14,7 @@
 int as_demoStep= -1;
 fixed as_demoNext;
 void AS_DemoPulse () {
-    int p=1;int[6] guns;fixed[6] dirs;fixed ang;int k;point here;int w;
+    int p=1;int[16] guns;fixed[6] dirs;fixed ang;int k;point here;int w;int n=15;
     if(!as_demo || !AS_Person(p) || !as_alive[p]) {return;}
     as_god[p]=true;as_director=false;
     if(as_now<as_demoNext) {
@@ -22,10 +22,13 @@ void AS_DemoPulse () {
         return;
     }
     as_demoStep+=1;as_demoNext=as_now+2.5;
+    // Every gun family the marines hold (tools/marine.py GUNS), each fired from its own muzzle.
     guns[0]=AS_IT_RIFLE;guns[1]=AS_IT_AUTOGUN;guns[2]=AS_IT_PISTOLS;guns[3]=AS_IT_MINIGUN;guns[4]=AS_IT_SHOTGUN;guns[5]=AS_IT_VINDICATOR;
+    guns[6]=AS_IT_PRIFLE;guns[7]=AS_IT_FLAMER;guns[8]=AS_IT_LAUNCHER;guns[9]=AS_IT_TESLA;guns[10]=AS_IT_RAILGUN;guns[11]=AS_IT_SNIPER;
+    guns[12]=AS_IT_PDW;guns[13]=AS_IT_CHAINSAW;guns[14]=AS_IT_HEALGUN;
     dirs[0]=0.0;dirs[1]=90.0;dirs[2]=45.0;dirs[3]=135.0;dirs[4]=270.0;dirs[5]=200.0;
     ang=dirs[as_demoStep%6];
-    w=guns[(as_demoStep/6)%6];as_inv[p][0]=w;as_hand[p]=0;as_slot[p]=w;as_mag[p][w]=as_it[w].mag;as_reserve[p][w]=999;as_reloadEnd[p]=0.0;
+    w=guns[(as_demoStep/6)%n];as_inv[p][0]=w;as_hand[p]=0;as_slot[p]=w;as_mag[p][w]=as_it[w].mag;as_reserve[p][w]=999;as_reloadEnd[p]=0.0;
     here=UnitGetPosition(as_m[p]);
     as_mouseDX[p]=Cos(ang)*6.0;as_mouseDY[p]=Sin(ang)*6.0;as_mouseSeen[p]=true;as_trigger[p]=true;as_spin[p]=1.0;
     for(k=0;k<2;k+=1) {AS_SpawnNear(AS_DRONE,PointGetX(here)+Cos(ang)*IntToFixed(5+k*2),PointGetY(here)+Sin(ang)*IntToFixed(5+k*2),false);}

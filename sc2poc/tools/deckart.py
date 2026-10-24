@@ -450,6 +450,14 @@ def decal_blob(size=128):
     return _img(np.dstack([g, g, g]))
 
 
+def neon_strip(w=128, h=32, tint=(255, 80, 160)):
+    """A continuous neon tube lying along an edge (added): a hot core and a soft halo, even along its length so
+    the pieces join into one line."""
+    dy = np.abs(np.mgrid[0:h, 0:w][0].astype(float) - h / 2) / (h / 2)
+    g = np.clip(np.clip(1 - dy, 0, 1) ** 2.4 + np.clip(1 - dy / 0.3, 0, 1) * 0.7, 0, 1)
+    return _img(np.dstack([g * tint[0], g * tint[1], g * tint[2]]))
+
+
 def run_light(w=128, h=32, tint=(150, 225, 255)):
     """A floor running light (added): a bright capsule with a soft halo."""
     yy, xx = np.mgrid[0:h, 0:w].astype(float)
@@ -756,6 +764,7 @@ MUL_DECALS = {
     'decal_cable2': lambda: decal_cable(52),
     'shaft_warm': lambda: light_shaft(),
     'run_light': run_light,
+    'run_pink': neon_strip,
     'decal_fan': decal_fan,
     'decal_cookie1': lambda: decal_cookie('beams', 81),
     'decal_cookie2': lambda: decal_cookie('beams', 82),

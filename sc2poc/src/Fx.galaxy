@@ -328,6 +328,7 @@ fixed[96] as_moteFade;            // when it starts to fade out (0 already fadin
 fixed[96] as_moteGone;            // when it is removed
 int as_moteNext;
 fixed as_steamVentNext;
+fixed as_sparkNext;
 unit AS_Mote (fixed x, fixed y, fixed z, fixed scale, string tint, fixed rise, fixed life) {
     int i=as_moteNext;unit u;actor a;
     as_moteNext=(as_moteNext+1)%AS_MOTES;
@@ -355,17 +356,18 @@ void AS_AirPulse () {
         else {c=UnitGetPosition(as_m[p]);}
         // Dust: a faint warm speck somewhere on screen, drifting up through the lamp light.
         if(as_tick%2==0) {
-            s=RandomFixed(2.2,4.0);
-            AS_Mote(PointGetX(c)+RandomFixed(-4.5,4.5),PointGetY(c)+RandomFixed(-2.4,4.6),RandomFixed(0.3,2.2),s,"70,64,52",RandomFixed(0.15,0.5),RandomFixed(2.5,4.5));
+            s=RandomFixed(3.5,6.0);
+            AS_Mote(PointGetX(c)+RandomFixed(-4.5,4.5),PointGetY(c)+RandomFixed(-2.4,4.6),RandomFixed(0.3,2.2),s,"92,86,72",RandomFixed(0.15,0.5),RandomFixed(2.5,4.5));
         }
         // The motes the laser passes through glow pink for a moment (as in Landing Bay's dock, 2026-10-23).
-        if(as_tick%3==p%3) {
+        if(as_tick%3==p%3 && AS_GunHasLaser(p)) {
             d=AS_RayWall(PointGetX(UnitGetPosition(as_laser[p])),PointGetY(UnitGetPosition(as_laser[p])),as_aim[p],8.0);
             t=RandomFixed(0.4,MaxF(0.5,d));
             AS_Mote(PointGetX(UnitGetPosition(as_laser[p]))+Cos(as_aim[p])*t+RandomFixed(-0.05,0.05),PointGetY(UnitGetPosition(as_laser[p]))+Sin(as_aim[p])*t+RandomFixed(-0.05,0.05),
                     MaxF(0.1,0.56*(1.0-t/MaxF(1.0,d))),RandomFixed(2.5,4.0),"255,70,95",0.05,RandomFixed(0.5,0.9));
         }
     }
+    AS_ConsoleSparks();
     // Steam off a grate, or out of a pipe run high on a wall, near a player: soft grey puffs that spread as they go.
     if(as_grateCount+as_pipeCount>0 && as_now>=as_steamVentNext) {
         as_steamVentNext=as_now+RandomFixed(0.7,1.4);
@@ -390,6 +392,18 @@ void AS_AirPulse () {
             }
         }
     }
+}
+// A damaged console on a wall the camera sees spits a burst of sparks now and then, with a blue-white flash.
+void AS_ConsoleSparks () {
+    int c;fixed x;fixed y;fixed t;int k;
+    if(as_consoleCount<=0 || as_now<as_sparkNext) {return;}
+    as_sparkNext=as_now+RandomFixed(2.5,5.5);
+    c=RandomInt(0,as_consoleCount-1);t=as_consoleRot[c]-90.0;
+    // The console stands against the wall facing out along -Y of its turn: its top front edge is 0.45 out.
+    x=as_consoleX[c]+Cos(t)*0.45+RandomFixed(-0.4,0.4);y=as_consoleY[c]+Sin(t)*0.45;
+    if(!AS_HumanSees(Point(x,y))) {return;}
+    for(k=0;k<3;k+=1) {AS_Fx("ASFxSpark",x+RandomFixed(-0.1,0.1),y+RandomFixed(-0.1,0.1),RandomFixed(0.8,1.0),t+RandomFixed(-40.0,40.0));}
+    AS_Burst(x,y,0.95,0.35,"170,210,255",2);
 }
 void AS_AirClear () {
     int i;

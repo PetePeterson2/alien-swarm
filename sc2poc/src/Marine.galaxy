@@ -87,6 +87,12 @@ void AS_GunShow (int p) {
     as_walking[p]=false;
     AS_Log("p"+IntToString(p)+" shows the "+as_gunName[g]+" (muzzle "+FixedToString(as_gunFwd[g],2)+" ahead)");
 }
+// A gun carries the laser sight; a chainsaw or a case in hand has none.
+bool[5] as_laserShown;
+bool AS_GunHasLaser (int p) {
+    int g=AS_GunIndex(as_slot[p]);
+    return g!=AS_GUN_CASE && g!=AS_GUN_CHAINSAW;
+}
 // Where marine p's muzzle is when aiming `aim`: as_muzX/Y/Z. Dual pistols fire from the hand whose turn it is.
 // A muzzle that would reach through a bulkhead the marine is pressed against is drawn back to this side of it.
 fixed as_muzX;
@@ -198,8 +204,9 @@ void AS_MarineSpawn (int p) {
 void AS_TorchShow (int p) {
     libNtve_gf_ShowHideUnit(as_torch[p],as_alive[p] && as_lightOn[p]);
     libNtve_gf_ShowHideUnit(as_glow[p],as_alive[p] && as_lightOn[p]);
-    libNtve_gf_ShowHideUnit(as_laser[p],as_alive[p]);
-    libNtve_gf_ShowHideUnit(as_laserDot[p],as_alive[p]);
+    as_laserShown[p]=as_alive[p] && AS_GunHasLaser(p);
+    libNtve_gf_ShowHideUnit(as_laser[p],as_laserShown[p]);
+    libNtve_gf_ShowHideUnit(as_laserDot[p],as_laserShown[p]);
     if(as_torch[p]!=null) {
         if(AS_HasItem(p,AS_IT_FLASHLIGHT)) {UnitSetScale(as_torch[p],150.0,150.0,150.0);}
         else {UnitSetScale(as_torch[p],100.0,100.0,100.0);}
@@ -467,6 +474,7 @@ void AS_Attachments (int p) {
         UnitSetPosition(as_glow[p],here,true);
     }
     AS_Muzzle(p,aim);
+    if(as_laserShown[p]!=AS_GunHasLaser(p)) {AS_TorchShow(p);}
     UnitSetPosition(as_muzzle[p],Point(as_muzX+Cos(aim)*0.1,as_muzY+Sin(aim)*0.1),true);
     lit=as_now-as_lastShot[p]<0.07 && as_slot[p]!=AS_IT_RAILGUN && as_slot[p]!=AS_IT_SNIPER && !AS_IsDeployable(as_slot[p]) && as_slot[p]!=AS_IT_HEALGUN && as_slot[p]!=AS_IT_CHAINSAW;
     if(lit!=as_muzzleOn[p]) {as_muzzleOn[p]=lit;libNtve_gf_ShowHideUnit(as_muzzle[p],lit);}
