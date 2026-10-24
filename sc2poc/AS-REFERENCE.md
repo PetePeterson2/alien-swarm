@@ -80,3 +80,10 @@ Notes from playing the Steam game's first two missions (`asi-jac1-landingbay_01`
 - The drop can't be truly lower than the deck: both levels share one terrain. So the depth is painted, and the railings, snow and haze sell it. `py tools/preview_dock.py` renders it from the game camera.
 
 **Still open:** AS's high-contrast lit and unlit rooms everywhere else, and real fog. SC2 lighting is one preset for all players, so it can't be set per room.
+
+**Fourth round: the visual pass (2026-10-23/24).** Taken from the captures above and from the game's own textures (read from its VPKs for palette and pattern only; nothing of Valve's is shipped):
+- **The camera** is AS's lens exactly: pitch 60, about 60 degrees tall (Source's 75 is horizontal at 4:3), 412 units out, which is 5.1 cells here. SC2's field of view turned out to be the vertical one (measured on an old screenshot). A marine fills 7.5% of the screen's height, AS's 7.6%.
+- **The marines** hold real guns at the hip along the aim, one model per weapon family, and every round leaves the muzzle; the laser runs from the gun's emitter to the deck under the cursor (or to the bulkhead or alien in the way), a hot core in a soft red halo with a dot where it lands. Suits take the muted colours of AS's class textures (Tech steel blue, Heavy brown-red, Sarge camo, Jaeger khaki).
+- **The colony's look:** pale concrete slabs and galvanised grating (concretefloor050a, metalgrate012a), pale wall panels outlined in worn yellow, fat red flanged pipes, yellow perforated girders on the walls and overhead, hazard chevrons round hatches, WATCH YOUR STEP at the stairs, blood and paper where the crew fell, near-black beyond the playable space, pink neon along the dock's edges, a sodium-orange pump room, and Cargo Elevator's walkway lit orange from below (ce-01).
+- **Life:** dust in the air and motes lit by the laser, steam from grates and pipes, flickering and sparking lamps and consoles, turning fan shadows, smoke after blasts.
+- **The AI squad** only fights what a player can see (or what is at its elbow), as AS's marines back the player up.
