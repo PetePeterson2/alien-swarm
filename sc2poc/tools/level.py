@@ -242,6 +242,34 @@ def clutter(floor, room):
         # Where this room opens onto another (or onto anything but itself), and the cells near it.
         opening = [(x, y) for x, y in cells for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0))
                    if 0 <= x + dx < W and 0 <= y + dy < H and floor[y + dy, x + dx] and room[y + dy, x + dx] != i]
+        # One fat red pipe along a wall in some of the machine rooms, bays and stores: four wall-side cells in a row
+        # under one stretch of wall, all clear as above.
+        if kind in ('reactor', 'cargo', 'bay') and rng.random() < 0.7:
+            for x, y in cells:
+                runs = []
+                # North and side walls only: a pipe against a south wall hides behind its top from this camera.
+                for dx, dy, hx, hy, rot in ((1, 0, 0, 1, 0.0), (0, 1, 1, 0, 90.0), (0, 1, -1, 0, 90.0)):
+                    run = [(x + dx * k, y + dy * k) for k in range(4)]
+                    if all(c in cellset and c not in taken and not (0 <= c[0] + hx < W and 0 <= c[1] + hy < H and floor[c[1] + hy, c[0] + hx])
+                           for c in run):
+                        runs.append((run, hx, hy, rot))
+                ok = None
+                for run, hx, hy, rot in runs:
+                    if any(abs(cx - ox) <= 2 and abs(cy - oy) <= 2 for cx, cy in run for ox, oy in opening):
+                        continue
+                    if any(math.hypot(cx + 0.5 - px, cy + 0.5 - py) < 2.2 for cx, cy in run for px, py in keep):
+                        continue
+                    if any((cx + ex, cy + ey) in taken for cx, cy in run for ex in (-1, 0, 1) for ey in (-1, 0, 1)):
+                        continue
+                    if not all((cx - hx * k, cy - hy * k) in cellset for cx, cy in run for k in (1, 2, 3)):
+                        continue
+                    ok = (run, hx, hy, rot); break
+                if ok:
+                    run, hx, hy, rot = ok
+                    taken.update(run)
+                    mx = sum(c[0] for c in run) / 4.0 + 0.5 + hx * 0.12; my = sum(c[1] for c in run) / 4.0 + 0.5 + hy * 0.12
+                    out.append(('KPBigPipe', mx, my, rot, run))
+                    break
         for x, y in cells:
             hull = [not (0 <= x + dx < W and 0 <= y + dy < H) or not floor[y + dy, x + dx] for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0))]
             if sum(hull) != 1:
@@ -266,7 +294,7 @@ def clutter(floor, room):
             piece = rng.choice(['KPCrateG', 'KPCrateM', 'KPCrateM', 'KPBarrel', 'KPBarrel'])
             # Pushed a little toward its wall, squared to it with a slight skew.
             ox, oy = -dx * 0.08, -dy * 0.08
-            out.append((piece, x + 0.5 + ox, y + 0.5 + oy, rng.choice([0.0, 90.0]) + rng.uniform(-9, 9), (x, y)))
+            out.append((piece, x + 0.5 + ox, y + 0.5 + oy, rng.choice([0.0, 90.0]) + rng.uniform(-9, 9), [(x, y)]))
     return out
 
 
@@ -275,8 +303,9 @@ def blocked(floor):
     solid = ~floor
     if 'AREAS' in globals():
         _, room = carve()
-        for *_, (cx, cy) in clutter(floor, room):
-            solid[cy, cx] = True
+        for *_, cells in clutter(floor, room):
+            for cx, cy in cells:
+                solid[cy, cx] = True
     for model, x, y, rot, scale, rad in PROPS:
         if rad <= 0:
             continue
@@ -505,6 +534,7 @@ def floor_pieces(out):
 DECAL_PIECES = {
     'KDHaz': ('decal_hazard', 1.0, 0.36, False),      # name: texture, length, width, multiplied
     'KDWarn': ('decal_warning', 1.0, 1.0, False),
+    'KDWatch': ('decal_watchstep', 2.4, 0.45, False),
     'KDGrime1': ('decal_grime1', 2.4, 2.4, True),
     'KDGrime2': ('decal_grime2', 1.8, 1.8, True),
     'KDScorch': ('decal_scorch', 2.0, 2.0, True),
@@ -535,6 +565,16 @@ def decal_pieces(out):
     m = out['KDGrate'] = ShipModel('KDGrate', (0, 0, 0))
     m.quad(('floor_grate', False, NO_SHADOW_CAST), (-1, -1, 0.012), (1, -1, 0.012), (1, 1, 0.012), (-1, 1, 0.012),
            [(0, 1), (1, 1), (1, 0), (0, 0)])
+    # Loose paper scattered over the deck, a few sheets to a piece, each turned its own way.
+    import random as _r
+    for k in (1, 2, 3):
+        m = out['KDPapers%d' % k] = ShipModel('KDPapers%d' % k, (0, 0, 0))
+        rr = _r.Random(k * 31)
+        for j in range(rr.randint(4, 7)):
+            cx, cy = rr.uniform(-0.6, 0.6), rr.uniform(-0.6, 0.6); a = rr.uniform(0, 2 * math.pi); z = 0.006 + 0.0015 * j
+            ca, sa = math.cos(a), math.sin(a)
+            pts = [(cx + ca * u - sa * v, cy + sa * u + ca * v, z) for u, v in ((-0.09, -0.12), (0.09, -0.12), (0.09, 0.12), (-0.09, 0.12))]
+            m.quad(('decal_paper', False, NO_SHADOW_CAST), pts[0], pts[1], pts[2], pts[3], [(0, 1), (1, 1), (1, 0), (0, 0)])
     # Snow drifts on the outdoor deck, added over it.
     for k in (1, 2):
         m = out['KDSnow%d' % k] = ShipModel('KDSnow%d' % k, (0, 0, 0))
@@ -720,6 +760,16 @@ def decal_spots(floor, room, solid, seed=7):
                 spots.append(('KDRun', x + 0.8, y + 0.5, 90.0))
             if y % 2 == 0 and not floor[y, x - 1] and not in_void(x - 1, y):
                 spots.append(('KDRun', x + 0.2, y + 0.5, 90.0))
+    # WATCH YOUR STEP at both ends of every stair and ramp, across its width, as AS paints them.
+    for name, (x0, y0, x1, y1), k in AREAS:
+        if ('Stair' not in name and 'Ramp' not in name) or name.endswith('Door'):
+            continue
+        if y1 - y0 >= x1 - x0:
+            for yy in (y0 + 0.35, y1 - 0.35):
+                spots.append(('KDWatch', (x0 + x1) / 2.0, yy, 0.0))
+        else:
+            for xx in (x0 + 0.35, x1 - 0.35):
+                spots.append(('KDWatch', xx, (y0 + y1) / 2.0, 90.0))
     # Grime everywhere, goo near the hives and labs, scorches where the fighting was.
     open_cells = [(x, y) for y in range(H) for x in range(W) if kind(x, y) and kind(x, y) != 'lift' and not solid[y, x]]
     for x, y in rng.sample(open_cells, len(open_cells) // 36):
@@ -789,10 +839,16 @@ def decal_spots(floor, room, solid, seed=7):
         if k in ('bay', 'cargo', 'reactor', 'mess', 'lab', 'hall') and fl == 0 and lk not in ('red', 'redbig') and rng.random() < 0.55:
             spots.append((rng.choice(['KDCookie1', 'KDCookie2', 'KDCookie3']), lx + rng.uniform(-0.6, 0.6), ly + rng.uniform(-0.6, 0.6),
                           rng.uniform(0, 360)))
-    # Where the crew fell: a few blood pools in the rooms and passages, as AS's landing bay has.
+    # Where the crew fell: a few blood pools in the rooms and passages, as AS's landing bay has, often with the
+    # papers they dropped scattered round; and more loose paper through the offices and labs.
     for x, y in rng.sample(open_cells, len(open_cells) // 110):
         if kind(x, y) in ('bay', 'cargo', 'mess', 'lab', 'hall', 'reactor'):
             spots.append((rng.choice(['KDBlood1', 'KDBlood2']), x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
+            if rng.random() < 0.6:
+                spots.append((rng.choice(['KDPapers1', 'KDPapers2', 'KDPapers3']), x + rng.uniform(-0.8, 1.8), y + rng.uniform(-0.8, 1.8), rng.uniform(0, 360)))
+    for x, y in rng.sample(open_cells, len(open_cells) // 70):
+        if kind(x, y) in ('mess', 'lab'):
+            spots.append((rng.choice(['KDPapers1', 'KDPapers2', 'KDPapers3']), x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
     # Loose cables across the deck in the working rooms.
     for x, y in rng.sample(open_cells, len(open_cells) // 240):
         if kind(x, y) in ('bay', 'cargo', 'reactor', 'lab', 'mess', 'hall'):

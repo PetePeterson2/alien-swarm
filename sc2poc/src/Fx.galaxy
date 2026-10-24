@@ -200,6 +200,8 @@ void AS_Puff (int p, fixed x, fixed y, fixed angle, fixed speed, fixed life, fix
     as_puff[i]=UnitLastCreated();
     UnitSetHeight(as_puff[i],0.55,0.0);UnitSetScale(as_puff[i],30.0,30.0,30.0);
     if(cold) {ActorSend(libNtve_gf_MainActorofUnit(as_puff[i]),"SetTintColor 170,220,255");}
+    // Flame leaves the nozzle blue-white hot, as AS's flamer jet does, and turns to orange fire (AS_PuffPulse).
+    else {ActorSend(libNtve_gf_MainActorofUnit(as_puff[i]),"SetTintColor 150,190,255");}
     as_puffX[i]=x;as_puffY[i]=y;as_puffVX[i]=Cos(angle)*speed;as_puffVY[i]=Sin(angle)*speed;
     as_puffAge[i]=0.0;as_puffLife[i]=life;as_puffBy[i]=p;as_puffDmg[i]=dmg;as_puffCold[i]=cold;as_puffItem[i]=as_dmgItem;
 }
@@ -209,6 +211,7 @@ void AS_PuffPulse () {
         if(as_puff[i]==null) {continue;}
         as_puffAge[i]+=AS_DT;
         if(as_puffAge[i]>=as_puffLife[i]) {UnitRemove(as_puff[i]);as_puff[i]=null;continue;}
+        if(!as_puffCold[i] && as_puffAge[i]>=0.1 && as_puffAge[i]-AS_DT<0.1) {ActorSend(libNtve_gf_MainActorofUnit(as_puff[i]),"SetTintColor 255,255,255");}
         nx=as_puffX[i]+as_puffVX[i]*AS_DT;ny=as_puffY[i]+as_puffVY[i]*AS_DT;
         if(AS_Solid(nx,ny)) {
             // Flame splashes along a wall instead of passing through it.

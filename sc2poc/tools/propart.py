@@ -364,6 +364,34 @@ def _pipe(m, tex, y, z, r, x0=-1.0, x1=1.0, n=8):
                [(0, (i + 1) / n), (1, (i + 1) / n), (1, i / n), (0, i / n)])
 
 
+def _bigpipe(m, length=4.0, r=0.3, z=0.4):
+    """AS's fat red pipe lying along a room's wall (lb-05): four units of it along x, flanged at every joint,
+    resting on grey saddles, capped at both ends."""
+    import math as _m
+    a = length / 2
+    k = -a
+    while k < a - 1e-6:
+        _pipe(m, 'prop_pipe_grey', 0.0, z, r, k, k + 1.0, 12)
+        k += 1.0
+    for fx in [-a + 0.04 + i for i in range(int(length) + 1)]:
+        x0, x1 = max(-a, fx - 0.05), min(a, fx + 0.05)
+        _pipe(m, 'prop_column', 0.0, z, r * 1.18, x0, x1, 12)
+    from tools.shipkit import ShipModel
+    for sx in (-a * 0.5, a * 0.5):
+        t = ShipModel('t', (0, 0, 0)); _box(t, 'prop_crate_metal', 'prop_crate_metal_top', 0.16, r * 2.3, z - r * 0.4, 0.0)
+        for key, part in t.parts.items():
+            dst = m.parts.setdefault(key, dict(pos=[], nrm=[], uv=[], tri=[]))
+            base = len(dst['pos'])
+            dst['pos'].extend(np.array(v) + (sx, 0, 0) for v in part['pos']); dst['nrm'].extend(part['nrm']); dst['uv'].extend(part['uv'])
+            dst['tri'].extend((i + base, j + base, k2 + base) for i, j, k2 in part['tri'])
+    n = 12
+    for xe, sgn in ((-a, -1), (a, 1)):
+        pts = [(xe, r * 1.18 * _m.cos(2 * _m.pi * i / n), z + r * 1.18 * _m.sin(2 * _m.pi * i / n)) for i in range(n)]
+        if sgn < 0:
+            pts = pts[::-1]
+        m.poly(('prop_reactor_top', False, 0), pts, [(0.5 + 0.5 * _m.cos(2 * _m.pi * i / n), 0.5 + 0.5 * _m.sin(2 * _m.pi * i / n)) for i in range(n)])
+
+
 DOOR_WIDTHS = range(1, 13)
 
 
@@ -399,6 +427,7 @@ def pieces(out):
             dst['tri'].extend((a + base, b + base, c + base) for a, b, c in p['tri'])
     _blob(out['KPCrateStack'], 2.2, 1.1)
     m = out['KPBarrel'] = ShipModel('KPBarrel', (0, 0, 0)); _barrel(m); _blob(m, 0.6, 0.6)
+    m = out['KPBigPipe'] = ShipModel('KPBigPipe', (0, 0, 0)); _bigpipe(m); _blob(m, 4.2, 0.8)
     m = out['KPBarrels'] = ShipModel('KPBarrels', (0, 0, 0))
     for off in ((-0.33, -0.2), (0.33, -0.2), (0.0, 0.36)):
         b = ShipModel('t', (0, 0, 0)); _barrel(b)

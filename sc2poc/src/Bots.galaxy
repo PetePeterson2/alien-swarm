@@ -225,14 +225,20 @@ bool AS_FieldBusy (int p) {return false;}
 
 // ---- the autopilot's jobs on Landing Bay ---------------------------------------------
 bool AS_AutoBusy () {return as_extraHeld[1];}
-bool AS_AutoGateDone () {return as_level!=AS_LV_BAY || as_bayStage>=1 || as_hackDone;}
+// Cargo Elevator's security door is overridden by holding its console (src/Mission.galaxy, within 1.7): the
+// autopilot stands there until it is done, rather than leaving it to whichever bot happens to stand close enough.
+bool AS_AutoGateDone () {
+    if(as_level!=AS_LV_BAY) {return as_hackDone;}
+    return as_bayStage>=1 || as_hackDone;
+}
 // At the gate: the autopilot's marine works the east panel itself when it is the tech (the briefing test
 // picks Crash), through the same tiles a player clicks; otherwise the squad's tech is sent.
 fixed as_autoClickAt;
 int as_autoWireClicks;
 point AS_AutoGate () {
     int d=AS_DoorNamed("gate_east");point pp;
-    if(as_level!=AS_LV_BAY || d<0) {return null;}
+    if(as_level!=AS_LV_BAY) {return as_doorPanel;}
+    if(d<0) {return null;}
     if(!AS_IsTech(1)) {
         if(as_aiHackTech==0 && as_drLocked[d]) {AS_OrderTechHack(1,AS_USE_PANEL,d);}
         return null;

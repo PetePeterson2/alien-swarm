@@ -226,6 +226,7 @@ int[128] as_buNext;
 int[128] as_buBorn;
 bool[128] as_buWall;
 bool[128] as_buDone;
+bool[128] as_buFirst;           // not drawn yet: its first streak reaches back to the muzzle
 string[128] as_buRot;          // the round's rotation message (AS_AimMsg), built once
 int[128][12] as_buHit;
 unit[128][12] as_buHitU;
@@ -243,6 +244,9 @@ void AS_BulletStep (int i) {
     fixed nt=MinF(as_buEnd[i],as_buT[i]+as_buSpeed[i]*AS_DT);fixed tail;fixed c=Cos(as_buAng[i]);fixed s=Sin(as_buAng[i]);fixed ex;fixed ey;
     AS_BulletHits(i,nt);
     tail=MaxF(0.0,nt-as_buLen[i]);
+    // A round covers several cells a step, more than its streak is long: drawn only as the streak, it first
+    // appeared well out in front of the gun. Its first frame is a line from the muzzle to it, as AS's tracers leave the barrel.
+    if(as_buFirst[i]) {tail=0.0;as_buFirst[i]=false;}
     UnitSetPosition(as_bu[i],Point(as_buX[i]+c*tail,as_buY[i]+s*tail),true);
     UnitSetScale(as_bu[i],MaxF(0.05,nt-tail)*100.0,as_buW[i]*100.0,as_buW[i]*100.0);
     // Every step, as the laser sight does: a rotation sent once at creation did not hold (frames of 2026-10-21).
@@ -263,7 +267,7 @@ void AS_Bullet (int p, fixed x, fixed y, fixed ang, fixed range, fixed dmg, int 
     if(as_bu[i]!=null) {AS_BulletHits(i,1000.0);UnitRemove(as_bu[i]);as_bu[i]=null;}
     AS_Trace(x,y,ang,range,pierce);
     as_buX[i]=x;as_buY[i]=y;as_buAng[i]=ang;as_buSpeed[i]=speed;as_buT[i]=0.0;as_buEnd[i]=MaxF(0.1,as_tEnd);as_buLen[i]=len;as_buW[i]=width;
-    as_buDmg[i]=dmg;as_buPush[i]=push;as_buBy[i]=p;as_buKind[i]=kind;as_buItem[i]=as_dmgItem;as_buN[i]=as_tCount;as_buNext[i]=0;as_buWall[i]=as_tWall;as_buDone[i]=false;as_buBorn[i]=as_tick;
+    as_buDmg[i]=dmg;as_buPush[i]=push;as_buBy[i]=p;as_buKind[i]=kind;as_buItem[i]=as_dmgItem;as_buN[i]=as_tCount;as_buNext[i]=0;as_buWall[i]=as_tWall;as_buDone[i]=false;as_buFirst[i]=true;as_buBorn[i]=as_tick;
     // A round due part way through the last step has flown that much further already:
     // rounds that leave in one step are spaced along the line as they were fired.
     as_buT[i]=MinF(as_buEnd[i]*0.5,speed*as_shotLead);

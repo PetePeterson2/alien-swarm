@@ -384,6 +384,25 @@ def decal_hazard(seed=11, w=256, h=64):
     return _img(a)
 
 
+def decal_watchstep(seed=19, w=512, h=96):
+    """AS's stencil at the head of a stair or ramp: WATCH YOUR STEP in black on a yellow band between hazard
+    stripes, scuffed by boots (opaque)."""
+    yy, xx = np.mgrid[0:h, 0:w]
+    stripe = ((xx + yy) // 18) % 2 == 0
+    a = np.where(stripe[..., None], np.array((214, 168, 32), float), np.array((26, 24, 22), float))
+    band = (yy > h * 0.22) & (yy < h * 0.78)
+    a[band] = (210, 166, 34)
+    lab = Image.new('L', (w, h), 0)
+    ImageDraw.Draw(lab).text((w / 2, h / 2), 'WATCH YOUR STEP', font=_font(int(h * 0.42)), fill=255, anchor='mm')
+    m = np.asarray(lab).astype(float)[..., None] / 255
+    a = a * (1 - m) + np.array((24, 22, 20), float) * m
+    wear = _noise(0, 10, seed, 3, (h, w))
+    k = np.clip((wear - 0.64) * 5, 0, 1)[..., None]
+    a = a * (1 - k) + np.array((110, 106, 98), float) * k
+    a[:3] *= 0.5; a[-3:] *= 0.5
+    return _img(a)
+
+
 def decal_cable(seed, size=512):
     """Loose power cables snaking across the deck (multiplied): two thick rubber lines, a duller core where the
     light catches them, and a soft shadow."""
@@ -508,6 +527,20 @@ def decal_fan(size=256, blades=5):
     blur = Image.fromarray((np.clip(sh, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.0))
     d = np.asarray(blur).astype(float) / 255 * 0.5 * np.clip(1.15 - r, 0, 1)
     return _img(np.repeat(255 * (1 - d[..., None]), 3, axis=2))
+
+
+def decal_paper(seed=91, w=64, h=96):
+    """A loose sheet off a clipboard: off-white, a printed header and lines of text, a fold and a scuff (opaque)."""
+    r = np.random.default_rng(seed)
+    a = np.array((214, 212, 200), float)[None, None] * (0.9 + 0.12 * _noise(0, 12, seed, 2, (h, w))[..., None])
+    a[6:14, 6:w - 6] *= 0.55
+    for y in range(20, h - 8, 6):
+        ln = int(r.integers(w // 3, w - 10))
+        a[y:y + 2, 6:6 + ln] *= 0.72
+    a[:, w // 2:w // 2 + 1] *= 0.86
+    a[h - 30:h - 10, 10:40] *= np.linspace(0.7, 1.0, 30)[None, :, None]
+    a[:2] *= 0.8; a[-2:] *= 0.8; a[:, :2] *= 0.8; a[:, -2:] *= 0.8
+    return _img(a)
 
 
 def decal_snow(seed, size=256):
@@ -709,6 +742,8 @@ KIND_FLOORS = {
 DECALS = {
     'decal_hazard': lambda: (decal_hazard(), None),
     'decal_warning': lambda: (decal_warning(), None),
+    'decal_watchstep': lambda: (decal_watchstep(), None),
+    'decal_paper': lambda: (decal_paper(), None),
 }
 MUL_DECALS = {
     'decal_shadow': decal_shadow,

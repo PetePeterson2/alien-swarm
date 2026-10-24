@@ -383,7 +383,10 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 - Suits are muted as AS's are (its Tech's steel blue, Heavy's brown-red, Sarge's camo green, Jaeger's khaki, read from its textures for reference).
 - One model per weapon family (15: rifle, prototype rifle, autogun, shotgun, vindicator, dual pistols, minigun, flamer, sniper, railgun, tesla, heal gun, chainsaw, grenade launcher, and a carried case for deployables). The gun is held at the hip in both hands along the aim. The script swaps the model when the gun in hand changes (`ModelSwap`, `AS_GunShow`) and tints each squad member's suit their HUD colour.
 - Every round, tracer, flame gob, grenade, tesla arc and heal beam now leaves the muzzle of the gun in hand (`AS_Muzzle`; the muzzle table is written from the models by build.py). Dual pistols alternate hands. Spent casings flick out to the right.
+- A round flies several cells a step, more than its tracer streak is long, so before this the first you ever saw of it was well out in front of the marine whatever the muzzle. A round's first frame is now a line from the muzzle to it, as AS's tracers leave the barrel.
+- The flamer's jet leaves the nozzle blue-white hot and turns to orange fire (the user's AS flamer screenshot).
 - Animations: stand, run forward, back-pedal and side-steps picked from the run's angle to the aim (the legs go where the marine moves, the gun stays on the aim), the rifle-butt swing, and a death where the body goes over and stays (`AS_MarineCorpse`) instead of SC2's marine death.
+- Second model pass: layered angular pauldrons instead of round pads, a power pack with cooling fins and a status lamp, a crested helmet with ear vents.
 - The models carry SC2 attachment points (Ref_Center for the name tags, Ref_Weapon at the muzzle, and the rest).
 - `dist/marine-preview.png`, `dist/marine-ingame.png`.
 
@@ -399,6 +402,7 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 - Hull tops are near-black, as everything outside AS's playable space is; blocks standing in rooms are machinery seen from above (plating, vents, a red pipe, a hazard rim).
 - Solid crates and barrels along the walls of the big rooms, kept clear of doorways and of every point the mission uses (pathing still 0 leaks). Hatches ringed with hazard chevrons; blood pools where the crew fell; powdery snow on the outdoor deck.
 - Dust motes drifting on screen, steam off the glowing grates and out of the wall pipe runs (a soft smoke sprite, not the ringed burst), one wall lamp in five failing or sputtering, light shafts under the steady lamps in their colour, and painted hard shadows (girder bands, grating cookies) under about half the room lamps.
+- Fat red pipes with yellow flanged joints on saddles along a north or side wall of some bays, stores and machine rooms (solid, like the crates). WATCH YOUR STEP stencils at both ends of the stair and the ramp. The drop off the dock is near-black night with a faint haze and a few distant lights, as AS's is (it was a bright blue lattice). Fan shadows turn slowly on the deck under some room lamps.
 - The pump room glows sodium orange. Cargo Elevator opens on a dark bay with a grating walkway lit orange from below, as AS's does.
 - `dist/screens/visual-pass-compare.png` sets AS's captures beside renders of the same places.
 
