@@ -6,7 +6,7 @@
 // fire; RIGHT melee; R reload; Q or the wheel swap weapons; 1 the offhand item;
 // E use; SPACE roll; TAB the map; F1-F4 take control of another of your marines;
 // V and X tell the AI marines to follow or hold; G drop the weapon in hand.
-// Also C top-down / third person, N damage numbers, H help. Developer keys
+// Also C top-down / third person, Z camera distance, N damage numbers, H help. Developer keys
 // (Ctrl+...) exist in QA builds only.
 // =====================================================================
 
@@ -96,6 +96,7 @@ void AS_KeyDown (int p, int k, bool ctrl) {
     if(k==c_keyH) {AS_HelpToggle(p);return;}
     if(k==c_keyN) {as_numbers[p]=!as_numbers[p];if(as_numbers[p]) {AS_Message(p,"Damage numbers on");}else {AS_Message(p,"Damage numbers off");}return;}
     if(k==c_keyC) {AS_CameraMode(p,1-as_view[p],0.4);return;}
+    if(k==c_keyZ) {AS_ZoomStep(p);return;}
     if(!as_alive[p]) {return;}
     if(k==c_keyE) {AS_UsePress(p);return;}
     if(as_using[p]>=0) {return;}
@@ -203,10 +204,22 @@ bool AS_PlayerLeftT (bool testConds, bool runActions) {
 // (the sound catalog in reference/ carries mods this map does not load). build.py fills the body in.
 void AS_SoundProbe () {
 }
+// QA builds also log whether the stock models borrowed from the Swarm campaign mod are loaded:
+// a missing one draws nothing in game and logs no error of its own.
+const int AS_CATALOG_MODEL = 54;       // c_gameCatalogModel (TriggerLibs/GameData/GameData2, not in NativeLib)
+void AS_ModelProbe () {
+    string[3] ids;int k;
+    ids[0]="HotSRaptor";ids[1]="HotSRaptorDeath";ids[2]="PrimalZergling";
+    for(k=0;k<3;k+=1) {
+        if(CatalogEntryIsValid(AS_CATALOG_MODEL,ids[k])) {AS_Log("model "+ids[k]+" ok");}
+        else {AS_Log("model "+ids[k]+" MISSING");}
+    }
+}
 void AS_Init () {
     int p;int q;trigger t;
     AS_ProfilesInit();AS_ItemsInit();AS_KindsInit();AS_XpInit();AS_HintsInit();
     if(as_qa) {AS_SoundProbe();}
+    if(as_qa || as_auto) {AS_ModelProbe();}
     as_lightId[0]="ASDerelict";as_lightName[0]="DERELICT";as_lightId[1]="ASBlackout";as_lightName[1]="BLACKOUT";
     as_lightId[2]="ASAlarm";as_lightName[2]="EMERGENCY";as_lightId[3]="ASPowered";as_lightName[3]="POWER RESTORED";
     GameSetSpeedValue(c_gameSpeedNormal);GameSetSpeedLocked(true);

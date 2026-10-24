@@ -19,7 +19,9 @@ const fixed AS_MARINE_R = 0.33;
 const fixed AS_RUN = 3.0;
 const fixed AS_TOP_PITCH = 60.0;
 const fixed AS_TOP_FOV = 48.0;
-const fixed AS_TOP_DIST = 18.0;
+const fixed AS_TOP_DIST = 8.0;         // AS frames about 6 cells top to bottom (412 units at FOV 75); this shows 7
+const fixed AS_TOP_DIST_MID = 11.0;    // Z steps out to these and back
+const fixed AS_TOP_DIST_FAR = 15.0;
 const fixed AS_TP_DIST = 3.4;
 const fixed AS_TP_HEIGHT = 1.45;
 const fixed AS_TP_FOV = 68.0;
@@ -154,6 +156,13 @@ void AS_CameraMode (int p, int mode, fixed blend) {
         CameraSetMouseRotationSpeed(p,c_cameraRotationYaw,0.5);CameraSetMouseRotationSpeed(p,c_cameraRotationPitch,0.35);
     }
     AS_HudView(p);
+}
+// Z: the top-down camera's three distances, AS's own framing first.
+void AS_ZoomStep (int p) {
+    if(as_zoom[p]<AS_TOP_DIST_MID-0.5) {as_zoom[p]=AS_TOP_DIST_MID;}
+    else if(as_zoom[p]<AS_TOP_DIST_FAR-0.5) {as_zoom[p]=AS_TOP_DIST_FAR;}
+    else {as_zoom[p]=AS_TOP_DIST;}
+    if(as_view[p]==0) {CameraSetValue(p,c_cameraValueDistance,as_zoom[p]*(1.0+0.45*as_zoomScope[p]),0.35,-1,0.0);}
 }
 fixed[5] as_tpDist;
 void AS_Camera (int p) {

@@ -111,8 +111,24 @@ point AS_RouteGoal () {
 }
 
 // ---- fighting ---------------------------------------------------------
+// The squad's AI marines fight by AS's own AI rules (asw_marine.h, asw_marine_schedule.cpp), so
+// they back the player up rather than clearing every room first:
+//   sight       AS's 525 units (6.6 cells) following, 768 (9.6) holding, here 8 and 10: at AS's
+//               own 6.6 the autopilot run lost all three in Cargo Elevator's lift lobby
+//   aim error   4-14 degrees on each new target (AS: 5-20), x0.9 a think (0.1 s) while firing;
+//               none at 1.5 cells, full from 4.5 (an uber drone in the lift lobby got in among
+//               them and took all three)
+//   turn        0.1-0.25 s onto a new target before the first shot, none inside 2.5 cells
+//   ammo        the clips they carry; a dry one scrounges one clip every 20 s
+// The autopilot's own marine (player 1 of an --auto run) stands in for a person and has none of this.
+bool AS_BotFull (int p) {return as_auto && p==1;}
+fixed AS_BotSight (int p) {
+    if(AS_BotFull(p)) {return 11.0;}
+    if(as_botOrder[p]==1) {return 10.0;}
+    return 8.0;
+}
 int AS_BotFoe (int p) {
-    int i;int best= -1;fixed bd=11.0;fixed d;point here=UnitGetPosition(as_m[p]);point q;
+    int i;int best= -1;fixed bd=AS_BotSight(p);fixed d;point here=UnitGetPosition(as_m[p]);point q;
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null || as_aKind[i]==AS_BIOMASS || as_aKind[i]==AS_BARREL) {continue;}
         if(as_aKind[i]==AS_EGG) {d=DistanceBetweenPoints(here,UnitGetPosition(as_a[i]))+4.0;}
@@ -125,7 +141,7 @@ int AS_BotFoe (int p) {
     return best;
 }
 void AS_BotPulse (int p) {
-    point here;point goal;fixed dx;fixed dy;fixed d;int q;point oq;fixed sx=0.0;fixed sy=0.0;int f;
+    point here;point goal;fixed dx;fixed dy;fixed d;int q;point oq;fixed sx=0.0;fixed sy=0.0;int f;int was;fixed ang;int w;
     if(!as_bot[p] || !as_alive[p]) {return;}
     // The demo is player 1's firing range: the squad stands by and holds its fire.
     if(as_demo) {as_trigger[p]=false;as_botVX[p]=0.0;as_botVY[p]=0.0;return;}
@@ -147,11 +163,22 @@ void AS_BotPulse (int p) {
     }
     as_botVX[p]+=sx*1.5;as_botVY[p]+=sy*1.5;
     // Pick a target a few times a second; shoot while it is in sight.
-    if(as_now>=as_botNextLook[p]) {as_botNextLook[p]=as_now+0.25;as_botFoe[p]=AS_BotFoe(p);}
+    if(as_now>=as_botNextLook[p]) {
+        was=as_botFoe[p];as_botNextLook[p]=as_now+0.25;as_botFoe[p]=AS_BotFoe(p);
+        if(as_botFoe[p]>=0 && as_botFoe[p]!=was && !AS_BotFull(p)) {
+            as_botAimErr[p]=RandomFixed(4.0,14.0);if(RandomInt(0,1)==0) {as_botAimErr[p]= -as_botAimErr[p];}
+            as_botFireAt[p]=as_now+RandomFixed(0.1,0.25);
+        }
+    }
     f=as_botFoe[p];
     if(f>=0 && as_a[f]!=null) {
         oq=UnitGetPosition(as_a[f]);
-        as_mouseDX[p]=PointGetX(oq)-PointGetX(here);as_mouseDY[p]=PointGetY(oq)-PointGetY(here);as_trigger[p]=true;
+        dx=PointGetX(oq)-PointGetX(here);dy=PointGetY(oq)-PointGetY(here);
+        if(AS_BotFull(p)) {as_botAimErr[p]=0.0;as_botFireAt[p]=0.0;}
+        d=SquareRoot(dx*dx+dy*dy);ang=ATan2(dy,dx)+as_botAimErr[p]*MinF(1.0,MaxF(0.0,(d-1.5)/3.0));
+        as_mouseDX[p]=Cos(ang)*d;as_mouseDY[p]=Sin(ang)*d;as_trigger[p]=as_now>=as_botFireAt[p] || d<2.5;
+        // AS closes the error by a tenth a 0.1 s think; this loop steps every 1/16 s.
+        if(as_trigger[p]) {as_botAimErr[p]*=0.936;}
     }
     else {
         as_trigger[p]=false;
@@ -159,11 +186,19 @@ void AS_BotPulse (int p) {
     }
     as_mouseSeen[p]=true;
     if(as_auto && p==1 && as_extraHeld[1]) {as_trigger[p]=false;}
-    // A gun in hand, never a deployable; they never run dry, and they patch themselves (and the squad) up.
+    // A gun in hand, never a deployable; they shoot what they carry, and they patch themselves (and the squad) up.
     if(as_slot[p]<=0 || AS_IsDeployable(as_slot[p]) || as_slot[p]==AS_IT_HEALGUN || as_slot[p]==AS_IT_CHAINSAW) {
         if(as_inv[p][1-as_hand[p]]>0 && !AS_IsDeployable(as_inv[p][1-as_hand[p]]) && as_inv[p][1-as_hand[p]]!=AS_IT_HEALGUN) {AS_SelectHand(p,1-as_hand[p]);}
     }
-    if(as_slot[p]>0 && !AS_IsDeployable(as_slot[p]) && as_reserve[p][as_slot[p]]<as_it[as_slot[p]].mag) {as_reserve[p][as_slot[p]]=as_it[as_slot[p]].reserve;}
+    w=as_slot[p];
+    if(w>0 && !AS_IsDeployable(w)) {
+        if(AS_BotFull(p)) {if(as_reserve[p][w]<as_it[w].mag) {as_reserve[p][w]=as_it[w].reserve;}}
+        else if(as_mag[p][w]<=0 && as_reserve[p][w]<=0) {
+            if(as_botDryAt[p]==0.0) {as_botDryAt[p]=as_now+20.0;AS_Log("bot "+IntToString(p)+" dry: "+as_it[w].title);}
+            else if(as_now>=as_botDryAt[p]) {as_botDryAt[p]=0.0;as_reserve[p][w]=as_it[w].mag;AS_Log("bot "+IntToString(p)+" scrounged a clip");}
+        }
+        else {as_botDryAt[p]=0.0;}
+    }
     if((as_hp[p]<as_hpMax[p]*0.45 || as_infestUntil[p]>as_now) && as_inv[p][2]==AS_IT_MEDKIT && as_charges[p]>0) {AS_UseExtra(p);}
     if(as_tick%16==p) {AS_BotMedic(p);}
 }

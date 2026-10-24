@@ -296,3 +296,36 @@ Found and fixed this way: F1-F4 used player slots, which trade marines when you 
 Client runs (autopilot, no script errors): Normal/Crash 106-109 s, Easy+Onslaught 108.6 s (two hordes), Hard 118.8 s, Insane as Sarge 120.4 s (one tech-down retry), Brutal/Crash 116.1 s, Normal/Wildcat with the AI tech hacking 123.3 s.
 
 Still only seen through those pictures: nobody has looked at the live screens, since screen access was declined. They need a look by hand (`.\launch.ps1 -QA`).
+
+## Combat feel pass (2026-10-23)
+
+Played by hand, the missions felt easy and like walking around. Alien health and gun damage already matched AS's (`asw_drone_health` 40; the rifle's `base_damage` 5 plus 1 a point of Accuracy), so the cause was elsewhere:
+
+- **Camera (`src/Marine.galaxy`):** distance 18 → **8**. AS's camera sits 412 units out at FOV 75 (about 60° tall) and frames about 6 cells top to bottom; at 18 and FOV 48 ours framed about 16, so every alien, gib and hit flash was drawn at roughly 40% of AS's size, and swarms were seen and shot from far off. **Z** steps the distance 8 / 11 / 15 (listed in the H help). `tools/preview_lift.py` uses the new numbers.
+- **Aliens (`tools/catalog.py` SIZE):** drawn 15-65% past AS's sizes (drone 1.25 → 1.45, uber 1.6, parasite 1.05, shieldbug 0.72, boomer 2.6, buzzer 0.42 → 0.7, ranger 1.0, mortarbug 0.9, harvester 0.75, ripper 0.9); collision radii are unchanged. The death, fire, gib and shaft-climber models use the same table. The **drone is now the HotS raptor** (Swarm campaign mod), spikier and nearer AS's drone; it has no torn, acid or burning death of its own, so it falls with its plain one under the gib and fire effects. QA and `-Auto` builds log whether the borrowed models are loaded (`AS_ModelProbe`): HotSRaptor, HotSRaptorDeath and PrimalZergling all ok.
+- **AI squad (`src/Bots.galaxy`):** the bots locked on at 11 cells, never missed and never ran dry, so they cleared rooms before the player got there. They now follow AS's AI rules, eased a little after test runs:
+  - sight 8 cells following, 10 holding (AS: 6.6 and 9.6);
+  - 4-14° aim error on each new target (AS: 5-20), closing x0.9 a 0.1 s think while firing, and none inside 1.5 cells;
+  - a 0.1-0.25 s turn before the first shot, none inside 2.5 cells;
+  - finite ammo: a dry bot scrounges one clip every 20 s.
+  
+  The autopilot's own marine is exempt.
+- **Story director (`src/Director.galaxy`):** with Onslaught off it now runs on Normal and up (never Easy):
+  - wanderers every 8-11 s, down to 2.5 s, none while 12 drones are awake;
+  - hordes of 5-9 every 75-100 s (the first 60-90 s in), held back while 15 drones are awake;
+  - relax 30-45 s.
+  
+  `as_director` (set before but never read) is now its switch: on at each level start, off for the lift ride, the transit-car hold, failure and victory, and off for the whole of Cargo Elevator, whose set pieces bring their own swarms. The spawn-spot search went from 24 tries to 80; 24 found no spot three times running in narrow Landing Bay. Wanderers and hordes are logged.
+
+Autopilot runs (Normal, Crash, no script errors; the autopilot marine has god mode, so every death is an AI marine):
+
+| Run | Settings | Landing Bay | Cargo Elevator | AI deaths |
+|---|---|---|---|---|
+| 1 | AS's exact bot numbers | 109.6 s, 0 hordes | 257.1 s | all 3 in the lift lobby within 8 s (drones and an uber drone) |
+| 2 | sight 8/10, aim error 4-14° | 110.1 s, 5 wanderers, no horde spot | 248.1 s | 1, during the ride |
+| 3 | 80-try spawn search | 112.3 s, 6 wanderers, a horde of 8 at 68 s | 253.8 s | all 3 in the lobby again |
+| 4 | point-blank aim | 107.1 s, 4 wanderers, hordes held (15-23 awake) | 246.1 s | 1 in Landing Bay, 3 spread over Cargo Elevator; the bots took 55 and 53 kills to the autopilot's 151 |
+
+The original tuning lost about 2 marines a run.
+
+Not checked: how any of it looks or feels, since nobody has looked at the screen. In particular: the new camera framing in every room and on the lift ride, the raptor's animations and its facing, and whether the bigger models clip walls in corridors.

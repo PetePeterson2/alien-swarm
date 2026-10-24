@@ -52,6 +52,9 @@ fixed[5] as_botStuckAt;                // when a bot last made progress toward t
 point[5] as_botLast;
 point[5] as_botGoalPt;                 // where a bot is walking, refreshed every fourth step
 int[5] as_botFoe;
+fixed[5] as_botAimErr;                 // degrees off the target, set on each new one, closing as it fires
+fixed[5] as_botFireAt;                 // no shot before then: the turn onto a new target
+fixed[5] as_botDryAt;                  // a dry bot scrounges a clip then (0 not dry)
 int[5] as_botOrder;                    // 0 follow, 1 hold (V and X, as AS's single player)
 point[5] as_botHoldAt;
 point[48] as_crumb;                    // the leader's trail, newest at as_crumbHead

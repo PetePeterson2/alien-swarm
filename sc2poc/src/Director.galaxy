@@ -1,10 +1,16 @@
 // =====================================================================
 // The director, after Alien Swarm's asw_director.cpp and asw_spawn_manager.cpp.
 //
-// In a campaign mission it does nothing: Landing Bay has no asw_director_control,
+// In AS a campaign mission's director does nothing: Landing Bay has no asw_director_control,
 // so every alien comes from the level's own spawners and triggers (src/Objects.galaxy),
-// including the ones that start behind the squad as it moves on. It runs only with
-// ONSLAUGHT ticked in the briefing (AS's asw_horde_override / asw_wanderer_override):
+// including the ones that start behind the squad as it moves on. That played as long walks
+// between fights, so here a STORY director runs on top of the spawners on Normal and up
+// (never on Easy): the same cycle, gentler. Wanderers every 8-11 s down to 2.5 s, none while
+// 12 drones are awake; hordes of 5-9 every 75-100 s (the first 60-90 s in), skipped while 15
+// are awake; relax 30-45 s. It holds off while a mission's own set piece runs (the lift
+// boarding and ride, the transit-car hold: AS_DirectorQuiet in src/Mission.galaxy).
+// With ONSLAUGHT ticked in the briefing (AS's asw_horde_override / asw_wanderer_override)
+// it is AS's own director:
 //   intensity   per marine, 0..1: kills nearby and hits taken raise it, it holds for
 //               3.5 s after a rise, then falls from full to nothing over 20 s
 //   cycle       relax 25-40 s (the first 3-16 s), then build up: a wanderer drone
@@ -89,7 +95,8 @@ void AS_DirectorAlienAdded (int j) {}
 
 // ---- where the swarm can come in ------------------------------------------
 // A floor cell the squad can reach, 800-1500 units from the nearest marine and 740 from all of them;
-// ahead (north of the southern-most marine) 70% of the time, else behind. A few tries, else none.
+// ahead (north of the southern-most marine) 70% of the time, else behind. 80 tries, else none (24 found
+// nothing three times running in narrow Landing Bay).
 point AS_DirectorSpot () {
     int k;int p;fixed x;fixed y;fixed d;fixed nearest;fixed south=10000.0;fixed north= -10000.0;bool ahead=RandomFixed(0.0,1.0)<0.7;point q;
     for(p=1;p<=AS_PLAYERS;p+=1) {
@@ -97,8 +104,8 @@ point AS_DirectorSpot () {
         q=UnitGetPosition(as_m[p]);south=MinF(south,PointGetY(q));north=MaxF(north,PointGetY(q));
     }
     if(south>9999.0) {return null;}
-    for(k=0;k<24;k+=1) {
-        if(k==12) {ahead=!ahead;}
+    for(k=0;k<80;k+=1) {
+        if(k==40) {ahead=!ahead;}
         x=RandomFixed(1.0,IntToFixed(AS_W)-1.0);
         if(ahead) {y=RandomFixed(south,MinF(IntToFixed(AS_H)-1.0,north+AS_HORDE_FAR));}
         else {y=RandomFixed(MaxF(1.0,south-AS_HORDE_FAR),north);}
@@ -129,14 +136,27 @@ int AS_AwakeDrones () {
 }
 
 // ---- the cycle -------------------------------------------------------------
-// A new level: relaxed, the first build-up in 3-16 s, the first horde 45-65 s off.
+// The story director (no Onslaught) runs on Normal and up while the mission lets it (as_director,
+// cleared for the lift ride, the transit-car hold and the end); Onslaught always runs AS's own.
+bool AS_DirStory () {return !as_onslaught;}
+bool AS_DirectorRuns () {
+    if(as_onslaught) {return true;}
+    return as_director && as_skill>=2 && !as_demo;
+}
+fixed AS_DirHordeGap () {
+    if(AS_DirStory()) {return RandomFixed(75.0,100.0);}
+    return RandomFixed(45.0,65.0);
+}
+// A new level: relaxed, the first build-up in 3-16 s, the first horde 45-65 s off (story: 60-90 s).
 void AS_DirectorInit () {
     int p;
     for(p=1;p<=AS_PLAYERS;p+=1) {as_intensity[p]=0.0;as_intensityHold[p]=0.0;}
     as_dirSpawning=false;as_dirPeaked=false;as_dirRelaxUntil=as_now+RandomFixed(3.0,16.0);as_dirPeakUntil=0.0;
     as_dirWanderGap=0.0;as_dirWanderNext=0.0;
     as_hordeAt=0.0;as_hordeLeftN=0;as_hordeBatchAt=0.0;as_hordePt=null;as_scriptHordeAt=0.0;
+    as_director=true;
     if(as_onslaught) {as_hordeAt=as_now+RandomFixed(45.0,65.0);}
+    else {as_hordeAt=as_now+RandomFixed(60.0,90.0);}
 }
 // A mission's scripted swarm: drones come in where the director would bring a horde, no banner.
 void AS_ScriptedHorde (int n) {
@@ -147,15 +167,16 @@ void AS_ScriptedHorde (int n) {
 }
 void AS_StartHorde () {
     point q=AS_DirectorSpot();
-    if(q==null) {as_hordeAt=as_now+RandomFixed(10.0,16.0);return;}
-    as_hordePt=q;as_hordeLeftN=RandomInt(9,14);as_hordeBatchAt=as_now;
-    as_hordeAt=as_now+RandomFixed(45.0,65.0);
+    if(q==null) {as_hordeAt=as_now+RandomFixed(10.0,16.0);AS_Log("horde: no spot");return;}
+    as_hordePt=q;as_hordeBatchAt=as_now;
+    if(AS_DirStory()) {as_hordeLeftN=RandomInt(5,9);}else {as_hordeLeftN=RandomInt(9,14);}
+    as_hordeAt=as_now+AS_DirHordeGap();
     // Spawner.Horde: a shock stinger, nothing on screen.
     SoundPlay(SoundLink("Alert_BaseUnderAttackKlaxon",-1),PlayerGroupAll(),70.0,0.0);
     AS_Log("horde of "+IntToString(as_hordeLeftN)+" at "+FixedToString(PointGetX(q),1)+","+FixedToString(PointGetY(q),1));
 }
 void AS_DirectorPulse () {
-    int p;int k;int n;fixed a;point q;
+    int p;int k;int n;fixed a;point q;bool story;
     // Intensity holds a moment after it rises, then falls over 20 s.
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(as_now>as_intensityHold[p]) {as_intensity[p]=MaxF(0.0,as_intensity[p]-AS_DT/20.0);}
@@ -169,10 +190,11 @@ void AS_DirectorPulse () {
         }
     }
     if(as_scriptHordeAt>0.0 && as_now>=as_scriptHordeAt) {as_scriptHordeAt=0.0;AS_ScriptedHorde(12);}
-    if(!as_onslaught || !as_levelReady || AS_MissionOver()) {return;}
+    if(!AS_DirectorRuns() || !as_levelReady || AS_MissionOver()) {return;}
+    story=AS_DirStory();
     if(as_tick%8==0) {as_dirAwakeDrones=AS_AwakeDrones();}
     if(as_hordeAt>0.0 && as_now>=as_hordeAt && as_hordeLeftN<=0) {
-        if(as_dirAwakeDrones>=25) {as_hordeAt=as_now+10.0;}
+        if(as_dirAwakeDrones>=25 || (story && as_dirAwakeDrones>=15)) {as_hordeAt=as_now+10.0;AS_Log("horde held: "+IntToString(as_dirAwakeDrones)+" awake");}
         else {AS_StartHorde();}
     }
     // Relaxed until the timer runs out (it only counts down once everyone has calmed below the peak).
@@ -182,14 +204,19 @@ void AS_DirectorPulse () {
         return;
     }
     if(!as_dirPeaked && AS_MaxIntensity()>=1.0) {as_dirPeaked=true;as_dirPeakUntil=as_now+RandomFixed(1.0,3.0);}
-    if(as_dirPeaked && as_now>=as_dirPeakUntil) {as_dirSpawning=false;as_dirRelaxUntil=as_now+RandomFixed(25.0,40.0);return;}
+    if(as_dirPeaked && as_now>=as_dirPeakUntil) {
+        as_dirSpawning=false;
+        if(story) {as_dirRelaxUntil=as_now+RandomFixed(30.0,45.0);}else {as_dirRelaxUntil=as_now+RandomFixed(25.0,40.0);}
+        return;
+    }
     if(as_now>=as_dirWanderNext) {
-        if(as_dirWanderGap<=0.0) {as_dirWanderGap=RandomFixed(5.0,7.0);}
+        if(as_dirWanderGap<=0.0) {if(story) {as_dirWanderGap=RandomFixed(8.0,11.0);}else {as_dirWanderGap=RandomFixed(5.0,7.0);}}
+        else if(story) {as_dirWanderGap=MaxF(2.5,as_dirWanderGap*RandomFixed(0.9,0.95));}
         else {as_dirWanderGap=MaxF(1.0,as_dirWanderGap*RandomFixed(0.9,0.95));}
         as_dirWanderNext=as_now+as_dirWanderGap;
-        if(as_dirAwakeDrones<20) {
+        if(as_dirAwakeDrones<20 && !(story && as_dirAwakeDrones>=12)) {
             q=AS_DirectorSpot();
-            if(q!=null) {AS_DirectorDrone(PointGetX(q),PointGetY(q));as_dirAwakeDrones+=1;}
+            if(q!=null) {AS_DirectorDrone(PointGetX(q),PointGetY(q));as_dirAwakeDrones+=1;AS_Log("wanderer, gap "+FixedToString(as_dirWanderGap,1));}
         }
     }
 }

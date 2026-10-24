@@ -728,7 +728,7 @@ fixed as_holdWave;
 bool AS_HoldPulse (int on) {
     if(as_holdAt==0.0) {
         if(on==0) {return true;}
-        as_holdAt=as_now;as_holdWave=as_now+3.0;
+        as_holdAt=as_now;as_holdWave=as_now+3.0;as_director=false;
         AS_All("TRANSIT CAR INBOUND","Hold the platform for "+IntToString(FixedToInt(AS_HOLD))+" seconds");AS_Log("hold starts");
         AS_AllSound("Event_Lab02_AlarmIncomingAttack");
         GameSetLighting("ASAlarm",1.0);
@@ -818,7 +818,6 @@ void AS_MissionInit () {
         // All three objectives are on the list from the start, as AS shows them.
         as_objName[0]="Access the inner perimeter";as_objName[1]="Download the flight data";as_objName[2]="Get to the Landing Bay exit";as_objCount=3;
         as_extName="the escape lift";as_hackLabel="";as_needTech=true;
-        as_director=false;
         AS_BayInit();
     }
     else {

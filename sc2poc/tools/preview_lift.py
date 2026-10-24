@@ -16,7 +16,7 @@ from tools import level as L, elevator as E
 
 L.use('cargo')
 W, H = 960, 540
-PITCH, FOV, DIST = 60.0, 40.0, 24.0         # src/Marine.galaxy AS_TOP_PITCH, AS_TOP_FOV, AS_TOP_DIST
+PITCH, FOV, DIST = 60.0, 48.0, 8.0        # src/Marine.galaxy AS_TOP_PITCH, AS_TOP_FOV, AS_TOP_DIST
 
 
 def camera(tx, ty):

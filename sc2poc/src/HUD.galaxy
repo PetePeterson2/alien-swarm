@@ -507,7 +507,7 @@ void AS_HudCreate (int p) {
         +"<c val=\"8CC8F0\">G</c>  drop the weapon in hand    <c val=\"8CC8F0\">TAB</c>  full map and objectives<n/>"
         +"<c val=\"8CC8F0\">F1 - F4</c>  take control of another of your marines<n/>"
         +"<c val=\"8CC8F0\">V</c>  AI marines follow    <c val=\"8CC8F0\">X</c>  AI marines hold position<n/>"
-        +"<c val=\"8CC8F0\">C</c>  top-down / third person    <c val=\"8CC8F0\">N</c>  damage numbers    <c val=\"8CC8F0\">H</c>  this help<n/><n/>"
+        +"<c val=\"8CC8F0\">C</c>  top-down / third person    <c val=\"8CC8F0\">N</c>  damage numbers    <c val=\"8CC8F0\">H</c>  this help    <c val=\"8CC8F0\">Z</c>  camera distance<n/><n/>"
         +"Only a tech can hack door panels and terminals, and only a tech's scanner shows the swarm on the map.<n/>"
         +"Nobody comes back in a mission: if the whole squad falls, the mission restarts from the briefing.<n/>"
         +"Shieldbugs shrug off fire from the front: flank them or use explosives. Parasites infest: heal fast.");

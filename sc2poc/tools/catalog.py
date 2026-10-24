@@ -19,20 +19,28 @@ def child(e, tag, **attrs):
     return ET.SubElement(e, tag, **{k: str(v) for k, v in attrs.items()})
 
 
+# How big each alien's model is drawn. These are past Alien Swarm's own sizes (the drone was
+# 1.25, the buzzer 0.42): at AS's camera distance the true sizes read small next to AS's
+# chunkier models, so the swarm is drawn 15-65% larger. Collision radii stay AS-sized.
+# The death, fire and gib one-shots use the same numbers so a corpse matches its body.
+SIZE = {'drone': 1.45, 'uber': 1.6, 'parasite': 1.05, 'shieldbug': 0.72, 'boomer': 2.6, 'buzzer': 0.7,
+        'ranger': 1.0, 'mortar': 0.9, 'harvester': 0.75, 'ripper': 0.9}
 # Aliens: id, stock model, model scale, life, speed, radius, flying.
 # Life values are Alien Swarm's normal-difficulty numbers (asw_*_health and the
 # SetHealth calls in src/game/server/swarm/), except the boomer (800 there).
+# The drone is the HotS raptor (Swarm campaign mod): spikier and longer-limbed than the
+# zergling, nearer AS's drone, and it is the zergling that leaps, as AS's jumper does.
 ALIENS = [
-    ('ASDrone',      'Zergling',      1.25, 40,   3.4, 0.40, False),
-    ('ASUberDrone',  'PrimalZergling', 1.35, 500, 2.9, 0.55, False),
-    ('ASParasite',   'Broodling',     0.85, 25,   4.2, 0.22, False),
-    ('ASShieldbug',  'Ultralisk',     0.55, 1000, 1.7, 0.95, False),
-    ('ASBoomer',     'Baneling',      2.3,  400,  1.3, 0.75, False),
-    ('ASBuzzer',     'Mutalisk',      0.42, 30,   3.2, 0.30, True),
-    ('ASRanger',     'Hydralisk',     0.80, 101,  2.5, 0.40, False),
-    ('ASMortarbug',  'Ravager',       0.75, 350,  1.6, 0.55, False),
-    ('ASHarvester',  'SwarmHostMP',   0.62, 200,  1.0, 0.70, False),
-    ('ASRipper',     'ASRipperModel', 0.75, 160,  3.6, 0.50, False),   # original mesh (tools/alien.py)
+    ('ASDrone',      'HotSRaptor',    SIZE['drone'],     40,   3.4, 0.40, False),
+    ('ASUberDrone',  'PrimalZergling', SIZE['uber'],     500,  2.9, 0.55, False),
+    ('ASParasite',   'Broodling',     SIZE['parasite'],  25,   4.2, 0.22, False),
+    ('ASShieldbug',  'Ultralisk',     SIZE['shieldbug'], 1000, 1.7, 0.95, False),
+    ('ASBoomer',     'Baneling',      SIZE['boomer'],    400,  1.3, 0.75, False),
+    ('ASBuzzer',     'Mutalisk',      SIZE['buzzer'],    30,   3.2, 0.30, True),
+    ('ASRanger',     'Hydralisk',     SIZE['ranger'],    101,  2.5, 0.40, False),
+    ('ASMortarbug',  'Ravager',       SIZE['mortar'],    350,  1.6, 0.55, False),
+    ('ASHarvester',  'SwarmHostMP',   SIZE['harvester'], 200,  1.0, 0.70, False),
+    ('ASRipper',     'ASRipperModel', SIZE['ripper'],    160,  3.6, 0.50, False),   # original mesh (tools/alien.py)
 ]
 # Fixed things: id, model, scale, life.
 STATICS = [
@@ -55,11 +63,11 @@ LIGHT_MODELS = {'white': 'LightOmniWhite', 'cold': 'LightOmniCyan', 'red': 'Ligh
                 'yellowbig': 'LightOmniYellowLarge'}
 # One-shot effects: id, model, scale, seconds before the safety removal.
 ONESHOTS = [
-    ('ASDieDrone', 'ZerglingDeath', 1.25, 6), ('ASDieUber', 'PrimalZerglingDeath', 1.35, 6),
-    ('ASDieParasite', 'BroodlingDeath', 0.85, 4), ('ASDieShieldbug', 'UltraliskDeath', 0.55, 8),
-    ('ASDieBoomer', 'BanelingDeath', 2.3, 5), ('ASDieBuzzer', 'MutaliskDeath', 0.42, 6),
-    ('ASDieRanger', 'HydraliskDeath', 0.8, 6), ('ASDieMortar', 'RavagerDeath', 0.75, 6),
-    ('ASDieHarvester', 'SwarmHostMPDeath', 0.62, 7), ('ASDieEgg', 'EggsplosionGeneric', 0.8, 4),
+    ('ASDieDrone', 'HotSRaptorDeath', SIZE['drone'], 6), ('ASDieUber', 'PrimalZerglingDeath', SIZE['uber'], 6),
+    ('ASDieParasite', 'BroodlingDeath', SIZE['parasite'], 4), ('ASDieShieldbug', 'UltraliskDeath', SIZE['shieldbug'], 8),
+    ('ASDieBoomer', 'BanelingDeath', SIZE['boomer'], 5), ('ASDieBuzzer', 'MutaliskDeath', SIZE['buzzer'], 6),
+    ('ASDieRanger', 'HydraliskDeath', SIZE['ranger'], 6), ('ASDieMortar', 'RavagerDeath', SIZE['mortar'], 6),
+    ('ASDieHarvester', 'SwarmHostMPDeath', SIZE['harvester'], 7), ('ASDieEgg', 'EggsplosionGeneric', 0.8, 4),
     ('ASDieBiomass', 'DestructibleZergInfestation3x3Death', 0.45, 5), ('ASDieMarine', 'MarineDeath', 1.0, 8),
     ('ASDieSentry', 'SentryGunDeath', 0.85, 5),
     ('ASFxBlood', 'BloodTargetImpact', 0.9, 2.5), ('ASFxSpark', 'MarineAttackImpact', 0.9, 2),
@@ -70,14 +78,16 @@ ONESHOTS = [
     # Gore: gib bursts for overkill and blasts, torn-apart and burning deaths.
     ('ASGibSmall', 'DefaultExplosionZergSmall', 0.8, 5), ('ASGibLarge', 'DefaultExplosionZergLarge', 0.6, 6),
     ('ASGibChunks', 'SplitterlingMediumCorrosiveExplosion', 0.9, 5),
-    ('ASEviscDrone', 'ZerglingDeathEviscerate', 1.25, 7), ('ASEviscUber', 'ZerglingDeathEviscerate', 1.35, 7),
-    ('ASAcidDrone', 'ZerglingDeathAcid', 1.25, 7),
-    ('ASFireDrone', 'ZerglingDeathFire', 1.25, 7), ('ASFireUber', 'ZerglingDeathFire', 1.35, 7),
-    ('ASFireParasite', 'BroodlingDeathFire', 0.85, 5), ('ASFireShieldbug', 'UltraliskDeathFire', 0.55, 8),
-    ('ASFireRanger', 'HydraliskDeathFire', 0.8, 7), ('ASFireMortar', 'RavagerDeathFire', 0.75, 7),
-    ('ASFireHarvester', 'SwarmHostMPDeathFire', 0.62, 7),
-    ('ASAcidRanger', 'HydraliskDeathAcid', 0.8, 7), ('ASAcidMortar', 'RavagerDeathAcid', 0.75, 7),
-    ('ASAcidShieldbug', 'UltraliskDeathAcid', 0.55, 8), ('ASAcidHarvester', 'SwarmHostMPDeathAcid', 0.62, 7),
+    # The raptor has no torn, acid or burning death of its own: it falls with its plain one under
+    # the gib bursts or the flames (AS_Gore layers those on top).
+    ('ASEviscDrone', 'HotSRaptorDeath', SIZE['drone'], 7), ('ASEviscUber', 'ZerglingDeathEviscerate', SIZE['uber'], 7),
+    ('ASAcidDrone', 'HotSRaptorDeath', SIZE['drone'], 7),
+    ('ASFireDrone', 'HotSRaptorDeath', SIZE['drone'], 7), ('ASFireUber', 'ZerglingDeathFire', SIZE['uber'], 7),
+    ('ASFireParasite', 'BroodlingDeathFire', SIZE['parasite'], 5), ('ASFireShieldbug', 'UltraliskDeathFire', SIZE['shieldbug'], 8),
+    ('ASFireRanger', 'HydraliskDeathFire', SIZE['ranger'], 7), ('ASFireMortar', 'RavagerDeathFire', SIZE['mortar'], 7),
+    ('ASFireHarvester', 'SwarmHostMPDeathFire', SIZE['harvester'], 7),
+    ('ASAcidRanger', 'HydraliskDeathAcid', SIZE['ranger'], 7), ('ASAcidMortar', 'RavagerDeathAcid', SIZE['mortar'], 7),
+    ('ASAcidShieldbug', 'UltraliskDeathAcid', SIZE['shieldbug'], 8), ('ASAcidHarvester', 'SwarmHostMPDeathAcid', SIZE['harvester'], 7),
     ('ASBloodGeyser', 'LurkerAttackDeathBloodGeyser', 0.5, 4),
 ]
 FX_UNITS = ['Tracer', 'Laser', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch']
@@ -134,7 +144,7 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         if ident == 'ASRipper':
             child(a, 'WalkAnimMoveSpeed', value=alien.WALK_SPEED)
     a = child(cat['Actor'], 'CActorModel', id='ASDieRipper')
-    child(a, 'Model', value='ASRipperModel'); child(a, 'Scale', value=0.75)
+    child(a, 'Model', value='ASRipperModel'); child(a, 'Scale', value=SIZE['ripper'])
     child(a, 'On', Terms='ActorCreation', Send='AnimPlay Death Death PlayForever')
     child(a, 'On', Terms='ActorCreation', Send='TimerSet 8 ASExpire')
     child(a, 'On', Terms='TimerExpired; TimerName ASExpire', Send='Destroy')
@@ -156,8 +166,8 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         child(m, 'Model', value='Derelict\\' + name + '.m3')
         unit('AS' + name,'AS' + name + 'Model', 1.0, 0)
     # Aliens crawling down the shaft walls during the elevator ride: model actors, walking forever.
-    for ident, model, scale in [('ASClimbDrone', 'Zergling', 1.25), ('ASClimbParasite', 'Broodling', 0.85),
-                                ('ASClimbRipper', 'ASRipperModel', 0.75), ('ASClimbUber', 'PrimalZergling', 1.35)]:
+    for ident, model, scale in [('ASClimbDrone', 'HotSRaptor', SIZE['drone']), ('ASClimbParasite', 'Broodling', SIZE['parasite']),
+                                ('ASClimbRipper', 'ASRipperModel', SIZE['ripper']), ('ASClimbUber', 'PrimalZergling', SIZE['uber'])]:
         a = child(cat['Actor'], 'CActorModel', id=ident)
         child(a, 'Model', value=model); child(a, 'Scale', value=scale)
         child(a, 'On', Terms='ActorCreation', Send='AnimPlay Walk Walk PlayForever')
