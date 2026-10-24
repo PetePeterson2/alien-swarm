@@ -70,4 +70,13 @@ Notes from playing the Steam game's first two missions (`asi-jac1-landingbay_01`
 - **Landing Bay's opening is outdoors:** snow falls round each player from the dock to the freight yard (`OUTDOORS`, `AS_SnowPulse`). The dock is lit cold blue with a red alarm and pink light on the walkway, the yard by hard white floods.
 - **HUD:** "- RELOADING -" in red over the portrait while a clip goes in.
 
+**Third round, the map:**
+- AS's opening is not a hallway. You stand on catwalks and platforms over a drop, with railings at the edges, blue haze, steel trusses and a few lamps far below, and snow falling through.
+- The port's outdoor stretch (Landing Bay's `OUTDOORS`, from the dock to the freight yard) is built that way now:
+  - **The drop:** hull cells there become open night (`o` in the deck rows, `AS_OPEN` in the kit). They get no walls and no hull tops; instead they get a painted drop: blue haze in AS's exterior fog colour, girders and a lattice tower far below, lamps down there (`tex_open`).
+  - **Railings:** yellow railings run along every edge where the deck meets the drop (`KRail`).
+  - **Buildings:** hull blocks bordering the drop show plain walls, so the inner perimeter stands as a building rising out of the night.
+  - **Pathing:** collision and alien pathing are unchanged; they come from the same hull cells.
+- The drop can't be truly lower than the deck: both levels share one terrain. So the depth is painted, and the railings, snow and haze sell it. `py tools/preview_dock.py` renders it from the game camera.
+
 **Still open:** AS's high-contrast lit and unlit rooms everywhere else, and real fog. SC2 lighting is one preset for all players, so it can't be set per room.

@@ -359,3 +359,17 @@ Not checked: how any of it looks. Nobody has looked at the client's screen: the 
 - "- RELOADING -" in red over the portrait.
 
 The build passes the static checks. Its autopilot run in a fresh client (no script errors) finished Landing Bay in 108.1 s. The ride took 100.3 s; the slow motion went from speed 2 to 0 and back to 2 a game second later, so SC2 honours it. Cargo Elevator finished in 272.6 s, then CAMPAIGN COMPLETE. Three AI marines died, spread out this time: one in Landing Bay, one on the ride, one in the escape.
+
+**Third round: Landing Bay's outdoor deck is a platform over the night, not a hallway.** In AS you stand on railed catwalks over a drop, with blue haze, trusses and lamps far below.
+- **The drop:** the hull from the dock to the freight yard (`OUTDOORS`) is now open night, `o` in the deck rows and `AS_OPEN` in the kit. It gets no walls and no hull tops. A painted drop is laid there (`tools/elevator.py tex_open`, emissive): AS's exterior fog blue, girders and a lattice tower far below, lamps down there.
+- **Railings:** yellow railings (`KRail`) run along every deck edge that meets it.
+- **Buildings:** hull blocks next to it (the inner perimeter, the yard's crate stack) show plain walls.
+- **Pathing:** collision is unchanged.
+- **Check it:** `py tools/preview_dock.py` renders it from the game camera (`dist/dock-preview.png`). The depth is painted, since the drop can't sit lower than the deck: both levels share one terrain.
+
+Checked in a fresh client (autopilot, no script errors):
+- Landing Bay's kit built 3,411 actors, with 126 railings and 517 blockers. Leaks/shut 0/0, so the outdoor deck's pathing is sound.
+- Landing Bay complete in 106.6 s; the ride 100.3 s; Cargo Elevator complete in 275.3 s, then CAMPAIGN COMPLETE.
+- The AI squad was lost again, all three in Cargo Elevator.
+
+Not seen on screen yet: the drop and railings.

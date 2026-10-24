@@ -9,6 +9,8 @@ int[@W@][@H@] as_cell;            // the room kind (tools/level.py KIT_KINDS), e
 const int AS_HULL = -1;
 const int AS_VOID = -2;           // the drop round a lift: no wall, no cap
 const int AS_WINDOW = -3;         // hull whose faces show the window panel
+const int AS_OPEN = -4;           // the open night beyond an outdoor deck's railing: no wall, no cap, the drop drawn
+int as_kitRails;
 const int AS_KIND_HIVE = 7;
 const int AS_KIND_LIFT = 8;       // no ceiling over the lift and its bridges
 const int AS_PANEL_WINDOW = 8;    // KIT_WALLS index of the window panel
@@ -59,6 +61,7 @@ void AS_DeckRow (int y, string s) {
         if(c=="#") {as_cell[x][y]=AS_HULL;}
         else if(c=="v") {as_cell[x][y]=AS_VOID;}
         else if(c=="w") {as_cell[x][y]=AS_WINDOW;}
+        else if(c=="o") {as_cell[x][y]=AS_OPEN;}
         else {as_cell[x][y]=StringToInt(c);}
     }
 }
@@ -93,11 +96,13 @@ int AS_KitPanel (int kind, int bx, int by, int side) {
 // The panel on side s of hull cell (x, y) (0 south, 1 east, 2 north, 3 west), -1 when no face.
 int AS_FacePanel (int x, int y, int s) {
     int nx=x;int ny=y;
-    if(x<0 || y<0 || x>=AS_W || y>=AS_H || AS_Floor(x,y) || as_cell[x][y]==AS_VOID) {return -1;}
+    if(x<0 || y<0 || x>=AS_W || y>=AS_H || AS_Floor(x,y) || as_cell[x][y]==AS_VOID || as_cell[x][y]==AS_OPEN) {return -1;}
     if(s==0) {ny-=1;}
     else if(s==1) {nx+=1;}
     else if(s==2) {ny+=1;}
     else {nx-=1;}
+    // A block of hull standing in the open night is a building: plain walls down to the drop.
+    if(nx>=0 && ny>=0 && nx<AS_W && ny<AS_H && as_cell[nx][ny]==AS_OPEN) {return 1;}
     if(!AS_Floor(nx,ny)) {return -1;}
     if(as_cell[x][y]==AS_WINDOW) {return AS_PANEL_WINDOW;}
     return AS_KitPanel(as_cell[nx][ny],nx/2,ny/2,s);
@@ -125,11 +130,33 @@ void AS_KitBay (int xa, int ya, int xb, int yb, int s, fixed mx, fixed my) {
     if(pb>=0) {AS_KitWall("KW"+IntToString(pb)+"O",mx,my,s);}
 }
 
+// Railings where an outdoor deck meets the open night: one unit of rail per edge, turned as a wall on that face.
+void AS_KitRails () {
+    int x;int y;int s;int nx;int ny;actor a;fixed mx;fixed my;
+    for(y=0;y<AS_H;y+=1) {
+        for(x=0;x<AS_W;x+=1) {
+            if(as_cell[x][y]!=AS_OPEN) {continue;}
+            for(s=0;s<4;s+=1) {
+                nx=x;ny=y;mx=IntToFixed(x)+0.5;my=IntToFixed(y)+0.5;
+                if(s==0) {ny-=1;my=IntToFixed(y);}
+                else if(s==1) {nx+=1;mx=IntToFixed(x+1);}
+                else if(s==2) {ny+=1;my=IntToFixed(y+1);}
+                else {nx-=1;mx=IntToFixed(x);}
+                if(!AS_Floor(nx,ny) || as_doorCell[nx][ny]) {continue;}
+                a=AS_KitPiece("KRail",mx,my);
+                AS_KitTurn(a,IntToFixed(s)*90.0*as_kitWallSign);
+                as_kitRails+=1;
+            }
+        }
+    }
+}
+
 // ---- ceiling and caps -------------------------------------------------
 // Ceiling over deck cells (want 0 plain, 1 hive) or caps over near hull cells (want 2).
 bool AS_KitWants (int x, int y, int want) {
     if(as_kitMark[x][y]==1) {return false;}
-    if(want==2) {return !AS_Floor(x,y) && as_cell[x][y]!=AS_VOID && as_kitNear[x][y];}
+    if(want==2) {return !AS_Floor(x,y) && as_cell[x][y]!=AS_VOID && as_cell[x][y]!=AS_OPEN && as_kitNear[x][y];}
+    if(want==3) {return as_cell[x][y]==AS_OPEN;}
     if(!AS_Floor(x,y) || as_cell[x][y]==AS_KIND_LIFT) {return false;}
     return (as_cell[x][y]==AS_KIND_HIVE)==(want==1);
 }
@@ -142,6 +169,7 @@ void AS_KitTile (int x, int y, int n, int want) {
     int i;int j;string piece;
     for(i=0;i<n;i+=1) {for(j=0;j<n;j+=1) {as_kitMark[x+i][y+j]=1;}}
     if(want==2) {piece="KK"+IntToString(n);as_kitCaps+=1;}
+    else if(want==3) {piece="KO"+IntToString(n)+"_"+IntToString(x%4)+IntToString(y%4);as_kitCaps+=1;}
     else {
         piece="K"+StringSub("CD",want+1,want+1)+IntToString(n)+"_"+IntToString(x%4)+IntToString(y%4);
         as_kitTiles+=1;
@@ -293,7 +321,7 @@ void AS_KitBuildRest (timer t, int gen) {
         if(y%4==3) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
     }
     for(y=0;y<AS_H;y+=4) {
-        for(x=0;x<AS_W;x+=4) {AS_KitTiles(x,y,0);AS_KitTiles(x,y,1);AS_KitTiles(x,y,2);}
+        for(x=0;x<AS_W;x+=4) {AS_KitTiles(x,y,0);AS_KitTiles(x,y,1);AS_KitTiles(x,y,2);AS_KitTiles(x,y,3);}
         Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}
     }
     for(x=0;x<AS_W;x+=1) {for(y=0;y<AS_H;y+=1) {as_kitFloorDone[x][y]=false;}}
@@ -316,6 +344,7 @@ void AS_KitBuildRest (timer t, int gen) {
         }
         if(x%8==7) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}
     }
+    AS_KitRails();
     AS_KitProps();
     as_kitSecs=TimerGetElapsed(t);as_kitBuilt=true;
     as_kitReport="KIT built in "+FixedToString(as_kitSecs,2)+" s real: "+IntToString(as_kitWalls)+" walls, "+IntToString(as_kitTiles)+" ceiling, "
@@ -326,7 +355,7 @@ void AS_KitBuildRest (timer t, int gen) {
     if(!as_kitScriptPath) {as_kitReport=as_kitReport+" (unused: painted pathing build)";}
     if(as_kitActorN>AS_KIT_ACTORS || as_kitUnitN>=AS_KIT_UNITS) {as_kitReport=as_kitReport+" OVER THE TRACKING LIMITS: the next level will not clear it all";}
     AS_KitShow();
-    AS_Log("kit built: "+IntToString(as_kitActorN)+" actors, "+IntToString(as_kitBlockers)+" blockers, leaks/shut "+AS_KitLS()+", "+FixedToString(as_kitSecs,2)+" s real");
+    AS_Log("kit built: "+IntToString(as_kitActorN)+" actors, "+IntToString(as_kitRails)+" rails, "+IntToString(as_kitBlockers)+" blockers, leaks/shut "+AS_KitLS()+", "+FixedToString(as_kitSecs,2)+" s real");
 }
 // Clear the deck away for the next level: every kit actor and pathing blocker, and the counts.
 void AS_KitClear () {
@@ -335,7 +364,7 @@ void AS_KitClear () {
     for(i=0;i<MinI(as_kitActorN,AS_KIT_ACTORS);i+=1) {ActorSend(as_kitActor[i],"Destroy");as_kitActor[i]=null;}
     for(i=0;i<as_kitUnitN;i+=1) {if(as_kitUnit[i]!=null) {UnitRemove(as_kitUnit[i]);}as_kitUnit[i]=null;}
     as_kitActorN=0;as_kitUnitN=0;
-    as_kitWalls=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitFloors=0;as_kitDecals=0;as_kitWallLamps=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
+    as_kitWalls=0;as_kitRails=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitFloors=0;as_kitDecals=0;as_kitWallLamps=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
     as_kitReport="";as_kitStages="";as_probeReport="";
     AS_ProbeStop();
 }

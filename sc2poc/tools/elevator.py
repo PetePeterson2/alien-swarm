@@ -12,7 +12,7 @@ unit's facing), origin at the top middle of the face, and are two-sided so the
 lobby and junction see the shaft's back.
 """
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from tools.shipkit import ShipModel, _noise, _grime, _hazard, _img, NO_SHADOW_CAST
 
@@ -254,8 +254,39 @@ def tex_seam(w=64, h=256):
 def textures():
     t = {'asdoor': tex_asdoor(), 'doorseam': tex_seam(), 'shaft_a': tex_shaft(81), 'shaft_b': tex_shaft(82, lights=True), 'shaft_c': tex_sign(), 'lintel': tex_lintel(), 'gate': tex_gate(),
          'lift_deck': tex_deck(), 'bridge': tex_bridge(), 'door': tex_door(), 'wall_window': tex_window(),
-         'void': tex_void(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
+         'void': tex_void(), 'open_drop': tex_open(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
     return t
+
+
+def tex_open(size=512):
+    """Under the night sky (Landing Bay's dock): the drop off a catwalk's edge, as AS's opening shows it.
+    Deep blue haze in its exterior fog colour (39,53,86), steel lattice towers and girders far below in
+    darker and paler blue, and a few lamps down there. Emissive only, tileable over 4x4 cells."""
+    n = _noise(size, 48, 501, 4); f = _noise(size, 8, 507, 2)
+    haze = np.array((39, 53, 86), float)[None, None] * (0.42 + 0.38 * n[..., None] + 0.12 * f[..., None])
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+    # Girders far below, nothing lined up with the deck's cells: two long diagonal beams across the tile
+    # and one lattice tower (twin legs with zigzag bracing) running its height.
+    lat = np.zeros((size, size), np.float32)
+    for c, wdt in ((90, 9), (330, 6)):
+        u = (xx - yy - c) % size
+        lat = np.maximum(lat, np.clip(1 - np.minimum(u, size - u) / 1.414 / wdt, 0, 1))
+    tx = 371
+    for leg in (tx, tx + 46):
+        lat = np.maximum(lat, np.clip(1 - np.abs(xx - leg) / 3.5, 0, 1))
+    zig = tx + 23 + 23 * np.abs(((yy / 46) % 2) - 1) * 2 - 23
+    lat = np.maximum(lat, np.clip(1 - np.abs(xx - zig) / 2.5, 0, 1) * ((xx > tx) & (xx < tx + 46)))
+    blur = np.asarray(Image.fromarray((lat * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5))).astype(np.float32) / 255
+    # Dark steel against the haze, its upper edge catching a little of the light from above.
+    rim = np.clip(blur - np.roll(blur, 3, axis=0), 0, 1)
+    a = haze * (1 - 0.75 * blur[..., None]) + np.array((90, 115, 160))[None, None] * 0.55 * rim[..., None]
+    # Lamps far below: soft points, mostly cold white, a few red beacons.
+    rng = np.random.default_rng(509)
+    for k in range(7):
+        cx, cy = rng.integers(0, size, 2); r = np.hypot(((xx - cx + size / 2) % size) - size / 2, ((yy - cy + size / 2) % size) - size / 2)
+        col = np.array((255, 70, 50)) if k % 3 == 0 else np.array((170, 200, 255))
+        a += col[None, None] * (np.clip(1 - r / 14, 0, 1) ** 2 * 0.7 + np.clip(1 - r / 3, 0, 1))[..., None]
+    return _img(np.zeros((8, 8, 3))), _img(np.clip(a, 0, 255))
 
 
 def tex_void(w=256, h=256):

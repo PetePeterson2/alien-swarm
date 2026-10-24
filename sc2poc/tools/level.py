@@ -352,6 +352,23 @@ def kit_pieces():
         m = out[name] = ShipModel(name, (0, 0, 0))
         m.quad(('cap', False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
                [(0, 0), (0.5 * size, 0), (0.5 * size, 0.5 * size), (0, 0.5 * size)])
+        # The drop off an outdoor deck's edge (tools/elevator.py tex_open), laid where a cap would be but down
+        # at the deck: 4x4, 2x2 and 1x1 tiles uv'd from world position mod 4, as the ceiling is.
+        for ox in range(0, 4, size):
+            for oy in range(0, 4, size):
+                name = 'KO%d_%d%d' % (size, ox, oy)
+                m = out[name] = ShipModel(name, (0, 0, 0))
+                m.quad(('open_drop', False, NO_SHADOW_CAST), (0, 0, 0.02), (size, 0, 0.02), (size, size, 0.02), (0, size, 0.02),
+                       [(ox / 4, 1 - oy / 4), ((ox + size) / 4, 1 - oy / 4), ((ox + size) / 4, 1 - (oy + size) / 4), (ox / 4, 1 - (oy + size) / 4)])
+    # A one-unit run of railing along an outdoor deck's edge, authored facing south like the walls
+    # (origin at the edge's midpoint): yellow posts, two rails and a kick plate, as AS's dock catwalks have.
+    from tools.elevator import _box
+    m = out['KRail'] = ShipModel('KRail', (0, 0, 0))
+    rail = ('rail', False, 0)
+    _box(m, rail, -0.5, 0.0, 0.0, -0.44, 0.06, 1.05)
+    for z in (0.55, 1.0):
+        _box(m, rail, -0.5, 0.0, z - 0.05, 0.5, 0.05, z)
+    _box(m, ('wall_trim', False, 0), -0.5, 0.0, 0.0, 0.5, 0.03, 0.14)
     return out
 
 
@@ -674,12 +691,18 @@ def decal_spots(floor, room, solid, seed=7):
 
 def deck_rows(floor, room):
     """The deck for the kit loader: one string per row, the room kind's digit (KIT_KINDS) on the deck, else
-    '#' hull, 'w' hull showing a window panel (WINDOWS), 'v' the drop round a lift (no wall, no cap)."""
+    '#' hull, 'w' hull showing a window panel (WINDOWS), 'v' the drop round a lift (no wall, no cap),
+    'o' the open night beyond an outdoor deck's railing (OUTDOORS; a prop block in it stays hull)."""
+    out_rect = globals().get('OUTDOORS')
+    blocks = set((x, y) for x0, y0, x1, y1 in BLOCKS for x in range(x0, x1) for y in range(y0, y1))
+
     def cell(x, y):
         if floor[y, x]:
             return str(KIT_KINDS.index(kind_at(room, x, y)))
         if in_void(x, y):
             return 'v'
+        if out_rect and out_rect[0] <= x < out_rect[2] and out_rect[1] <= y < out_rect[3] and (x, y) not in blocks:
+            return 'o'
         return 'w' if (x, y) in WINDOWS or (x, y) in VIEWPORTS else '#'
     return [''.join(cell(x, y) for x in range(W)) for y in range(H)]
 
