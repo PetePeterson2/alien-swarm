@@ -900,6 +900,11 @@ def deck_rows(floor, room):
                  x1 < W and any(floor[yy, x1] for yy in range(y0, y1)),
                  y0 - 1 >= 0 and any(floor[y0 - 1, xx] for xx in range(x0, x1)),
                  y1 < H and any(floor[y1, xx] for xx in range(x0, x1))]
+        # Wreckage inside a hive stays a dark mass under the creep, not clean machinery.
+        near = [room[yy, xx] for xx in range(x0 - 1, x1 + 1) for yy in range(y0 - 1, y1 + 1)
+                if 0 <= xx < W and 0 <= yy < H and floor[yy, xx]]
+        if any(AREAS[k][2] == 'hive' for k in near if k >= 0):
+            return False
         return sum(sides) >= 2
 
     def cell(x, y):

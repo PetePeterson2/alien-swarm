@@ -1197,6 +1197,12 @@ void AS_DropAt (int it, fixed x, fixed y, int mag, int reserve, int alt) {
     UnitCreate(1,model,c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
     as_drop[i]=UnitLastCreated();as_dropItem[i]=it;as_dropMag[i]=mag;as_dropReserve[i]=reserve;as_dropAlt[i]=alt;
     UnitSetHeight(as_drop[i],0.15,0.0);
+    // A gun lies on the deck as itself (tools/marine.py gun_only), a little larger than in hand so it reads.
+    if(model=="ASPickup" && AS_GunIndex(it)!=AS_GUN_CASE) {
+        ActorSend(libNtve_gf_MainActorofUnit(as_drop[i]),"ModelSwap ASGun"+as_gunName[AS_GunIndex(it)]);
+        ActorSend(libNtve_gf_MainActorofUnit(as_drop[i]),"SetScale 1.4");
+        UnitSetHeight(as_drop[i],0.0,0.0);
+    }
 }
 void AS_DropWeapon (int p, int k, fixed x, fixed y) {
     int it=as_inv[p][k];int mag;int res;

@@ -395,6 +395,20 @@ GUNS = [('Rifle', _rifle, True), ('PRifle', _prifle, True), ('Autogun', _autogun
         ('Healgun', _healgun, True), ('Chainsaw', _chainsaw, True), ('Launcher', _launcher, True), ('Case', _case, False)]
 
 
+def gun_only(gun):
+    """The gun alone, lying on the deck: the same parts the marine holds, centred and set down, all on the still
+    root bone (a weapon dropped by a fallen marine or waiting in a supply room)."""
+    m = Mesh()
+    builder = dict((n, b) for n, b, _ in GUNS)[gun]
+    builder(m)
+    pos = np.asarray(m.pos)
+    lo, hi = pos.min(0), pos.max(0)
+    shift = np.array([-(lo[0] + hi[0]) / 2, -(lo[1] + hi[1]) / 2, -lo[2] + 0.01])
+    m.pos = [p + shift for p in m.pos]
+    m.bone = [B['Root']] * len(m.bone)
+    return m
+
+
 def geometry(gun):
     m = Mesh()
     builder = dict((n, b) for n, b, _ in GUNS)[gun]
@@ -681,6 +695,9 @@ def build():
     for name, _, _ in GUNS:
         mesh, muzzle = geometry(name)
         files['Base.SC2Assets/Derelict/Marine%s.m3' % name] = write_m3(mesh, 'Marine' + name, ROOT / ('dist/meshes/Marine%s.m3' % name), muzzle)
+    for name, _, _ in GUNS:
+        if name != 'Case':
+            files['Base.SC2Assets/Derelict/Gun%s.m3' % name] = write_m3(gun_only(name), 'Gun' + name, ROOT / ('dist/meshes/Gun%s.m3' % name), (0, 0, 0))
     files['Base.SC2Assets/Derelict/marine.dds'] = dds_bytes(diffuse)
     files['Base.SC2Assets/Derelict/marine_e.dds'] = dds_bytes(emissive)
     return files

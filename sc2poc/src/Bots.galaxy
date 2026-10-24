@@ -69,6 +69,16 @@ point AS_PostOf (int p, fixed x0, fixed y0, fixed x1, fixed y1) {
     fixed cx=(x0+x1)*0.5;fixed cy=(y0+y1)*0.5;
     return Point(cx-2.0+IntToFixed((p-1)%2)*4.0,cy-2.0+IntToFixed((p-1)/2)*4.0);
 }
+point AS_BotWay (point here, point to) {
+    point t;fixed a=AngleBetweenPoints(here,to)+90.0;fixed ox=Cos(a)*0.3;fixed oy=Sin(a)*0.3;
+    // Clear for the whole body: the line itself and one either side of it at the marine's radius.
+    if(AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(to),PointGetY(to))
+       && AS_LineClear(PointGetX(here)+ox,PointGetY(here)+oy,PointGetX(to)+ox,PointGetY(to)+oy)
+       && AS_LineClear(PointGetX(here)-ox,PointGetY(here)-oy,PointGetX(to)-ox,PointGetY(to)-oy)) {return to;}
+    t=AS_TrailPoint(here);
+    if(t==null) {return to;}
+    return t;
+}
 point AS_BotGoal (int p) {
     point lq;point here=UnitGetPosition(as_m[p]);point tech;
     if(as_auto && p==1) {return AS_RouteGoal();}
@@ -81,10 +91,12 @@ point AS_BotGoal (int p) {
     if(as_leader==0 || as_leader==p) {return null;}
     lq=UnitGetPosition(as_m[as_leader]);
     // Everyone aboard: hold a spot on the platform until the ride is over.
+    // A spot it can't walk straight to (round the drop's corner onto the bridge) is reached by the leader's trail first:
+    // straight at it, a bot south of the bridge pinned itself against the drop for good (autopilot run, 2026-10-24).
     if((as_stage==AS_ST_BOARD && AS_InRect(lq,as_liftX0,as_liftY0,as_liftX1,as_liftY1)) || as_stage==AS_ST_RIDE) {
-        return AS_PostOf(p,as_liftX0,as_liftY0,as_liftX1,as_liftY1);
+        return AS_BotWay(here,AS_PostOf(p,as_liftX0,as_liftY0,as_liftX1,as_liftY1));
     }
-    if(as_stage==AS_ST_ESCAPE && AS_InRect(lq,as_extX0,as_extY0,as_extX1,as_extY1)) {return AS_PostOf(p,as_extX0,as_extY0,as_extX1,as_extY1);}
+    if(as_stage==AS_ST_ESCAPE && AS_InRect(lq,as_extX0,as_extY0,as_extX1,as_extY1)) {return AS_BotWay(here,AS_PostOf(p,as_extX0,as_extY0,as_extX1,as_extY1));}
     if(DistanceBetweenPoints(here,lq)<2.6 && AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(lq),PointGetY(lq))) {return null;}
     return AS_TrailPoint(here);
 }

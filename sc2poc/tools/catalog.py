@@ -142,6 +142,11 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         m = child(cat['Model'], 'CModel', id='ASMarine' + gun, parent='Unit')
         child(m, 'Model', value='Derelict\\Marine%s.m3' % gun)
     unit('ASMarine', 'ASMarineRifle', 1.0, 100, 2.25, 0.36, mobile=True, collide=True, turn=7200)
+    # Each gun on its own, for weapons lying on the deck (src/Weapons.galaxy AS_DropAt swaps the pickup's model).
+    for gun, _, _ in marine.GUNS:
+        if gun != 'Case':
+            m = child(cat['Model'], 'CModel', id='ASGun' + gun, parent='Unit')
+            child(m, 'Model', value='Derelict\\Gun%s.m3' % gun)
     # The laser sight and its dot ride with each marine, turned the same way (tools/fx.py lays the beam along a model's -Y).
     for name in ('Laser', 'LaserDot'):
         m = child(cat['Model'], 'CModel', id='ASFx' + name + 'Model', parent='Doodad')

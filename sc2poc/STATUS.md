@@ -387,6 +387,8 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 - The flamer's jet leaves the nozzle blue-white hot and turns to orange fire (the user's AS flamer screenshot).
 - Reloading shows: the gun dips and turns in toward the body as the clip goes in, upper body only so the legs keep running, stretched to the reload's length.
 - No laser on a chainsaw or a carried case.
+- The laser ends where it should: on a bulkhead at gun height, on an alien at its body, and only under a player's cursor does it come down to the deck; the end height eases, so the beam's slope never snaps.
+- Weapons lying on the deck (dropped by a fallen marine, or waiting in a supply room) are the gun itself, the same parts the marines hold (`tools/marine.py gun_only`), not SC2's plasma-gun pickup.
 - Animations: stand, run forward, back-pedal and side-steps picked from the run's angle to the aim (the legs go where the marine moves, the gun stays on the aim), the rifle-butt swing, and a death where the body goes over and stays (`AS_MarineCorpse`) instead of SC2's marine death.
 - Second model pass: layered angular pauldrons instead of round pads, a power pack with cooling fins and a status lamp, a crested helmet with ear vents.
 - The models carry SC2 attachment points (Ref_Center for the name tags, Ref_Weapon at the muzzle, and the rest).
@@ -396,7 +398,9 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 
 **Zoom:** SC2's field of view is the vertical one (measured on `dist/screens/overhaul-docking-bay.jpg`, taken at distance 18 and FOV 48: 41.7 px a cell at the screen's centre, where a vertical 48 predicts 42.2 and a horizontal one 67.6), so the camera is now AS's own lens: pitch 60, 60 degrees tall, 5.1 cells out (412 units at AS's scale). The lean and the Z presets (5.1 / 7.5 / 10.5) are rescaled; the lift ride is framed at 11.5 on the marine so the whole platform shows. Check: our 0.88-tall marine now fills 7.5% of the screen's height, AS's 72-unit marine at 412 units 7.6%.
 
-**AI marines:** they only engage aliens on some player's screen (`AS_OnScreen`, the camera's footprint on the deck), or within 3.5 cells of themselves. The autopilot logs how often a bot held fire (`offscreen=`).
+**AI marines:** a pre-existing bug surfaced in run 20: once the leader was aboard the lift, the bots walked straight at their spot on the platform, and one that started just south of the bridge pinned itself against the drop's corner for good (the lift waits for the whole squad, so the run stalled; a player's AI squad could hit it too). A bot now takes the leader's trail when its spot isn't in clear line for its whole body (`AS_BotWay`); the same for the transit platform.
+
+They only engage aliens on some player's screen (`AS_OnScreen`, the camera's footprint on the deck), or within 3.5 cells of themselves. The autopilot logs how often a bot held fire (`offscreen=`).
 
 **The map:**
 - Floors after AS's landing bay (its VPK textures were read for reference only): pale concrete slabs and bright galvanised grating mixed through the halls, concrete and diamond plate in the bays, and every floor given a photographic finish (grain, specks, oil stains, grime in the seams). Small floor pieces now mix the second plating too.
@@ -428,6 +432,9 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 | 14 | reload motion, console sparks | 108.6 s | 274.8 s | 2 |
 | 16 | no laser on chainsaw or case, livelier dust | 109.3 s | 279.6 s | 4 |
 | 18 | pink dock neon, concrete outer walls | 108.3 s | 275.8 s | 3 |
+| 19 | laser end height | 110.3 s | 275.3 s | 5 |
+| 20 | no machinery tops in the hive | 110.1 s | stalled boarding the lift (bot bug, fixed) | 3 |
+| 21 | bots take the trail to the lift, guns on the deck | 109.6 s | 275.6 s | 3 |
 
 Run 9 never started (the client sat in its menus; restarted). Run 17 raced an edit (built half-way through a change, so a wall mesh was missing: `Could not create actor ASKW9F`); run 18 is the same change built whole. A `-Demo` build fired all fifteen gun families for five minutes with no script errors.
 
