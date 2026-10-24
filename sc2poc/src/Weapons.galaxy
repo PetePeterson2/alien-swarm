@@ -82,6 +82,9 @@ void AS_Reload (int p) {
     width*=1.0+0.05*IntToFixed(AS_Skill(p,AS_SK_RELOADING));
     as_fastFrom[p]=RandomFixed(0.29,0.35);as_fastTo[p]=as_fastFrom[p]+width;
     as_mag[p][w]=0;
+    // The marine's reload motion (tools/marine.py Morph: upper body only), stretched to the reload's length.
+    ActorSend(libNtve_gf_MainActorofUnit(as_m[p]),"AnimPlay ASReload Morph 0 0.1 0.15");
+    ActorSend(libNtve_gf_MainActorofUnit(as_m[p]),"AnimSetTimeScale ASReload "+FixedToString(AS_Clamp(1.0/t,0.3,2.0),2));
     AS_Sound("Doodad_LightBulbFlickerClick",PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])),60.0,0.3);
 }
 void AS_FastReloadTry (int p) {

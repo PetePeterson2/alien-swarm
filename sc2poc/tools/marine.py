@@ -461,6 +461,14 @@ def pose(name, t):
         put('Head', (0, 0, 0), (Z, -twist * 0.5))
         put('ThighL', (0, 0, 0), (Y, -18)); put('ShinL', (0, 0, 0), (Y, 22))
         put('ThighR', (0, 0, 0), (Y, 10)); put('ShinR', (0, 0, 0), (Y, 8))
+    elif name == 'Morph':
+        # The reload (stock name Morph, so the client's lookup finds it): the gun dips and turns in toward the body
+        # as the old clip drops and a new one goes in, then comes back up onto the aim. Upper body only (see
+        # SEQ_BONES), so the legs keep running under it.
+        dip = _knots(t, [(0, 0), (0.18, 1), (0.75, 1), (1, 0)])
+        jolt = _knots(t, [(0, 0), (0.55, 0), (0.62, 1), (0.72, 0), (1, 0)])
+        put('Torso', (0, 0, -0.01 * dip), (Y, 16 * dip + 4 * jolt), (Z, 22 * dip), (X, -8 * dip))
+        put('Head', (0, 0, 0), (Y, 14 * dip), (Z, -10 * dip))
     elif name == 'Death':
         # Shot down: the knees buckle, the marine goes over backwards and lands on its pack, legs out in front,
         # the gun still in its hands; a last twitch, then still.
@@ -483,8 +491,11 @@ WALK_SPEED = 2.6
 # Walk runs forward; Work backs off, Spell and Cover side-step left and right (stock animation names, so the
 # client's lookup finds them: src/Marine.galaxy AS_Walk picks one from the run's angle to the aim).
 SEQUENCES = [('Stand', 3000, 0.0, False), ('Walk', 560, WALK_SPEED, False), ('Work', 600, 0.0, False), ('Spell', 600, 0.0, False),
-             ('Cover', 600, 0.0, False), ('Attack', 600, 0.0, True), ('Fire', 160, 0.0, True), ('Death', 1300, 0.0, True)]
+             ('Cover', 600, 0.0, False), ('Attack', 600, 0.0, True), ('Fire', 160, 0.0, True), ('Death', 1300, 0.0, True),
+             ('Morph', 1000, 0.0, True)]
 ANIMATED = {'location': {B['Pelvis'], B['Torso']}, 'rotation': set(range(1, len(BONES)))}
+# Sequences that move only part of the body: the client blends them over whatever the rest is playing.
+SEQ_BONES = {'Morph': {'location': {B['Torso']}, 'rotation': {B['Torso'], B['Head']}}}
 
 
 # ------------------------------------------------------------------ M3
@@ -558,7 +569,7 @@ def rig(model, m3, name, muzzle):
         poses = [pose(seq_name, k / steps) for k in range(steps + 1)]
         ids, refs = [], []
         for field in ('location', 'rotation'):
-            for bi in sorted(ANIMATED[field]):
+            for bi in sorted(SEQ_BONES.get(seq_name, ANIMATED)[field]):
                 ids.append(getattr(bones[bi], field).header.animId)
                 track = m3.structures['SD3V' if field == 'location' else 'SD4Q'].getVersion(0).createInstance()
                 track.frames = frames; track.flags = 1; track.fend = duration; track.keys = []
