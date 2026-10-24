@@ -9,8 +9,8 @@ int[@W@][@H@] as_cell;            // the room kind (tools/level.py KIT_KINDS), e
 const int AS_HULL = -1;
 const int AS_VOID = -2;           // the drop round a lift: no wall, no cap
 const int AS_WINDOW = -3;         // hull whose faces show the window panel
-const int AS_OPEN = -4;
-const int AS_MACHINE = -5;        // a block of hull standing in a room: walls round it, machinery on top (no hull cap)           // the open night beyond an outdoor deck's railing: no wall, no cap, the drop drawn
+const int AS_OPEN = -4;           // the open night beyond an outdoor deck's railing: the pit (tools/pitart.py), no wall, no cap
+const int AS_MACHINE = -5;        // a block of hull standing in a room: walls round it, machinery on top (no hull cap)
 int as_kitRails;
 const int AS_KIND_HIVE = 7;
 const int AS_KIND_LIFT = 8;       // no ceiling over the lift and its bridges
@@ -159,14 +159,23 @@ fixed AS_FaceZ (int x, int y, int s) {
     if(nx<0 || ny<0 || nx>=AS_W || ny>=AS_H) {return as_cz[x][y];}
     return as_cz[nx][ny];
 }
+// A building's wall across the drop (KW9T) hangs from its roof, the hull cell's own height, down to the pit floor.
+fixed AS_BayZ (int x, int y, int s, int panel) {
+    if(panel==AS_PANEL_CONCRETE) {return as_cz[x][y];}
+    return AS_FaceZ(x,y,s);
+}
+string AS_BayPiece (int panel) {
+    if(panel==AS_PANEL_CONCRETE) {return "KW9T";}
+    return "KW"+IntToString(panel);
+}
 void AS_KitBay (int xa, int ya, int xb, int yb, int s, fixed mx, fixed my) {
     int pa=AS_FacePanel(xa,ya,s);int pb=AS_FacePanel(xb,yb,s);fixed za=0.0;fixed zb=0.0;
-    if(pa>=0) {za=AS_FaceZ(xa,ya,s);}
-    if(pb>=0) {zb=AS_FaceZ(xb,yb,s);}
+    if(pa>=0) {za=AS_BayZ(xa,ya,s,pa);}
+    if(pb>=0) {zb=AS_BayZ(xb,yb,s,pb);}
     if(pa==5 && pb==5 && s==0) {AS_KitWallLamp(mx,my-0.6);}
-    if(pa>=0 && pa==pb && za==zb) {AS_KitWall("KW"+IntToString(pa)+"F",mx,my,za,s);return;}
-    if(pa>=0) {AS_KitWall("KW"+IntToString(pa)+"E",mx,my,za,s);}
-    if(pb>=0) {AS_KitWall("KW"+IntToString(pb)+"O",mx,my,zb,s);}
+    if(pa>=0 && pa==pb && za==zb) {AS_KitWall(AS_BayPiece(pa)+"F",mx,my,za,s);return;}
+    if(pa>=0) {AS_KitWall(AS_BayPiece(pa)+"E",mx,my,za,s);}
+    if(pb>=0) {AS_KitWall(AS_BayPiece(pb)+"O",mx,my,zb,s);}
 }
 
 // Railings where an outdoor deck meets the open night: one unit of rail per edge, turned as a wall on that face.
@@ -191,11 +200,21 @@ void AS_KitRails () {
 }
 
 // ---- ceiling and caps -------------------------------------------------
+// An open cell of the pit with hull beside it: a building's wall stands there.
+bool AS_KitPitShore (int x, int y) {
+    if(as_cell[x][y]!=AS_OPEN) {return false;}
+    if(x>0 && as_cell[x-1][y]==AS_HULL) {return true;}
+    if(x+1<AS_W && as_cell[x+1][y]==AS_HULL) {return true;}
+    if(y>0 && as_cell[x][y-1]==AS_HULL) {return true;}
+    if(y+1<AS_H && as_cell[x][y+1]==AS_HULL) {return true;}
+    return false;
+}
 // Ceiling over deck cells (want 0 plain, 1 hive) or caps over near hull cells (want 2).
 bool AS_KitWants (int x, int y, int want) {
     if(as_kitMark[x][y]==1) {return false;}
     if(want==2) {return !AS_Floor(x,y) && as_cell[x][y]!=AS_VOID && as_cell[x][y]!=AS_OPEN && as_cell[x][y]!=AS_MACHINE && as_kitNear[x][y];}
-    if(want==3) {return as_cell[x][y]==AS_OPEN;}
+    // The pit's floor and haze: not over its edge ring, where the deck's skirt drops to it (AS_KitStairs).
+    if(want==3) {return as_cell[x][y]==AS_OPEN && !as_cslope[x][y];}
     if(want==4) {return as_cell[x][y]==AS_MACHINE;}
     if(!AS_Floor(x,y) || as_cell[x][y]==AS_KIND_LIFT) {return false;}
     return (as_cell[x][y]==AS_KIND_HIVE)==(want==1);
@@ -377,10 +396,11 @@ void AS_KitPathStages () {
 }
 void AS_KitBuildRest (timer t, int gen) {
     int x;int y;int i;int j;
-    // Caps go on hull cells within five of the deck, so the bare terrain stays out of the camera's view.
+    // Caps go on hull cells within five of the deck, so the bare terrain stays out of the camera's view; and
+    // within five of where the pit meets hull, the roofs of the buildings standing over the drop.
     for(y=0;y<AS_H;y+=1) {
         for(x=0;x<AS_W;x+=1) {
-            if(!AS_Floor(x,y)) {continue;}
+            if(!AS_Floor(x,y) && !AS_KitPitShore(x,y)) {continue;}
             for(i=MaxI(0,x-5);i<=MinI(AS_W-1,x+5);i+=1) {for(j=MaxI(0,y-5);j<=MinI(AS_H-1,y+5);j+=1) {as_kitNear[i][j]=true;}}
         }
         if(y%4==3) {Wait(0.0,c_timeGame);if(gen!=as_kitGen) {return;}}

@@ -15,6 +15,15 @@ float above a wall (src/Kit.galaxy stands each wall on the floor it faces).
 
 Heights are kept to 1/64 of a unit, which SC2's terrain (1/2048) holds exactly and src/Kit.galaxy's
 fixed-point numbers too, so plating laid at a cell's height lies on the terrain.
+
+Floors close in height (under MERGE) are one floor, and slivers and scraps of floor (a strip one cell wide
+between two others, a plateau of a few cells) join their neighbour: a step is only kept where AS's floor
+really changes level, so stairs stand where AS's do rather than as gutters along every trim.
+
+The open night beyond an outdoor deck's railing ('o') is a real drop: its terrain lies DROP below the base
+height, so what stands down there (tools/pitart.py) is seen below the deck, smaller and sliding past it as the
+camera moves. The ring of open cells along the deck's edge slopes from the deck down to the pit floor; the
+kit covers each with a skirt piece, the deck's steel side, as it covers stair cells with a flight.
 """
 import numpy as np
 
@@ -25,6 +34,11 @@ PLATEAU = 16.0         # cells joined within this many Hammer units of a plateau
                        # (less than AS's 18-unit step: grates, trims and sampling noise, not steps)
 QUANTUM = 1 / 64.0     # heights in map units are kept to this
 FLOORISH = set('0123456789ov')   # deck rows: room kinds, the open drop and the lift void constrain the terrain
+MERGE = 28.0           # Hammer units: neighbouring floors closer than this are one floor (AS's real steps are 40 and up)
+SCRAP = 8              # a plateau of fewer cells joins the neighbour it shares most edge with
+SLIVER = 0.5           # ... as does one of up to SLIVER_MAX cells, more than this share of them one cell across
+SLIVER_MAX = 40
+DROP = 7.0             # the pit floor under the open night: this far below the base height (map units)
 
 
 def _sample(data, hx, hy, rings=4):
@@ -128,25 +142,34 @@ def level_heights(level, rows, floor_level):
         have = ~np.isnan(raw)
         if have.any():
             raw = _dilate(np.nan_to_num(raw), have)
-            raw = _plateaus(_mode_filter(raw, deck), deck)
+            raw = _merge(_plateaus(_mode_filter(raw, deck), deck), deck)
             z = floor_level + (raw - DECK_Z) / UNITS
     z = np.round(z / QUANTUM) * QUANTUM
     # Deck heights spread into the hull, the lowest where two meet.
     z = _dilate(z, deck, np.minimum) if deck.any() else z
-    vert, vmask, flat = _vertices(z, floorish)
+    # The open night is the pit, far below every deck.
+    drop_cells = np.array([[c == 'o' for c in row] for row in rows])
+    z[drop_cells] = np.round((floor_level - DROP) / QUANTUM) * QUANTUM
+    vert, vmask, flat = _vertices(z, floorish, drop_cells, deck)
     corners = np.stack([vert[:-1, :-1], vert[:-1, 1:], vert[1:, :-1], vert[1:, 1:]])
-    slope = deck & (corners.max(0) - corners.min(0) > 1e-3)
-    cellz = np.where(slope, np.floor(corners.min(0) / QUANTUM) * QUANTUM, z)
-    return {'cellz': cellz, 'slope': slope, 'vert': vert, 'vmask': vmask, 'deck': deck, 'floorish': floorish,
-            'stairs': stairs(vert, slope)}
+    tilted = corners.max(0) - corners.min(0) > 1e-3
+    slope = deck & tilted
+    edge = drop_cells & tilted
+    cellz = np.where(slope | edge, np.floor(corners.min(0) / QUANTUM) * QUANTUM, z)
+    st = stairs(vert, slope)
+    return {'cellz': cellz, 'slope': slope, 'edge': edge, 'vert': vert, 'vmask': vmask, 'deck': deck, 'floorish': floorish,
+            'stairs': st + stair_rails(st, slope, deck) + stairs(vert, edge, SKIRTS)}
 
 
-def _vertices(z, floorish):
+def _vertices(z, floorish, low=None, deck=None):
     """Vertex heights. Flat deck-like cells hold all four corners at their own height; where two of different
     heights share a corner, the lower one gives way and becomes a stair cell rising to the higher, so a step is
     one cell of stairs on its low side, as AS's stair props stand. Corners of stair cells alone are filled from
-    their neighbours; vertices clear of the deck take the mean of the hull round them."""
+    their neighbours; vertices clear of the deck take the mean of the hull round them. A corner of the pit
+    (`low`) that no deck cell touches lies on the pit floor, so the deck's edge drops in one cell."""
     H, W = z.shape
+    low = np.zeros(z.shape, bool) if low is None else low
+    deck = np.zeros(z.shape, bool) if deck is None else deck
     flat = floorish.copy()
     while True:
         give = np.zeros_like(flat)
@@ -171,6 +194,8 @@ def _vertices(z, floorish):
             vmask[vy, vx] = any(floorish[c] for c in near)
             if fl:
                 vert[vy, vx], known[vy, vx] = fl[0], True
+            elif any(low[c] for c in near) and not any(deck[c] for c in near):
+                vert[vy, vx], known[vy, vx] = min(z[c] for c in near if low[c]), True
             elif not vmask[vy, vx]:
                 vert[vy, vx], known[vy, vx] = np.mean([z[c] for c in near]), True
     # Corners only stair cells touch: the mean of their settled neighbours, ring by ring.
@@ -191,12 +216,18 @@ def _vertices(z, floorish):
 # Stair cell shapes (src/Kit.galaxy AS_KitStairs, tools/level.py stair_pieces), by which corners are up:
 # a straight flight rising north at turn 0, one corner up (north-east at turn 0), three up (south-west down).
 STAIR, RAMP1, RAMP3 = 'KStair', 'KRamp1', 'KRamp3'
+# The pit's edge cells take the same shapes (tools/pitart.py): the deck's steel side dropping to the pit floor.
+SKIRTS = ('KSkirt', 'KSkirt1', 'KSkirt3')
+# Handrails up an exposed side of a flight (tools/pitart.py), authored for a rise of 1 and of 0.5: the nearer is
+# scaled to the flight's rise, so the rail keeps about its height.
+RAILS = {('W', 1.0): 'KSRailW', ('E', 1.0): 'KSRailE', ('W', 0.5): 'KSRailWh', ('E', 0.5): 'KSRailEh'}
 
 
-def stairs(vert, slope):
+def stairs(vert, slope, names=(STAIR, RAMP1, RAMP3)):
     """Each slope cell's piece: (x, y, piece, turn, z, rise). The turn is counter-clockwise from the authored
     piece; z is its foot and rise its height. Corners are snapped up or down at half the rise, so a cell
     whose corners are uneven (where flights meet) takes the nearest shape."""
+    STAIR, RAMP1, RAMP3 = names
     out = []
     for y, x in zip(*np.nonzero(slope)):
         sw, se, nw, ne = vert[y, x], vert[y, x + 1], vert[y + 1, x], vert[y + 1, x + 1]
@@ -218,6 +249,86 @@ def stairs(vert, slope):
     return out
 
 
+def stair_rails(st, slope, deck):
+    """Handrails where a straight flight's side is open to a flat floor beside it (not a wall, not more of the
+    flight, not the corner pieces where flights meet): (x, y, rail piece, turn, z, scale), as AS's stairs
+    have railings down their open sides. The rail is laid with the flight's turn and foot."""
+    import math
+    H, W = slope.shape
+    out = []
+    for x, y, piece, turn, z, rise in st:
+        if piece != STAIR:
+            continue
+        c, s = round(math.cos(math.radians(turn))), round(math.sin(math.radians(turn)))
+        for side, (lx, ly) in (('W', (-1, 0)), ('E', (1, 0))):
+            nx, ny = x + lx * c - ly * s, y + lx * s + ly * c
+            if not (0 <= nx < W and 0 <= ny < H) or not deck[ny, nx] or slope[ny, nx]:
+                continue
+            nominal = 0.5 if rise < 0.7 else 1.0
+            out.append((x, y, RAILS[(side, nominal)], turn, z, rise / nominal))
+    return out
+
+
+def _components(z, mask):
+    """Plateaus: 4-connected cells of one height. (labels [H, W], -1 off the mask; [cells per plateau])."""
+    from collections import deque
+    H, W = z.shape
+    lab = np.full((H, W), -1)
+    comps = []
+    for y0, x0 in zip(*np.nonzero(mask)):
+        if lab[y0, x0] >= 0:
+            continue
+        k = len(comps)
+        q, cells = deque([(y0, x0)]), []
+        lab[y0, x0] = k
+        while q:
+            y, x = q.popleft()
+            cells.append((y, x))
+            for yy, xx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                if 0 <= yy < H and 0 <= xx < W and mask[yy, xx] and lab[yy, xx] < 0 and z[yy, xx] == z[y0, x0]:
+                    lab[yy, xx] = k
+                    q.append((yy, xx))
+        comps.append(cells)
+    return lab, comps
+
+
+def _merge(z, mask):
+    """Plateaus that are not real levels join a neighbour, smallest first, until none is left: one within MERGE
+    of a neighbour at least its size takes that one's height; a scrap of floor, or a sliver one cell across,
+    takes the height of the neighbour it shares the longest edge with."""
+    z = z.copy()
+    H, W = z.shape
+    while True:
+        lab, comps = _components(z, mask)
+        best = None
+        for k, cells in enumerate(comps):
+            edges, thin = {}, 0
+            for y, x in cells:
+                same = [0 <= yy < H and 0 <= xx < W and lab[yy, xx] == k for yy, xx in ((y, x - 1), (y, x + 1), (y - 1, x), (y + 1, x))]
+                thin += (not same[0] and not same[1]) or (not same[2] and not same[3])
+                for yy, xx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                    if 0 <= yy < H and 0 <= xx < W and lab[yy, xx] >= 0 and lab[yy, xx] != k:
+                        edges[lab[yy, xx]] = edges.get(lab[yy, xx], 0) + 1
+            if not edges:
+                continue
+            zk = z[cells[0]]
+            near = [j for j in edges if abs(z[comps[j][0]] - zk) < MERGE and len(comps[j]) >= len(cells)]
+            if near:
+                to = max(near, key=lambda j: (edges[j], len(comps[j])))
+            elif len(cells) < SCRAP or (len(cells) <= SLIVER_MAX and thin > SLIVER * len(cells)):
+                to = max(edges, key=lambda j: (edges[j], -abs(z[comps[j][0]] - zk)))
+            else:
+                continue
+            if best is None or len(cells) < best[0]:
+                best = (len(cells), k, to)
+        if best is None:
+            return z
+        _, k, to = best
+        target = z[comps[to][0]]
+        for c in comps[k]:
+            z[c] = target
+
+
 def runs(cellz, slope):
     """Each row as runs of equal cells: (y, x0, x1, z, slope)."""
     out = []
@@ -228,4 +339,38 @@ def runs(cellz, slope):
             if x == W or cellz[y, x] != cellz[y, x0] or slope[y, x] != slope[y, x0]:
                 out.append((y, x0, x, float(cellz[y, x0]), bool(slope[y, x0])))
                 x0 = x
+    return out
+
+
+EXT = 6                # cells of open night carried on past a level's east edge, out of the camera's sight
+
+
+def extend(rows, hts, floor_level, ext=EXT):
+    """A level whose east edge is open night, carried EXT cells further east: a row ending in the open goes on as
+    open (at the pit floor), any other as hull at its last cell's height, so the pit runs on out of sight rather
+    than stopping at a black edge. Returns hts with the wider arrays and the wider rows as hts['rows']."""
+    out = dict(hts)
+    out['rows'] = list(rows)
+    if not any(r[-1] == 'o' for r in rows):
+        return out
+    H, W = len(rows), len(rows[0])
+    pit = np.round((floor_level - DROP) / QUANTUM) * QUANTUM
+    is_open = np.array([r[-1] == 'o' for r in rows])
+    out['rows'] = [r + ('o' if r[-1] == 'o' else '#') * ext for r in rows]
+    wide = lambda a, fill: np.concatenate([a, np.full((a.shape[0], ext), fill, a.dtype)], 1)
+    cz = np.concatenate([hts['cellz'], np.repeat(hts['cellz'][:, -1:], ext, 1)], 1)
+    cz[is_open, W:] = pit
+    out['cellz'] = cz
+    for k in ('slope', 'edge', 'deck'):
+        out[k] = wide(hts[k], False)
+    out['floorish'] = wide(hts['floorish'], False)
+    out['floorish'][is_open, W:] = True
+    vert = np.concatenate([hts['vert'], np.repeat(hts['vert'][:, -1:], ext, 1)], 1)
+    vmask = wide(hts['vmask'], False)
+    for vy in range(H + 1):
+        near = [y for y in (vy - 1, vy) if 0 <= y < H and is_open[y]]
+        if near:
+            vert[vy, W + 1:] = pit
+            vmask[vy, W + 1:] = True
+    out['vert'], out['vmask'] = vert, vmask
     return out

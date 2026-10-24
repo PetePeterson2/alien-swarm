@@ -254,7 +254,7 @@ def tex_seam(w=64, h=256):
 def textures():
     t = {'asdoor': tex_asdoor(), 'doorseam': tex_seam(), 'shaft_a': tex_shaft(81), 'shaft_b': tex_shaft(82, lights=True), 'shaft_c': tex_sign(), 'lintel': tex_lintel(), 'gate': tex_gate(),
          'lift_deck': tex_deck(), 'bridge': tex_bridge(), 'door': tex_door(), 'wall_window': tex_window(),
-         'void': tex_void(), 'open_drop': tex_open(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
+         'void': tex_void(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
     return t
 
 

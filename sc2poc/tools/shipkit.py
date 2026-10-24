@@ -130,10 +130,11 @@ def tex_plain(rgb, size=16):
 def hull_textures():
     """name -> (diffuse, emissive or None): wall bays, trim and caps (tools/wallart.py), the floors and
     decals (tools/deckart.py), and the ceilings seen from the third-person camera."""
-    from tools import wallart, deckart, propart
+    from tools import wallart, deckart, propart, pitart
     t = wallart.textures()
     t.update(deckart.textures())
     t.update(propart.textures())
+    t.update(pitart.textures())
     t['ceiling'] = tex_ceiling()
     t['ceiling_dark'] = (tex_ceiling(7)[0], None)
     return t
@@ -141,8 +142,8 @@ def hull_textures():
 
 def multiply_textures():
     """name -> image: decals multiplied over the deck (white leaves it alone)."""
-    from tools import deckart
-    return {k: f() for k, f in deckart.MUL_DECALS.items()}
+    from tools import deckart, pitart
+    return {k: f() for k, f in {**deckart.MUL_DECALS, **pitart.ADDED}.items()}
 
 
 def texture_path(name):

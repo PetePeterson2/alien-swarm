@@ -171,9 +171,11 @@ def place(scene, tex, model, x, y, turn=0.0, z=0.0, zscale=1.0):
 
 
 def lay_level(scene, tex, pieces, rows, tx, ty, hts):
-    x0, x1, y0, y1 = int(tx) - 10, int(tx) + 11, int(ty) - 6, int(ty) + 11
+    # The pit's floor shows a wider stretch than the deck does: lay further out.
+    x0, x1, y0, y1 = int(tx) - 15, int(tx) + 16, int(ty) - 6, int(ty) + 14
     Wd, Hd = len(rows[0]), len(rows)
     cz, slope, vert = hts['cellz'] - L.FLOOR, hts['slope'], hts['vert'] - L.FLOOR
+    edge = hts['edge']
 
     def zat(x, y):
         x, y = int(math.floor(x)), int(math.floor(y))
@@ -237,7 +239,7 @@ def lay_level(scene, tex, pieces, rows, tx, ty, hts):
             c = cell(x, y)
             if c in '#w':
                 place(scene, tex, pieces['KK1'], x, y, z=zat(x, y))
-            elif c == 'o':
+            elif c == 'o' and not edge[y, x]:
                 place(scene, tex, pieces['KO1_%d%d' % (x % 4, y % 4)], x, y, z=zat(x, y))
             elif c == 'm':
                 place(scene, tex, pieces['KM1_%d%d' % (x % 4, y % 4)], x, y, z=zat(x, y))
@@ -268,13 +270,16 @@ def lay_level(scene, tex, pieces, rows, tx, ty, hts):
 
     def bay(xa, ya, xb, yb, s, mx, my):
         pa, pb = face(xa, ya, s), face(xb, yb, s)
-        za, zb = face_z(xa, ya, s), face_z(xb, yb, s)
+        # A building's wall across the drop runs from its roof down to the pit floor (KW9T, AS_KitBay).
+        za = zat(xa, ya) if pa == 9 else face_z(xa, ya, s)
+        zb = zat(xb, yb) if pb == 9 else face_z(xb, yb, s)
+        ka, kb = ('9T' if pa == 9 else str(pa)), ('9T' if pb == 9 else str(pb))
         if pa >= 0 and pa == pb and za == zb:
-            place(scene, tex, pieces['KW%dF' % pa], mx, my, s * 90.0, za); return
+            place(scene, tex, pieces['KW%sF' % ka], mx, my, s * 90.0, za); return
         if pa >= 0:
-            place(scene, tex, pieces['KW%dE' % pa], mx, my, s * 90.0, za)
+            place(scene, tex, pieces['KW%sE' % ka], mx, my, s * 90.0, za)
         if pb >= 0:
-            place(scene, tex, pieces['KW%dO' % pb], mx, my, s * 90.0, zb)
+            place(scene, tex, pieces['KW%sO' % kb], mx, my, s * 90.0, zb)
     for y in range(y0, y1):
         for x in range(x0 - x0 % 2, x1, 2):
             bay(x, y, x + 1, y, 0, x + 1, y)
@@ -342,7 +347,8 @@ def render(level, tx, ty, aim, gun='Rifle', laser_len=3.5):
     floor, room = L.carve()
     rows = L.deck_rows(floor, room)
     from tools import heights
-    hts = heights.level_heights(vars(L), rows, L.FLOOR)
+    hts = heights.extend(rows, heights.level_heights(vars(L), rows, L.FLOOR), L.FLOOR)
+    rows = hts['rows']
     cz = hts['cellz'] - L.FLOOR
 
     def zat(x, y):
@@ -356,7 +362,7 @@ def render(level, tx, ty, aim, gun='Rifle', laser_len=3.5):
     scene = Scene(cam)
     lay_level(scene, tex, pieces, rows, tx, ty, hts)
     muzzle = draw_marine(scene, tx, ty, aim, gun, z=zat(tx, ty))
-    lamps = [(x, y, k.replace('big', ''), 'big' in k, zat(x, y)) for x, y, k, _ in L.LIGHTS + L.corridor_lamps(*L.carve()) if abs(x - tx) < 16 and abs(y - ty) < 16]
+    lamps = [(x, y, k.replace('big', ''), 'big' in k, zat(x, y)) for x, y, k, _ in L.LIGHTS + L.corridor_lamps(*L.carve()) + L.pit_lamps(*L.carve()) if abs(x - tx) < 16 and abs(y - ty) < 16]
     img = scene.shade(lamps)
     ex, ey = tx + math.cos(math.radians(aim)) * laser_len, ty + math.sin(math.radians(aim)) * laser_len
     img = laser(img, cam, muzzle, aim, laser_len, zat(ex, ey))

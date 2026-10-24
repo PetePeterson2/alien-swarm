@@ -434,8 +434,11 @@ def kit_pieces():
     floor_pieces(out)
     stair_pieces(out)
     decal_pieces(out)
-    from tools import propart
+    from tools import propart, pitart
     propart.pieces(out)
+    # The drop beyond an outdoor deck's railing: its floor tiles and haze (KO*), edge skirts, towers, trusses,
+    # pipes and lamps, the buildings' walls down to it; and the stairs' handrails.
+    pitart.pieces(out)
     for size in (4, 2, 1):
         # Lit panels sit at fixed spots of the 4x4 pattern, so a tile is only placed where its corner's
         # position mod 4 matches what it was authored for: 4x4 at 0, 2x2 at 0 or 2, 1x1 anywhere.
@@ -460,14 +463,6 @@ def kit_pieces():
                 name = 'KM%d_%d%d' % (size, ox, oy)
                 m = out[name] = ShipModel(name, (0, 0, 0))
                 m.quad(('machine_top', False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
-                       [(ox / 4, 1 - oy / 4), ((ox + size) / 4, 1 - oy / 4), ((ox + size) / 4, 1 - (oy + size) / 4), (ox / 4, 1 - (oy + size) / 4)])
-        # The drop off an outdoor deck's edge (tools/elevator.py tex_open), laid where a cap would be but down
-        # at the deck: 4x4, 2x2 and 1x1 tiles uv'd from world position mod 4, as the ceiling is.
-        for ox in range(0, 4, size):
-            for oy in range(0, 4, size):
-                name = 'KO%d_%d%d' % (size, ox, oy)
-                m = out[name] = ShipModel(name, (0, 0, 0))
-                m.quad(('open_drop', False, NO_SHADOW_CAST), (0, 0, 0.02), (size, 0, 0.02), (size, size, 0.02), (0, size, 0.02),
                        [(ox / 4, 1 - oy / 4), ((ox + size) / 4, 1 - oy / 4), ((ox + size) / 4, 1 - (oy + size) / 4), (ox / 4, 1 - (oy + size) / 4)])
     # A one-unit run of railing along an outdoor deck's edge, authored facing south like the walls
     # (origin at the edge's midpoint): yellow posts, two rails and a kick plate, as AS's dock catwalks have.
@@ -535,37 +530,69 @@ def floor_pieces(out):
                     cell(m, tex, 0, 0, px, py)
 
 
-STAIR_STEPS = 4             # treads in a one-cell flight; five risers of a fifth of the rise each
+STAIR_STEPS = 5             # risers in a one-cell flight, a fifth of the rise each; the top tread is the upper floor
 
 
 def stair_pieces(out):
     """The slope cells' pieces (tools/heights.py stairs), one cell with the origin at its centre, rising one unit:
-    the script turns them and scales them up by the cell's rise, so the plating follows the terrain under it.
-    KStair is a flight rising north: grating treads with a yellow nosing, plate risers and solid sides, as AS's
-    stair props are. KRamp1 (north-east corner up) and KRamp3 (south-west corner down) are plates for the cells
-    where flights meet, folded along the diagonal that keeps them over the terrain."""
+    the script turns them and scales them up by the cell's rise, so the flight follows the terrain under it.
+    Each tread stands on or above the terrain's slope everywhere (a tread at the height of its back edge), so
+    the bare slope never shows between them, whichever diagonal SC2 splits the cell on.
+    KStair is a flight rising north, as AS's stair props are (lb-04): yellow-nosed steel treads, dark risers and
+    yellow stringers. KRamp1 (north-east corner up) and KRamp3 (south-west corner down) are the corner flights
+    where two meet, their treads turning the corner, so a flight runs on round it without a seam."""
     from tools.shipkit import ShipModel
     n = STAIR_STEPS
-    rise, run = 1.0 / (n + 1), 1.0 / n
+    tread, riser, side = ('stair_tread', False, 0), ('stair_riser', False, 0), ('stair_stringer', False, 0)
+    c = [-0.5 + k / n for k in range(n + 1)]
     m = out['KStair'] = ShipModel('KStair', (0, 0, 0))
-    tread, nosing, riser, side = ('floor_mgrate', False, 0), ('rail', False, 0), ('floor_plate2', False, 0), ('wall_trim', False, 0)
     for i in range(n):
-        y0, y1, z = -0.5 + i * run, -0.5 + (i + 1) * run, (i + 1) * rise
-        m.quad(tread, (-0.5, y0, z), (0.5, y0, z), (0.5, y1, z), (-0.5, y1, z),
-               [(0, 1 - y0 / 2), (0.5, 1 - y0 / 2), (0.5, 1 - y1 / 2), (0, 1 - y1 / 2)])
-        m.quad(nosing, (-0.5, y0, z + 0.003), (0.5, y0, z + 0.003), (0.5, y0 + 0.05, z + 0.003), (-0.5, y0 + 0.05, z + 0.003),
-               [(0, 0), (1, 0), (1, 1), (0, 1)])
-        m.quad(side, (0.5, y0, 0), (0.5, y1, 0), (0.5, y1, z), (0.5, y0, z), [(0, 1), (run, 1), (run, 1 - z), (0, 1 - z)])
-        m.quad(side, (-0.5, y1, 0), (-0.5, y0, 0), (-0.5, y0, z), (-0.5, y1, z), [(0, 1), (run, 1), (run, 1 - z), (0, 1 - z)])
-    for i in range(n + 1):
-        y, z0, z1 = -0.5 + i * run, i * rise, (i + 1) * rise
-        m.quad(riser, (-0.5, y, z0), (0.5, y, z0), (0.5, y, z1), (-0.5, y, z1), [(0, 1), (0.5, 1), (0.5, 1 - rise / 2), (0, 1 - rise / 2)])
-    sw, se, ne, nw = (-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)
-    plate = ('floor_plate2', False, 0)
-    for name, up, tris in (('KRamp1', {ne}, ((sw, se, ne), (sw, ne, nw))), ('KRamp3', {se, ne, nw}, ((sw, se, nw), (se, ne, nw)))):
-        m = out[name] = ShipModel(name, (0, 0, 0))
-        for tri in tris:
-            m.poly(plate, [(x, y, 1.0 if (x, y) in up else 0.0) for x, y in tri], [((x + 0.5) / 2, 1 - (y + 0.5) / 2) for x, y in tri])
+        y0, y1, z = c[i], c[i + 1], (i + 1) / n
+        m.quad(tread, (-0.5, y0, z), (0.5, y0, z), (0.5, y1, z), (-0.5, y1, z), [(0, 0), (1, 0), (1, 1), (0, 1)])
+        m.quad(riser, (-0.5, y0, z - 1 / n), (0.5, y0, z - 1 / n), (0.5, y0, z), (-0.5, y0, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+        m.quad(side, (0.5, y0, 0), (0.5, y1, 0), (0.5, y1, z), (0.5, y0, z), [(0, 1), (1 / n, 1), (1 / n, 1 - z), (0, 1 - z)])
+        m.quad(side, (-0.5, y1, 0), (-0.5, y0, 0), (-0.5, y0, z), (-0.5, y1, z), [(0, 1), (1 / n, 1), (1 / n, 1 - z), (0, 1 - z)])
+    # KRamp1: the north-east corner up. The terrain lies at or under min(x, y) + 1/2; tread k is the L between
+    # c[k] and c[k+1] round that corner, its risers facing west and south.
+    m = out['KRamp1'] = ShipModel('KRamp1', (0, 0, 0))
+    for k in range(n):
+        a0, a1, z = c[k], c[k + 1], (k + 1) / n
+        m.quad(tread, (a0, a0, z), (0.5, a0, z), (0.5, a1, z), (a0, a1, z), [(0, 0), (1, 0), (1, 1), (0, 1)])
+        m.quad(tread, (a1, a1, z), (a1, 0.5, z), (a0, 0.5, z), (a0, a1, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+        m.quad(riser, (a0, a0, z - 1 / n), (0.5, a0, z - 1 / n), (0.5, a0, z), (a0, a0, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+        m.quad(riser, (a0, 0.5, z - 1 / n), (a0, a0, z - 1 / n), (a0, a0, z), (a0, 0.5, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    # KRamp3: the south-west corner down. The terrain lies at or under min(1, x + y + 1); tread k is the band
+    # between the diagonals x + y + 1 = k/n and (k+1)/n, its riser facing south-west; the rest is the upper floor.
+    m = out['KRamp3'] = ShipModel('KRamp3', (0, 0, 0))
+
+    def band(t0, t1):
+        """The cell square clipped to t0 <= x + y + 1 <= t1, counter-clockwise from above."""
+        pts = [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)]
+        for t, keep in ((t0, 1), (t1, -1)):
+            res = []
+            for i in range(len(pts)):
+                p0, p1 = pts[i], pts[(i + 1) % len(pts)]
+                f0, f1 = (p0[0] + p0[1] + 1 - t) * keep, (p1[0] + p1[1] + 1 - t) * keep
+                if f0 >= 0:
+                    res.append(p0)
+                if (f0 >= 0) != (f1 >= 0):
+                    w = f0 / (f0 - f1)
+                    res.append((p0[0] + w * (p1[0] - p0[0]), p0[1] + w * (p1[1] - p0[1])))
+            pts = res
+        return pts
+    for k in range(n + 1):
+        t0, t1 = k / n, ((k + 1) / n if k < n else 2.0)
+        z = min(1.0, (k + 1) / n)
+        pts = band(t0, t1)
+        if len(pts) >= 3:
+            m.poly(tread if k < n else ('floor_plate2', False, 0), [(x, y, z) for x, y in pts],
+                   [((x - y + 1) / 2, (x + y + 1 - t0) * n) for x, y in pts])
+        if k < n:
+            edge = [q for q in band(t0 - 1e-6, t0 + 1e-6)]
+            if len(edge) >= 2:
+                (xa, ya), (xb, yb) = min(edge, key=lambda q: q[0] - q[1]), max(edge, key=lambda q: q[0] - q[1])
+                if abs(xa - xb) + abs(ya - yb) > 1e-6:
+                    m.quad(riser, (xa, ya, z - 1 / n), (xb, yb, z - 1 / n), (xb, yb, z), (xa, ya, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
 
 
 # Decal pieces, origin at their centre, laid by the script (AS_KitDecal) from each level's decal_spots.
@@ -660,6 +687,12 @@ def shaft_pieces():
             m.quad((tex, True, UNLIT, ADD), (foot * math.cos(t0), foot * math.sin(t0), 0.03), (foot * math.cos(t1), foot * math.sin(t1), 0.03),
                    (top * math.cos(t1), top * math.sin(t1), z), (top * math.cos(t0), top * math.sin(t0), z), [(0, 1), (1, 1), (1, 0), (0, 0)])
     return out
+
+
+def pit_lamps(floor, room):
+    """The lights down in the pit beyond an outdoor deck (tools/pitart.py lamps): (x, y, kind, flicker)."""
+    from tools import pitart
+    return pitart.lamps(deck_rows(floor, room))
 
 
 def corridor_lamps(floor, room):
@@ -928,7 +961,9 @@ def decal_spots(floor, room, solid, seed=7):
                 edge = any(not (0 <= x + dx < W and 0 <= y + dy < H) or not floor[y + dy, x + dx] for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0)))
                 if rng.random() < (0.4 if edge else 0.1):
                     spots.append(('KDSnow%d' % rng.choice([1, 2]), x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
-    return spots + paint_spots()
+    # The pit beyond an outdoor deck's railing: towers, trusses, pipes and lamps down in the haze.
+    from tools import pitart
+    return spots + paint_spots() + pitart.spots(deck_rows(floor, room))
 
 
 def deck_rows(floor, room):

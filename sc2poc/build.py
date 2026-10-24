@@ -187,14 +187,15 @@ def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
     out = ['void AS_LevelRows%d () {' % n,
            '    as_ox=%d;as_oy=%d;as_oxF=%d.0;as_oyF=%d.0;as_lw=%d;as_lh=%d;' % (ox, oy, ox, oy, L.W, L.H),
            '    AS_HeightsClear(%.6f);' % base]
-    for y, x0, x1, z, slope in heights.runs(hts['cellz'] + dz, hts['slope']):
+    # Slope cells: the stairs' and the drop's edge ring (no plating there, and no haze tiles over the edge).
+    for y, x0, x1, z, slope in heights.runs(hts['cellz'] + dz, hts['slope'] | hts['edge']):
         if z != base or slope:
             out.append('    AS_HeightRun(%d,%d,%d,%.6f,%s);' % (y, x0, x1, z, 'true' if slope else 'false'))
     for x, y, piece, turn, z, rise in hts['stairs']:
         out.append('    AS_HeightStair(%d,%d,"%s",%.1f,%.6f,%.6f);' % (x, y, piece, turn, z + dz, rise))
     for y, row in enumerate(pad(L.galaxy_tables(solid), MW, MH, '1')):
         out.append('    AS_WallRow(%d,"%s");' % (y, row))
-    for y, row in enumerate(pad(L.deck_rows(floor, room), MW, MH, '#')):
+    for y, row in enumerate(pad(hts['rows'], MW, MH, '#')):
         out.append('    AS_DeckRow(%d,"%s");' % (y, row))
     out += ['}', 'void AS_KitProps%d () {' % n]
     for model, x, y, rot, scale, rad in L.PROPS:
@@ -216,7 +217,7 @@ def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
     for i, (x, y) in enumerate(spots):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))
     out.append('    as_tourCount=%d;as_tourAt= -1;' % len(spots))
-    for x, y, kind, flick in L.LIGHTS + L.corridor_lamps(floor, room):
+    for x, y, kind, flick in L.LIGHTS + L.corridor_lamps(floor, room) + L.pit_lamps(floor, room):
         out.append('    AS_Lamp(%.2f,%.2f,"%s",%d);' % (at(x, y) + (kind, flick)))
     for i, (x, y) in enumerate(L.VENTS):
         out.append('    as_vent[%d]=Point(%.2f,%.2f);' % ((i,) + at(x, y)))
@@ -543,9 +544,12 @@ def compose(qa, demo=False, auto=False, start=-1):
     sizes, hts = [], []
     for name, *_ in LEVELS:
         L.use(name)
-        sizes.append((L.W, L.H))
         floor, room = L.carve()
-        hts.append(heights.level_heights(vars(L), L.deck_rows(floor, room), L.FLOOR))
+        rows = L.deck_rows(floor, room)
+        # A level whose drop runs off its east edge carries it on a few cells (heights.extend): its tables are that wide.
+        h = heights.extend(rows, heights.level_heights(vars(L), rows, L.FLOOR), L.FLOOR)
+        sizes.append((h['cellz'].shape[1], h['cellz'].shape[0]))
+        hts.append(h)
         floors.add(L.FLOOR)
     assert len(floors) == 1, 'levels with different base heights: %s' % floors
     # The cell tables are as big as the biggest level; the map holds every level, packed.
