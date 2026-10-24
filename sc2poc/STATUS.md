@@ -394,7 +394,7 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 
 **The laser sight (`tools/fx.py`, `AS_Attachments`):** a hot thin core in a soft red halo, from the muzzle down to the deck under the cursor, stopped by a wall or the first alien in line, with a glowing dot where it lands. It and the marine turn by unit facing over a step instead of an actor rotation each step, so the engine draws the turn smoothly; the laser stays on the barrel. Pink motes light up along it, as dust does in AS's laser.
 
-**Zoom:** SC2's field of view is the vertical one (measured on an old screenshot), so the camera is now AS's own lens: pitch 60, 60 degrees tall, 5.1 cells out (412 units at AS's scale). The lean and the Z presets (5.1 / 7.5 / 10.5) are rescaled; the lift ride is framed at 11.5 on the marine so the whole platform shows.
+**Zoom:** SC2's field of view is the vertical one (measured on `dist/screens/overhaul-docking-bay.jpg`, taken at distance 18 and FOV 48: 41.7 px a cell at the screen's centre, where a vertical 48 predicts 42.2 and a horizontal one 67.6), so the camera is now AS's own lens: pitch 60, 60 degrees tall, 5.1 cells out (412 units at AS's scale). The lean and the Z presets (5.1 / 7.5 / 10.5) are rescaled; the lift ride is framed at 11.5 on the marine so the whole platform shows. Check: our 0.88-tall marine now fills 7.5% of the screen's height, AS's 72-unit marine at 412 units 7.6%.
 
 **AI marines:** they only engage aliens on some player's screen (`AS_OnScreen`, the camera's footprint on the deck), or within 3.5 cells of themselves. The autopilot logs how often a bot held fire (`offscreen=`).
 

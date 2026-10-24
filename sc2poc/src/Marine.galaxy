@@ -19,11 +19,12 @@ const fixed AS_MARINE_R = 0.33;
 const fixed AS_RUN = 3.0;
 const fixed AS_TOP_PITCH = 60.0;
 // Alien Swarm's own camera, not an approximation of it: pitch 60, 412 units out, and Source's FOV 75, which is
-// horizontal on a 4:3 screen, so about 60 degrees tall (SC2's field of view is the vertical one: measured on
-// 2026-10-23's screenshots, marines spawned 1.2 apart sat 39 px apart at distance 18 on an 833 px frame).
+// horizontal on a 4:3 screen, so about 60 degrees tall. SC2's field of view is the vertical one: measured on
+// dist/screens/overhaul-docking-bay.jpg (distance 18, FOV 48, a 694 px tall frame) the deck at the screen's
+// centre is 41.7 px a cell (two marines 1.2 apart, 50 px); a vertical 48 predicts 42.2, a horizontal one 67.6.
 // At AS's scale here (its marine stands 72 units, ours 0.88; Landing Bay was traced at 80 units a cell)
-// 412 units is 5.1 cells. Same angle, same lens, same distance: the same picture, walls leaning out at the
-// edges as AS's do.
+// 412 units is 5.1 cells, and a marine fills 7.5% of the screen's height (AS's: 7.6%). Same angle, same lens,
+// same distance: the same picture, walls leaning out at the edges as AS's do.
 const fixed AS_TOP_FOV = 60.0;
 const fixed AS_TOP_DIST = 5.1;
 const fixed AS_TOP_DIST_MID = 7.5;     // Z steps out to these and back
