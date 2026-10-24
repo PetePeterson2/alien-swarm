@@ -388,7 +388,7 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 - Reloading shows: the gun dips and turns in toward the body as the clip goes in, upper body only so the legs keep running, stretched to the reload's length.
 - No laser on a chainsaw or a carried case; a small red flare glows at the emitter where the beam leaves the gun.
 - The laser ends where it should: on a bulkhead at gun height, on an alien at its body, and only under a player's cursor does it come down to the deck; the end height eases, so the beam's slope never snaps.
-- Weapons lying on the deck (dropped by a fallen marine, or waiting in a supply room) are the gun itself, the same parts the marines hold (`tools/marine.py gun_only`), not SC2's plasma-gun pickup.
+- Weapons lying on the deck (dropped by a fallen marine, or waiting in a supply room) are the gun itself, the same parts the marines hold (`tools/marine.py gun_only`), not SC2's plasma-gun pickup, with a faint glow under them so they read on a dark deck, as AS highlights pickups.
 - Animations: stand, run forward, back-pedal and side-steps picked from the run's angle to the aim (the legs go where the marine moves, the gun stays on the aim), the rifle-butt swing, and a death where the body goes over and stays (`AS_MarineCorpse`) instead of SC2's marine death.
 - Second model pass: layered angular pauldrons instead of round pads, a power pack with cooling fins and a status lamp, a crested helmet with ear vents.
 - The models carry SC2 attachment points (Ref_Center for the name tags, Ref_Weapon at the muzzle, and the rest).
@@ -442,6 +442,7 @@ They only engage aliens on some player's screen (`AS_OnScreen`, the camera's foo
 | 24 | overhead girders | 108.8 s | 280.3 s | 4 |
 | 25 | smoke after blasts | 107.6 s | 279.6 s | 4 |
 | 26 | laser emitter flare | 110.6 s | 280.3 s | 5 |
+| 27 | a soft glow under guns on the deck | 111.3 s | 283.1 s | 5 |
 
 A QA build started straight into Landing Bay with a human player 1 left idle at the dock (`build.py --start 0`) ran 340 s with no script errors: the human-only paths (the laser to the cursor's deck point, the on-screen test from a real camera) held, the AI squad held off the story director's wanderers (109 kills, no deaths) and held fire 1,104 times on aliens no one could see yet.
 

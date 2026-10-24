@@ -1187,6 +1187,7 @@ void AS_GearPulse (int p) {
 // ---- weapons dropped on the deck, and pickups -------------------------------------------
 const int AS_DROPS = 32;
 unit[32] as_drop;
+unit[32] as_dropGlow;           // the soft glow that marks a gun lying on the deck, as AS highlights pickups
 int[32] as_dropItem;
 int[32] as_dropMag;
 int[32] as_dropReserve;
@@ -1197,6 +1198,7 @@ void AS_DropAt (int it, fixed x, fixed y, int mag, int reserve, int alt) {
     int i=as_dropNext;string model="ASPickup";
     as_dropNext=(as_dropNext+1)%AS_DROPS;
     if(as_drop[i]!=null) {UnitRemove(as_drop[i]);}
+    if(as_dropGlow[i]!=null) {UnitRemove(as_dropGlow[i]);as_dropGlow[i]=null;}
     if(AS_Solid(x,y)) {x=IntToFixed(FixedToInt(x))+0.5;y=IntToFixed(FixedToInt(y))+0.5;}
     if(it==AS_IT_MEDKIT) {model="ASMedkit";}
     UnitCreate(1,model,c_unitCreateIgnorePlacement,0,Point(x,y),RandomFixed(0.0,360.0));
@@ -1207,6 +1209,9 @@ void AS_DropAt (int it, fixed x, fixed y, int mag, int reserve, int alt) {
         ActorSend(libNtve_gf_MainActorofUnit(as_drop[i]),"ModelSwap ASGun"+as_gunName[AS_GunIndex(it)]);
         ActorSend(libNtve_gf_MainActorofUnit(as_drop[i]),"SetScale 1.4");
         UnitSetHeight(as_drop[i],0.0,0.0);
+        UnitCreate(1,"ASFxSmoke",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);as_dropGlow[i]=UnitLastCreated();
+        UnitSetHeight(as_dropGlow[i],0.04,0.0);UnitSetScale(as_dropGlow[i],110.0,110.0,12.0);
+        ActorSend(libNtve_gf_MainActorofUnit(as_dropGlow[i]),"SetTintColor 70,90,110");
     }
 }
 void AS_DropWeapon (int p, int k, fixed x, fixed y) {
@@ -1245,6 +1250,7 @@ void AS_PickUp (int p, int i) {
     if(!AS_CanCarry(p,it)) {AS_Message(p,"<c val=\"FF6050\">"+AS_ClassOnly(it)+"</c>");return;}
     mag=as_dropMag[i];res=as_dropReserve[i];alt=as_dropAlt[i];
     UnitRemove(as_drop[i]);as_drop[i]=null;
+    if(as_dropGlow[i]!=null) {UnitRemove(as_dropGlow[i]);as_dropGlow[i]=null;}
     // An empty weapon slot takes it; with both full it replaces the one in hand.
     if(AS_IsExtra(it)) {k=2;}
     else if(as_inv[p][as_hand[p]]<=0) {k=as_hand[p];}
@@ -1307,7 +1313,7 @@ void AS_WeaponsClear () {
     for(i=0;i<AS_MINES;i+=1) {if(as_mine[i]!=null) {UnitRemove(as_mine[i]);as_mine[i]=null;}if(as_mineBeam[i]!=null) {UnitRemove(as_mineBeam[i]);as_mineBeam[i]=null;}}
     for(i=0;i<AS_FIRES;i+=1) {if(as_fire[i]!=null) {UnitRemove(as_fire[i]);as_fire[i]=null;}}
     for(i=0;i<AS_ROCKETS;i+=1) {if(as_rk[i]!=null) {UnitRemove(as_rk[i]);as_rk[i]=null;}}
-    for(i=0;i<AS_DROPS;i+=1) {if(as_drop[i]!=null) {UnitRemove(as_drop[i]);as_drop[i]=null;}}
+    for(i=0;i<AS_DROPS;i+=1) {if(as_drop[i]!=null) {UnitRemove(as_drop[i]);as_drop[i]=null;}if(as_dropGlow[i]!=null) {UnitRemove(as_dropGlow[i]);as_dropGlow[i]=null;}}
     for(p=1;p<=AS_PLAYERS;p+=1) {as_salvoLeft[p]=0;}
     as_slowMo=0.0;
 }
