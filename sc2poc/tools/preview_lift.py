@@ -18,7 +18,7 @@ from tools import level as L, elevator as E
 L.use('cargo')
 W, H = 960, 600                           # 16:10, the shape of the test screen
 PITCH, FOV = 60.0, 60.0                   # src/Marine.galaxy AS_TOP_PITCH, AS_TOP_FOV
-DIST = float(sys.argv[1]) if len(sys.argv) > 1 else 10.0   # src/Mission.galaxy AS_RIDE_FRAME
+DIST = float(sys.argv[1]) if len(sys.argv) > 1 else 11.5   # src/Mission.galaxy AS_RIDE_FRAME
 
 
 def camera(tx, ty):
@@ -67,7 +67,7 @@ def frame(s, tx=86.0, ty=95.0, gates=0.0):
     tex = {k: (d.convert('RGB')) for k, (d, e) in E.textures().items()}
     emis = {k: e.convert('RGB') for k, (d, e) in E.textures().items() if e is not None}
     for k, e in emis.items():
-        tex[k] = Image.fromarray(np.clip(np.asarray(tex[k], float) * 0.55 + np.asarray(e, float) * 0.9, 0, 255).astype(np.uint8))
+        tex[k] = Image.fromarray(np.clip(np.asarray(tex[k], float) * 0.55 + np.asarray(e.resize(tex[k].size), float) * 0.9, 0, 255).astype(np.uint8))
     proj = camera(tx, ty)
     canvas = Image.new('RGB', (W, H), (8, 9, 11))
     quads = []          # (depth, corners, texture, uv, shade)
@@ -126,9 +126,9 @@ def frame(s, tx=86.0, ty=95.0, gates=0.0):
 
 
 def main():
-    # The ride's camera centres 2 north of the marine (src/Mission.galaxy AS_RIDE_BIAS); a marine mid-deck, then left.
+    # The ride's camera centres on the marine (src/Mission.galaxy AS_RIDE_BIAS 0); a marine mid-deck, then left.
     x0, y0, x1, y1 = L.LIFT
-    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2 + 2.0
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2 + 0.0
     shots = [frame(0.0, cx, cy), frame(14.0, cx, cy), frame(52.0, cx - 4.0, cy + 1.0), frame(108.0, cx, cy)]
     sheet = Image.new('RGB', (W * 2, H * 2))
     for i, im in enumerate(shots):

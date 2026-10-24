@@ -95,7 +95,8 @@ LIGHTS = [
     (33.0, 48.0, 'white', 2), (38.0, 53.0, 'white', 1),
     (22.0, 63.0, 'white', 2), (31.0, 63.0, 'white', 0),
     (14.0, 63.0, 'white', 0), (14.0, 72.0, 'orange', 2),
-    (21.0, 74.0, 'cold', 0), (28.0, 70.0, 'white', 1), (28.0, 75.0, 'red', 3),
+    # The pump room glows sodium orange, as the orange-lit machinery bay of AS's inner perimeter does.
+    (21.0, 74.0, 'orangebig', 0), (28.0, 70.0, 'orange', 1), (28.0, 75.0, 'red', 3),
     (28.0, 80.0, 'white', 0), (28.0, 88.0, 'white', 2), (28.0, 91.0, 'yellow', 0),
     (12.0, 82.0, 'cold', 0), (17.5, 91.0, 'cold', 1), (17.5, 101.0, 'white', 0), (12.0, 95.0, 'red', 3), (21.0, 82.0, 'white', 2),
     (15.0, 107.0, 'white', 1), (16.5, 112.5, 'white', 0), (7.0, 113.0, 'green', 0),

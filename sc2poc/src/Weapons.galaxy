@@ -373,6 +373,8 @@ void AS_Shoot (int p, int w) {
         return;
     }
     if(w==AS_IT_TESLA) {AS_Tesla(p,gx,gy,aim,dmg);return;}
+    // A spent casing flicked out of the ejection port to the right, falling to the deck (bullet guns only).
+    if(w!=AS_IT_RAILGUN && w!=AS_IT_SNIPER && (w!=AS_IT_MINIGUN || as_shotsFired[p]%3==0)) {AS_Casing(p,aim);}
     AS_FxUnit("ASFxFlash",gx+Cos(aim)*0.06,gy+Sin(aim)*0.06,as_muzZ,RandomFixed(0.0,360.0),0.55+0.15*IntToFixed(as_it[w].pellets/3),0.55+0.15*IntToFixed(as_it[w].pellets/3),as_it[w].tint,2);
     // Special weapons marines' rounds may pierce one more alien (20% a Piercing point).
     if(AS_Class(p)==AS_CL_SW && RandomFixed(0.0,1.0)<0.2*IntToFixed(AS_Skill(p,AS_SK_PIERCING))) {pierce+=1;}
@@ -400,6 +402,13 @@ void AS_Shoot (int p, int w) {
         AS_ShotFF(p,gx,gy,ang,as_it[w].range,dmg);
     }
     if(w==AS_IT_SHOTGUN || w==AS_IT_VINDICATOR) {CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.03,3.0,40.0,0.12);}
+}
+void AS_Casing (int p, fixed aim) {
+    point here=UnitGetPosition(as_m[p]);fixed side=aim-90.0+RandomFixed(-25.0,25.0);fixed d=RandomFixed(0.35,0.6);unit u;
+    fixed x=PointGetX(here)+Cos(aim)*0.25+Cos(side)*d;fixed y=PointGetY(here)+Sin(aim)*0.25+Sin(side)*d;
+    if(AS_Solid(x,y)) {return;}
+    u=AS_FxUnit("ASFxBurst",x,y,0.6,0.0,0.05,0.05,"230,170,60",7);
+    if(u!=null) {UnitSetHeight(u,0.03,0.3);}
 }
 // Tesla cannon: latches onto the alien in front within 240 units and arcs to two more beside it (2 cells),
 // every quarter second: the target takes twice the tick, each hop less; everything it touches is stunned.

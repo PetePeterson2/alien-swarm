@@ -53,6 +53,9 @@ BLOCKS = [
     (104, 36, 108, 38), (114, 36, 118, 38),                      # transit station: platform barriers
 ]
 
+# AS's cargo-lift level opens on a grating walkway with the under-deck glowing orange through it (ce-01):
+# one runs from the dropship's ramp down the bay to the corridor.
+GRATES = [(16, 4, 22, 24)]
 VIEWPORTS = []                 # decorative windows (tools/level.py); the gallery's WINDOWS are its own
 SPAWN = (18.0, 9.0)
 SPAWN_FACING = 90.0
@@ -76,7 +79,8 @@ def shaft_columns():
 
 # Lamps (x, y, kind, flicker): 0 steady, 1 failing, 2 sputtering, 3 alarm pulse.
 LIGHTS = [
-    (10.0, 8.0, 'yellow', 0), (22.0, 8.0, 'white', 2), (10.0, 20.0, 'cold', 0), (22.0, 20.0, 'yellow', 0), (16.0, 14.0, 'whitebig', 0),
+    (19.0, 11.0, 'orange', 0), (19.0, 19.0, 'orange', 0),     # the under-deck's glow up through the walkway
+    (10.0, 8.0, 'yellow', 0), (22.0, 8.0, 'white', 2), (10.0, 20.0, 'cold', 0), (22.0, 20.0, 'yellow', 0), (13.0, 14.0, 'cold', 0),
     (18.5, 28.0, 'white', 1), (18.5, 36.0, 'red', 3),
     (18.5, 43.0, 'cold', 0), (18.5, 49.0, 'white', 2), (18.5, 55.0, 'cold', 1), (18.5, 60.0, 'red', 3),
     (9.0, 47.0, 'white', 0), (12.0, 54.0, 'green', 0),

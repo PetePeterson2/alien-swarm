@@ -85,19 +85,32 @@ def tex_barrel_top(seed=44):
 
 
 def tex_column(seed=45):
-    """A wall strut: dark steel channel with rivets, a lit edge and a hazard-striped foot (row 0 the top)."""
+    """A wall girder after Alien Swarm's landing bay: a yellow-painted steel web punched with a row of round
+    lightening holes, dark flanges either side, paint chipped to bare metal at the edges and the foot
+    (row 0 the top). The face is the middle 80% of the width, the flanges the outer tenths."""
     w, h = 128, 640
-    a = np.array((96, 102, 108), float)[None, None] * (0.85 + 0.25 * _noise(0, 20, seed, 3, (h, w))[..., None])
-    a[:, :10] *= 1.35; a[:, -10:] *= 0.55
-    a[:, 54:74] *= 0.75
-    for y in range(30, h - 80, 46):
-        for x in (24, w - 28):
-            a[y:y + 6, x:x + 6] = (150, 152, 154)
-    yy, xx = np.mgrid[0:70, 0:w]
-    stripe = ((xx + yy) // 14) % 2 == 0
-    a[h - 80:h - 10] = np.where(stripe[..., None], np.array((206, 160, 34), float), np.array((28, 26, 24), float))
-    a[h - 10:] *= 0.35
+    r = np.random.default_rng(seed)
+    a = np.array((214, 168, 40), float)[None, None] * (0.86 + 0.2 * _noise(0, 20, seed, 3, (h, w))[..., None])
+    yy, xx = np.mgrid[0:h, 0:w]
+    # Holes: a dark void with a lit lower rim and a shadowed upper one, every 92 px.
+    for cy in range(70, h - 90, 92):
+        d = np.hypot(xx - w / 2, yy - cy)
+        hole = d < 26
+        a[hole] = (18, 18, 20)
+        rim = (d >= 26) & (d < 31)
+        a[rim & (yy > cy)] *= 1.25; a[rim & (yy <= cy)] *= 0.55
+    # Flanges: dark steel edges standing proud of the web.
+    a[:, :13] = a[:, :13] * 0.35 + 30; a[:, -13:] = a[:, -13:] * 0.3 + 24
+    a[:, 13:16] *= 1.3; a[:, -16:-13] *= 0.6
+    # Chipped paint: bare grey metal where the noise says, more at the foot.
+    chip = (_noise(0, 9, seed + 2, 3, (h, w)) + np.linspace(0, 0.25, h)[:, None]) > 0.82
+    a[chip] = a[chip] * 0.3 + np.array((92, 94, 96)) * 0.7
+    # Grime run down from each hole and a dark foot.
+    for cy in range(70, h - 90, 92):
+        a[cy + 30:cy + 90, int(w / 2) - 18:int(w / 2) + 18] *= np.linspace(0.75, 1.0, 60)[:, None, None]
+    a[h - 40:] *= np.linspace(1.0, 0.45, 40)[:, None, None]
     a[:18] *= 0.5
+    a *= (1 + 0.04 * r.standard_normal((h, w)))[..., None]
     return _img(a)
 
 
@@ -231,7 +244,7 @@ def tex_pipe(seed=53, col=(196, 156, 40)):
 
 TEXTURES = {
     'prop_pipe_yellow': lambda: (tex_pipe(), None),
-    'prop_pipe_grey': lambda: (tex_pipe(54, (130, 136, 140)), None),
+    'prop_pipe_grey': lambda: (tex_pipe(54, (176, 40, 30)), None),          # AS's red pipe runs
     'prop_reactor': tex_reactor,
     'prop_reactor_top': tex_reactor_top,
     'prop_locker': lambda: (tex_locker(), None),

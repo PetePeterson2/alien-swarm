@@ -286,8 +286,8 @@ const fixed AS_RIDE_LEN = 108.0;     // a multiple of AS_PANEL: the exit lintel 
 const fixed AS_WAVE_STRETCH = 1.35;  // the wave times were set for a 75 s ride
 // The ride's framing: AS's camera shows the whole platform (70% of the screen's width) with the shaft
 // walls round it and the north wall above. This platform is twice AS's, so the camera stands twice as far.
-const fixed AS_RIDE_FRAME = 10.0;      // 13 at the old FOV 48: the same picture at FOV 60
-const fixed AS_RIDE_BIAS = 2.0;
+const fixed AS_RIDE_FRAME = 11.5;      // AS shows the whole platform and the shaft walls round it: at FOV 60, from the marine
+const fixed AS_RIDE_BIAS = 0.0;
 unit[16][5] as_pan;
 unit[16][5] as_panSpare;             // the door slots' plain panel, used once the lintel has gone by
 fixed[16][5] as_panH;
@@ -460,7 +460,7 @@ void AS_LiftDust () {
     int k;unit u;fixed cx=(as_liftX0+as_liftX1)*0.5;fixed cy=(as_liftY0+as_liftY1)*0.5;fixed s;
     for(k=0;k<10;k+=1) {
         s=RandomFixed(1.6,3.2);
-        u=AS_FxUnit("ASFxBurst",cx+RandomFixed(-6.5,6.5),cy+RandomFixed(-6.5,6.5),RandomFixed(0.3,2.5),0.0,s,s,"70,60,46",24);
+        u=AS_FxUnit("ASFxSmoke",cx+RandomFixed(-6.5,6.5),cy+RandomFixed(-6.5,6.5),RandomFixed(0.3,2.5),0.0,s,s,"70,60,46",24);
         if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 1.5");}
     }
 }
@@ -471,7 +471,7 @@ void AS_LiftSteam () {
         x=as_colX[c]+AS_ColAlongX(c)*off+Cos(as_colFace[c])*(0.3+0.45*IntToFixed(k));
         y=as_colY[c]+AS_ColAlongY(c)*off+Sin(as_colFace[c])*(0.3+0.45*IntToFixed(k));
         s=0.5+0.3*IntToFixed(k);
-        u=AS_FxUnit("ASFxBurst",x,y,z+0.1*IntToFixed(k),0.0,s,s,"84,86,86",10+3*k);
+        u=AS_FxUnit("ASFxSmoke",x,y,z+0.1*IntToFixed(k),0.0,s,s,"84,86,86",10+3*k);
         if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 "+FixedToString(0.6+0.2*IntToFixed(k),2));}
     }
 }
@@ -501,7 +501,7 @@ void AS_SlomoEnd () {
 // The shaft's brown haze (AS's landingbay_lift_fog_volume) drifting over the deck while it runs.
 void AS_LiftHaze () {
     unit u;fixed s=RandomFixed(5.0,8.0);
-    u=AS_FxUnit("ASFxBurst",RandomFixed(as_liftX0,as_liftX1),RandomFixed(as_liftY0,as_liftY1+2.0),RandomFixed(1.5,3.5),0.0,s,s,"26,21,16",40);
+    u=AS_FxUnit("ASFxSmoke",RandomFixed(as_liftX0,as_liftX1),RandomFixed(as_liftY0,as_liftY1+2.0),RandomFixed(1.5,3.5),0.0,s,s,"26,21,16",40);
     if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 0");ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 1 0.8");}
 }
 

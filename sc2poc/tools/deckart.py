@@ -265,20 +265,21 @@ def floor_grille(seed=5, tone=(140, 142, 142)):
     return _img(_finish(_dirt(a, seed + 4, 0.2), 1160, seams=U))
 
 
-def floor_grate(seed=6, glow=(230, 110, 30), tone=(112, 96, 84)):
+def floor_grate(seed=6, glow=(230, 110, 30), tone=(66, 60, 56)):
     """metalgrate011a over a lit void: rusty bars with the hot orange glow of the deck below between them."""
     base = np.array(tone, float)
     n = _noise(0, 40, seed, 4, (S, S))
     a = base[None, None] * (0.8 + 0.4 * n[..., None])
     yy, xx = np.mgrid[0:S, 0:S]
-    gap = (yy % 16) >= 10
+    gap = (yy % 16) >= 6                  # thin dark bars, wide gaps glowing from below
     cross = (xx % 128) < 10
     frame = (xx < 8) | (xx >= S - 8) | (yy < 8) | (yy >= S - 8)
-    hot = np.array(glow, float)[None, None] * (0.35 + 0.9 * _noise(0, 120, seed + 9, 3, (S, S))[..., None])
+    # The under-deck's light in patches: brightest under the lamps down there, dim between.
+    hot = np.array(glow, float)[None, None] * (0.12 + 0.62 * _noise(0, 120, seed + 9, 3, (S, S))[..., None] ** 2)
     open_ = gap & ~cross & ~frame
-    a[open_] = hot[open_] * 0.55
+    a[open_] = hot[open_] * 0.3
     # Bars round off: lit on top, shadowed toward the gaps.
-    t = (yy % 16) / 10.0
+    t = (yy % 16) / 6.0
     shade = np.where(gap, 1.0, 0.75 + 0.5 * np.sin(np.clip(t, 0, 1) * math.pi))
     a *= np.where(open_[..., None], 1.0, shade[..., None])
     a[cross & ~frame] *= 0.8
@@ -292,7 +293,7 @@ def floor_hatch(seed=7):
     """metalfloor: one big access hatch over two units, dark with pale tread pads, handles and yellow corner marks."""
     a = np.array((70, 72, 74), float)[None, None] * (0.85 + 0.25 * _noise(0, 40, seed, 4, (S, S))[..., None])
     yy, xx = np.mgrid[0:S, 0:S]
-    rim = 18
+    rim = 46
     inner = (xx > rim) & (xx < S - rim) & (yy > rim) & (yy < S - rim)
     corner = np.hypot(np.maximum(0, np.abs(xx - S / 2) - (S / 2 - rim - 30)), np.maximum(0, np.abs(yy - S / 2) - (S / 2 - rim - 30))) < 30
     a[~(inner & corner)] = np.array((118, 116, 110)) * (0.9 + 0.2 * _noise(0, 20, seed + 3, 2, (S, S))[~(inner & corner)][..., None])
@@ -304,12 +305,16 @@ def floor_hatch(seed=7):
             a[y0 + 26:y0 + 28, x0:x0 + 110] *= 0.5
     a[:, S // 2 - 3:S // 2 + 3] *= 0.4
     a[S // 2 - 3:S // 2 + 3] *= 0.6
-    for hx, hy in ((S // 2, 40), (S // 2, S - 40)):
+    # A worn band of yellow-and-black chevrons round the hatch, as AS's floor hatches have.
+    band = ~((xx > rim - 4) & (xx < S - rim + 4) & (yy > rim - 4) & (yy < S - rim + 4)) & (xx > 6) & (xx < S - 6) & (yy > 6) & (yy < S - 6)
+    stripe = ((xx + yy) // 22) % 2 == 0
+    paint = np.where(stripe[..., None], np.array((214, 168, 34), float), np.array((30, 28, 26), float))
+    worn = (_noise(0, 10, seed + 7, 3, (S, S)) > 0.7)[..., None]
+    a = np.where(band[..., None] & ~worn, paint * (0.85 + 0.25 * _noise(0, 30, seed + 8, 2, (S, S))[..., None]), a)
+    for hx, hy in ((S // 2, 70), (S // 2, S - 70)):
         a[hy - 10:hy + 10, hx - 50:hx + 50] = (60, 60, 62)
         a[hy - 5:hy + 5, hx - 40:hx + 40] = (28, 28, 30)
-    for cx, cy in ((44, 44), (S - 44, 44), (44, S - 44), (S - 44, S - 44)):
-        a[cy - 9:cy + 9, cx - 3:cx + 3] = (210, 160, 30); a[cy - 3:cy + 3, cx - 9:cx + 9] = (210, 160, 30)
-    a = _bolts(a, [(x, y) for x in (30, S - 30) for y in (110, S // 2, S - 110)], (150, 150, 145), 5)
+    a = _bolts(a, [(x, y) for x in (62, S - 62) for y in (110, S // 2, S - 110)], (150, 150, 145), 5)
     return _img(_finish(_dirt(_scratches(a, seed + 5, 30, 1.2), seed + 4, 0.2), 1208, seams=U))
 
 
@@ -435,6 +440,74 @@ def run_light(w=128, h=32, tint=(150, 225, 255)):
     g = np.clip(1 - d, 0, 1) ** 2.2 + np.clip(1 - d / 0.45, 0, 1) * 0.6
     g = np.clip(g, 0, 1)
     return _img(np.dstack([g * tint[0], g * tint[1], g * tint[2]]))
+
+
+def decal_blood(seed, size=256):
+    """A colonist's blood on the deck, multiplied over it: a dark red pool with a ragged rim, smears dragged out of
+    it and droplets flung round, as AS's landing bay is marked where the crew fell."""
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:size, 0:size].astype(float)
+    cover = np.zeros((size, size))
+    for _ in range(4):
+        cx, cy = r.uniform(size * 0.38, size * 0.62, 2); rad = r.uniform(18, 42)
+        cover = np.maximum(cover, np.clip(1.3 - np.hypot(xx - cx, yy - cy) / rad, 0, 1))
+    ang = r.uniform(0, math.tau)
+    for k in range(3):
+        a = ang + r.normal(0, 0.35); ln = r.uniform(50, 100); w = r.uniform(5, 10)
+        u = (xx - size / 2) * math.cos(a) + (yy - size / 2) * math.sin(a); v = -(xx - size / 2) * math.sin(a) + (yy - size / 2) * math.cos(a)
+        cover = np.maximum(cover, np.clip(1 - np.abs(v) / w, 0, 1) * np.clip(1 - u / ln, 0, 1) * (u > 0) * 0.8)
+    for _ in range(40):
+        a = r.uniform(0, math.tau); d = r.uniform(40, 115); rad = r.uniform(1.5, 5)
+        cx, cy = size / 2 + math.cos(a) * d, size / 2 + math.sin(a) * d
+        cover = np.maximum(cover, np.clip(1.4 - np.hypot(xx - cx, yy - cy) / rad, 0, 1))
+    ragged = _noise(0, 10, seed, 3, (size, size))
+    soft = cover * (0.7 + 0.6 * ragged)
+    cover = np.clip((soft - 0.32) * 7, 0, 1)                 # dried blood has a hard edge
+    dark = np.clip((soft - 0.75) * 3, 0, 1)                   # and pools darker where it is deep
+    tint = np.array((0.42, 0.06, 0.05))
+    rgb = 255 * (1 - cover[..., None] * (1 - tint[None, None]) * 0.8 - dark[..., None] * 0.12)
+    return _img(rgb)
+
+
+def decal_cookie(kind, seed, size=256):
+    """Hard shadows a lamp throws in AS's rooms, multiplied over the deck: long bands from the girders and
+    beams overhead (kind 'beams'), or the dappled grid of a grating above (kind 'grate'). Soft only at the far
+    ends, where the pool of light gives out."""
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:size, 0:size].astype(float)
+    sh = np.zeros((size, size))
+    if kind == 'beams':
+        for _ in range(3):
+            x0 = r.uniform(30, size - 30); w = r.uniform(10, 26); skew = r.uniform(-0.25, 0.25)
+            sh = np.maximum(sh, np.clip(1 - np.abs(xx - x0 - (yy - size / 2) * skew) / w, 0, 1) ** 0.3)
+        y0 = r.uniform(60, size - 60)
+        sh = np.maximum(sh, np.clip(1 - np.abs(yy - y0) / 9, 0, 1) ** 0.3 * 0.8)
+    else:
+        cell = r.uniform(26, 34)
+        gx = np.abs(((xx + yy * 0.2) % cell) - cell / 2) / (cell / 2); gy = np.abs(((yy - xx * 0.2) % cell) - cell / 2) / (cell / 2)
+        sh = np.clip(np.maximum(gx, gy) * 1.6 - 0.9, 0, 1)
+    fade = np.clip(1 - np.hypot(xx - size / 2, yy - size / 2) / (size * 0.5), 0, 1) ** 0.8
+    blur = Image.fromarray((np.clip(sh * fade, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5))
+    d = np.asarray(blur).astype(float) / 255 * 0.55
+    return _img(255 * (1 - d[..., None] * np.array((1.0, 0.98, 0.94))[None, None]))
+
+
+def decal_snow(seed, size=256):
+    """Snow blown across the outdoor deck, added over it (black leaves it alone): soft drifts with ragged edges
+    and loose flakes, cold white, as AS's night dock is dusted."""
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:size, 0:size].astype(float)
+    # Powder: drifts where coarse noise runs high, a fine grain inside them, thinning to nothing at the edges.
+    coarse = _noise(0, 70, seed, 4, (size, size)); fine = _noise(0, 9, seed + 1, 3, (size, size))
+    cover = np.clip((coarse - 0.48) * 4.0, 0, 1) * (0.55 + 0.45 * fine)
+    edge = np.clip(1 - np.hypot(xx - size / 2, yy - size / 2) / (size * 0.5), 0, 1) ** 0.6
+    cover *= edge
+    flakes = np.zeros((size, size))
+    for _ in range(140):
+        x, y = r.integers(4, size - 4, 2)
+        flakes[y:y + 2, x:x + 2] = r.uniform(0.3, 0.8) * edge[y, x]
+    g = np.clip(cover * 0.85 + flakes, 0, 1)
+    return _img(np.dstack([g * 92, g * 100, g * 114]))
 
 
 def decal_shadow(w=64, h=64):
@@ -630,7 +703,15 @@ MUL_DECALS = {
     'decal_cable2': lambda: decal_cable(52),
     'shaft_warm': lambda: light_shaft(),
     'run_light': run_light,
+    'decal_cookie1': lambda: decal_cookie('beams', 81),
+    'decal_cookie2': lambda: decal_cookie('beams', 82),
+    'decal_cookie3': lambda: decal_cookie('grate', 83),
+    'decal_blood1': lambda: decal_blood(71),
+    'decal_blood2': lambda: decal_blood(72),
+    'decal_snow1': lambda: decal_snow(61),
+    'decal_snow2': lambda: decal_snow(62),
     'shaft_cold': lambda: light_shaft(tint=(200, 226, 255)),
+    'shaft_orange': lambda: light_shaft(tint=(255, 160, 70)),
 }
 
 

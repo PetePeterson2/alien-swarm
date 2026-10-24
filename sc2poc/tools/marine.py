@@ -51,7 +51,7 @@ B = {name: i for i, (name, _, _) in enumerate(BONES)}
 
 # Palette: 16 columns of 32 pixels, one material each.
 SLOTS = {
-    'armor': (214, 216, 212), 'armor2': (176, 180, 178), 'suit': (52, 56, 62), 'joint': (34, 36, 40),
+    'armor': (186, 188, 182), 'armor2': (148, 152, 148), 'suit': (52, 56, 62), 'joint': (34, 36, 40),
     'trim': (224, 182, 52), 'visor': (255, 120, 60), 'pack': (118, 122, 104), 'gun': (46, 48, 52),
     'gun2': (92, 96, 100), 'gunlite': (255, 40, 30), 'glove': (40, 40, 42), 'lamp': (240, 250, 255),
     'tank': (150, 60, 40), 'health': (90, 255, 140), 'tesla': (120, 200, 255), 'saw': (200, 196, 180),
@@ -181,8 +181,8 @@ def body(m, grip, fore, twohanded=True):
     m.box((0.104, -0.05, 0.665), (0.010, 0.045, 0.02), 'joint', 'Torso')
     # Shoulder pads: big rounded plates with a coloured edge.
     for side in (1, -1):
-        m.ellipsoid((-0.005, side * 0.165, 0.715), (0.085, 0.075, 0.055), 'armor', 'Torso', roll=side * 18)
-        m.ellipsoid((-0.005, side * 0.17, 0.69), (0.088, 0.078, 0.022), 'trim', 'Torso', roll=side * 18)
+        m.ellipsoid((-0.005, side * 0.165, 0.71), (0.088, 0.072, 0.04), 'armor', 'Torso', roll=side * 22, sides=14, rings=6)
+        m.ellipsoid((-0.005, side * 0.172, 0.695), (0.09, 0.074, 0.016), 'trim', 'Torso', roll=side * 22, sides=14, rings=4)
     # The backpack: power pack, twin tanks and the antenna.
     m.box((-0.15, 0.0, 0.64), (0.11, 0.21, 0.20), 'pack', 'Torso')
     m.box((-0.21, 0.0, 0.66), (0.025, 0.15, 0.13), 'joint', 'Torso')
@@ -197,7 +197,9 @@ def body(m, grip, fore, twohanded=True):
     m.ellipsoid((0.0, 0.0, 0.84), (0.075, 0.065, 0.05), 'armor2', 'Head')
     m.box((0.06, 0.0, 0.775), (0.05, 0.10, 0.05), 'joint', 'Head', pitch=10)
     for side in (1, -1):
-        m.box((0.083, side * 0.03, 0.81), (0.012, 0.04, 0.016), 'visor', 'Head', yaw=side * 14)
+        m.box((0.083, side * 0.03, 0.81), (0.014, 0.05, 0.02), 'visor', 'Head', yaw=side * 14)
+        # Two lamps on the crown, the lights AS's helmets show from above.
+        m.ellipsoid((0.04, side * 0.035, 0.875), (0.014, 0.012, 0.009), 'visor', 'Head', sides=6, rings=4)
     # Arms reaching to the gun: upper arm, elbow, forearm and armoured glove.
     shoulder_r, shoulder_l = np.array((0.0, -0.155, 0.665)), np.array((0.0, 0.155, 0.665))
     elbow_r = np.array((0.02, -0.19, 0.53)) if twohanded else np.array((0.04, -0.20, 0.54))
@@ -422,6 +424,24 @@ def pose(name, t):
             knee = 12 + 46 * max(0.0, math.sin(p + 1.3)) # the shin folds back as the foot comes through
             put(thigh, (0, 0, 0), (Y, -swing))
             put(shin, (0, 0, 0), (Y, knee))
+    elif name == 'Work':
+        # Backing off while aiming ahead: the run's stride played backwards.
+        return pose('Walk', 1.0 - t)
+    elif name in ('Spell', 'Cover'):
+        # Side-steps (Spell to the marine's left, Cover to its right): the legs reach sideways in turn,
+        # the hips sway over the planted foot, the torso keeps the gun on its line.
+        side = 1 if name == 'Spell' else -1
+        put('Pelvis', (0, side * 0.012 * math.sin(ph), -0.01 + 0.012 * abs(math.cos(ph))))
+        put('Torso', (0, 0, 0), (Y, 4))
+        put('Head', (0, 0, 0), (Y, -3))
+        put('Antenna', (0, 0, 0), (X, -side * 6 * math.sin(ph)))
+        # Step and close: the leading leg reaches out (lifting as it goes), the other follows it in; never crossing.
+        spread = 0.5 - 0.5 * math.cos(ph)
+        lead, trail = (('ThighL', 'ShinL'), ('ThighR', 'ShinR')) if side > 0 else (('ThighR', 'ShinR'), ('ThighL', 'ShinL'))
+        put(lead[0], (0, 0, 0), (X, side * 19 * spread), (Y, -6))
+        put(lead[1], (0, 0, 0), (Y, 10 + 34 * max(0.0, math.sin(ph))))
+        put(trail[0], (0, 0, 0), (X, -side * 5 * spread), (Y, -6))
+        put(trail[1], (0, 0, 0), (Y, 10 + 30 * max(0.0, -math.sin(ph))))
     elif name == 'Attack':
         # A rifle-butt swing: the torso winds back, then drives across.
         twist = _knots(t, [(0, 0), (0.25, 30), (0.5, -38), (0.8, -10), (1, 0)])
@@ -431,6 +451,17 @@ def pose(name, t):
         put('Head', (0, 0, 0), (Z, -twist * 0.5))
         put('ThighL', (0, 0, 0), (Y, -18)); put('ShinL', (0, 0, 0), (Y, 22))
         put('ThighR', (0, 0, 0), (Y, 10)); put('ShinR', (0, 0, 0), (Y, 8))
+    elif name == 'Death':
+        # Shot down: the knees buckle, the marine goes over backwards and lands on its pack, legs out in front,
+        # the gun still in its hands; a last twitch, then still.
+        f = _knots(t, [(0, 0), (0.15, 0.12), (0.55, 1.0), (0.62, 0.95), (0.7, 1.0), (1, 1)])
+        tw = math.sin(t * 50) * max(0.0, 1 - abs(t - 0.8) / 0.08) * 3
+        put('Pelvis', (-0.12 * f, 0, -0.36 * f), (Y, -82 * f))
+        put('Torso', (0, 0, 0), (Y, -8 * f + tw), (Z, 78 * f))     # turned onto its side, so the gun lies along the deck
+        put('Head', (0, 0, 0), (Y, 20 * f), (Z, 25 * f))
+        put('Antenna', (0, 0, 0), (Y, 30 * f))
+        put('ThighL', (0, 0, 0), (Y, -30 * f), (X, 8 * f)); put('ShinL', (0, 0, 0), (Y, 40 * f))
+        put('ThighR', (0, 0, 0), (Y, -12 * f), (X, -10 * f)); put('ShinR', (0, 0, 0), (Y, 14 * f + tw))
     elif name == 'Fire':
         # Recoil: a short kick back through the shoulders.
         k = _knots(t, [(0, 0), (0.15, 1), (1, 0)])
@@ -439,7 +470,10 @@ def pose(name, t):
 
 
 WALK_SPEED = 2.6
-SEQUENCES = [('Stand', 3000, 0.0, False), ('Walk', 560, WALK_SPEED, False), ('Attack', 600, 0.0, True), ('Fire', 160, 0.0, True)]
+# Walk runs forward; Work backs off, Spell and Cover side-step left and right (stock animation names, so the
+# client's lookup finds them: src/Marine.galaxy AS_Walk picks one from the run's angle to the aim).
+SEQUENCES = [('Stand', 3000, 0.0, False), ('Walk', 560, WALK_SPEED, False), ('Work', 600, 0.0, False), ('Spell', 600, 0.0, False),
+             ('Cover', 600, 0.0, False), ('Attack', 600, 0.0, True), ('Fire', 160, 0.0, True), ('Death', 1300, 0.0, True)]
 ANIMATED = {'location': {B['Pelvis'], B['Torso']}, 'rotation': set(range(1, len(BONES)))}
 
 
@@ -688,7 +722,7 @@ def render(model, diffuse, emissive, seq='Stand', t=0.0, yaw=-35.0, pitch=22.0, 
 def preview(out=ROOT / 'dist/marine-preview.png'):
     import m3
     diffuse, emissive = textures()
-    tints = [(0.62, 0.78, 1.0), (1.0, 0.62, 0.58), (0.66, 1.0, 0.7), (1.0, 0.9, 0.5)]
+    tints = [(0.62, 0.72, 0.84), (0.86, 0.6, 0.52), (0.62, 0.74, 0.54), (0.86, 0.78, 0.56)]   # src/Marine.galaxy AS_SuitTint
     W, H = 300, 300
     names = [n for n, _, _ in GUNS]
     cols = 5

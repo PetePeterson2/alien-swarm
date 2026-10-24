@@ -373,3 +373,45 @@ Checked in a fresh client (autopilot, no script errors):
 - The AI squad was lost again, all three in Cargo Elevator.
 
 Not seen on screen yet: the drop and railings.
+
+## Visual pass: held guns, AS's lens, the colony's look (2026-10-23)
+
+Three asks: make the map look like Alien Swarm's, give the marines real guns that aim with a smooth AS laser sight, and match AS's zoom with AI marines that don't shoot what the player can't see yet. Nobody looked at the client's screen this pass either: looks were judged with a new CPU render of the kit as it is laid out (`py tools/preview_scene.py <level> x,y,aim ...`), and every build was played through by the autopilot.
+
+**The marines (`tools/marine.py`):**
+- An original armoured trooper replaces SC2's stock marine, which carried its own rifle across its chest whatever the weapon. Pale armour, shoulder pads, a backpack with antenna, a helmet with glowing eye slits and crown lamps; about 0.88 tall, 7% of the screen like AS's.
+- Suits are muted as AS's are (its Tech's steel blue, Heavy's brown-red, Sarge's camo green, Jaeger's khaki, read from its textures for reference).
+- One model per weapon family (15: rifle, prototype rifle, autogun, shotgun, vindicator, dual pistols, minigun, flamer, sniper, railgun, tesla, heal gun, chainsaw, grenade launcher, and a carried case for deployables). The gun is held at the hip in both hands along the aim. The script swaps the model when the gun in hand changes (`ModelSwap`, `AS_GunShow`) and tints each squad member's suit their HUD colour.
+- Every round, tracer, flame gob, grenade, tesla arc and heal beam now leaves the muzzle of the gun in hand (`AS_Muzzle`; the muzzle table is written from the models by build.py). Dual pistols alternate hands. Spent casings flick out to the right.
+- Animations: stand, run forward, back-pedal and side-steps picked from the run's angle to the aim (the legs go where the marine moves, the gun stays on the aim), the rifle-butt swing, and a death where the body goes over and stays (`AS_MarineCorpse`) instead of SC2's marine death.
+- The models carry SC2 attachment points (Ref_Center for the name tags, Ref_Weapon at the muzzle, and the rest).
+- `dist/marine-preview.png`, `dist/marine-ingame.png`.
+
+**The laser sight (`tools/fx.py`, `AS_Attachments`):** a hot thin core in a soft red halo, from the muzzle down to the deck under the cursor, stopped by a wall or the first alien in line, with a glowing dot where it lands. It and the marine turn by unit facing over a step instead of an actor rotation each step, so the engine draws the turn smoothly; the laser stays on the barrel. Pink motes light up along it, as dust does in AS's laser.
+
+**Zoom:** SC2's field of view is the vertical one (measured on an old screenshot), so the camera is now AS's own lens: pitch 60, 60 degrees tall, 5.1 cells out (412 units at AS's scale). The lean and the Z presets (5.1 / 7.5 / 10.5) are rescaled; the lift ride is framed at 11.5 on the marine so the whole platform shows.
+
+**AI marines:** they only engage aliens on some player's screen (`AS_OnScreen`, the camera's footprint on the deck), or within 3.5 cells of themselves. The autopilot logs how often a bot held fire (`offscreen=`).
+
+**The map:**
+- Floors after AS's landing bay (its VPK textures were read for reference only): pale concrete slabs and bright galvanised grating mixed through the halls, concrete and diamond plate in the bays, and every floor given a photographic finish (grain, specks, oil stains, grime in the seams). Small floor pieces now mix the second plating too.
+- Walls weathered with grime runs; the wall struts are AS's yellow perforated girders; the pipe runs are yellow and red.
+- Hull tops are near-black, as everything outside AS's playable space is; blocks standing in rooms are machinery seen from above (plating, vents, a red pipe, a hazard rim).
+- Solid crates and barrels along the walls of the big rooms, kept clear of doorways and of every point the mission uses (pathing still 0 leaks). Hatches ringed with hazard chevrons; blood pools where the crew fell; powdery snow on the outdoor deck.
+- Dust motes drifting on screen, steam off the glowing grates and out of the wall pipe runs (a soft smoke sprite, not the ringed burst), one wall lamp in five failing or sputtering, light shafts under the steady lamps in their colour, and painted hard shadows (girder bands, grating cookies) under about half the room lamps.
+- The pump room glows sodium orange. Cargo Elevator opens on a dark bay with a grating walkway lit orange from below, as AS's does.
+- `dist/screens/visual-pass-compare.png` sets AS's captures beside renders of the same places.
+
+**Autopilot runs (Normal, Crash, no script errors after the first):**
+
+| Run | What was new | Landing Bay | Cargo Elevator | AI deaths |
+|---|---|---|---|---|
+| 1 | marines, laser, lens, on-screen AI | 97.8 s | 290.6 s | 6; name tags errored (no Ref_Center) |
+| 2 | attachment points, 2.5-cell self-defence | complete | complete | 3, all in Cargo Elevator |
+| 3 | floor mix | 112.1 s | 277.8 s | 4 |
+| 4 | solid clutter, snow, girders, leg gaits | 111.1 s | 271.6 s | 6 (three at once in the flight-control hold) |
+| 5 | 3.5-cell self-defence, casings, caps, blood | 109.8 s | 271.6 s | 4 |
+| 6 | machinery tops, marine corpses | 111.1 s | 285.3 s | 3 |
+| 7 | grating walkway, muted suits, flickering wall lamps, pipe steam, shadow bands | 109.1 s | 275.1 s | 4 |
+
+Not seen on screen: all of it. In particular check by hand (`.\launch.ps1 -QA`): that the marine models and the laser turn smoothly and together, the suit tints, the gun swaps, the corpses, the new lens, and how the snow, girders, machinery tops and grating walkway look under SC2's lights.

@@ -150,6 +150,10 @@ def build():
     n = np.asarray(Image.fromarray((n * 255).astype(np.uint8)).resize((size, size), Image.Resampling.BICUBIC)).astype(np.float32) / 255
     g = np.clip(1 - r / (0.6 + 0.35 * n), 0, 1) ** 1.3
     save('flame.dds', np.dstack([255 * g, (90 + 120 * g) * g, 30 * g ** 3]))
+    # Smoke and steam: a soft ragged ball, no ring (the burst's ring read as a halo on every puff).
+    n2 = np.asarray(Image.fromarray((np.random.default_rng(13).random((12, 12)) * 255).astype(np.uint8)).resize((size, size), Image.Resampling.BICUBIC)).astype(np.float32) / 255
+    g = np.clip(1 - r / (0.5 + 0.35 * n2), 0, 1) ** 1.8 * (0.65 + 0.35 * n)
+    save('smoke.dds', np.dstack([255 * g, 255 * g, 255 * g]))
     # Ground ring for blasts.
     ring = np.clip(1 - np.abs(r - 0.9) / 0.08, 0, 1) + np.clip(1 - r, 0, 1) ** 2 * 0.25
     save('ring.dds', np.dstack([255 * ring, 255 * ring, 255 * ring]))
@@ -198,6 +202,7 @@ def build():
     t = []; sprite(t); models['Flash'] = (t, 'flash.dds')
     t = []; sprite(t); models['Burst'] = (t, 'burst.dds')
     t = []; sprite(t); models['Flame'] = (t, 'flame.dds')
+    t = []; sprite(t); models['Smoke'] = (t, 'smoke.dds')
     t = []; quad(t, (-1, 1, .04), (1, 1, .04), (1, -1, .04), (-1, -1, .04)); models['Ring'] = (t, 'ring.dds')
     for k in (1, 2):
         t = []; quad(t, (-1, 1, .03), (1, 1, .03), (1, -1, .03), (-1, -1, .03)); models['Splat%d' % k] = (t, 'splat%d.dds' % k, MULTIPLY)

@@ -219,6 +219,8 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
                 place(scene, tex, pieces['KK1'], x, y)
             elif c == 'o':
                 place(scene, tex, pieces['KO1_%d%d' % (x % 4, y % 4)], x, y)
+            elif c == 'm':
+                place(scene, tex, pieces['KM1_%d%d' % (x % 4, y % 4)], x, y)
     # Walls in two-unit bays (AS_KitBay, AS_FacePanel, AS_KitPanel).
     panels = {L.KIT_KINDS.index(k): ''.join(map(str, v)) for k, v in L.KIT_PANELS.items()}
 
@@ -265,7 +267,7 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
         elif model == 'DOM_Crate':
             spots.append(('KPCrateG' if int(px + py) % 3 else 'KPCrateM', px, py, rot))
     for piece, px, py, rot in spots:
-        if piece in pieces and x0 - 2 <= px <= x1 + 2 and y0 - 2 <= py <= y1 + 2:
+        if piece in pieces and x0 - 3 <= px <= x1 + 3 and y0 - 3 <= py <= y1 + 3:
             place(scene, tex, pieces[piece], px, py, rot)
     # Railings where the deck meets the open night.
     for y in range(y0, y1):
@@ -277,7 +279,7 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
                     place(scene, tex, pieces['KRail'], mx, my, s * 90.0)
 
 
-def draw_marine(scene, x, y, aim, gun='Rifle', tint=(0.59, 0.75, 1.0), seq='Stand', t=0.0):
+def draw_marine(scene, x, y, aim, gun='Rifle', tint=(0.62, 0.72, 0.84), seq='Stand', t=0.0):
     import m3
     from tools import marine as M
     from tools.alien import _posed

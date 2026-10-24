@@ -68,7 +68,7 @@ ONESHOTS = [
     ('ASDieBoomer', 'BanelingDeath', SIZE['boomer'], 5), ('ASDieBuzzer', 'MutaliskDeath', SIZE['buzzer'], 6),
     ('ASDieRanger', 'HydraliskDeath', SIZE['ranger'], 6), ('ASDieMortar', 'RavagerDeath', SIZE['mortar'], 6),
     ('ASDieHarvester', 'SwarmHostMPDeath', SIZE['harvester'], 7), ('ASDieEgg', 'EggsplosionGeneric', 0.8, 4),
-    ('ASDieBiomass', 'DestructibleZergInfestation3x3Death', 0.45, 5), ('ASDieMarine', 'MarineDeath', 1.0, 8),
+    ('ASDieBiomass', 'DestructibleZergInfestation3x3Death', 0.45, 5), 
     ('ASDieSentry', 'SentryGunDeath', 0.85, 5),
     ('ASFxBlood', 'BloodTargetImpact', 0.9, 2.5), ('ASFxSpark', 'MarineAttackImpact', 0.9, 2),
     ('ASFxAcid', 'HydraliskAttackImpact', 1.0, 2.5), ('ASFxBileHit', 'RavagerCorrosiveBileImpact', 0.7, 4),
@@ -90,7 +90,7 @@ ONESHOTS = [
     ('ASAcidShieldbug', 'UltraliskDeathAcid', SIZE['shieldbug'], 8), ('ASAcidHarvester', 'SwarmHostMPDeathAcid', SIZE['harvester'], 7),
     ('ASBloodGeyser', 'LurkerAttackDeathBloodGeyser', 0.5, 4),
 ]
-FX_UNITS = ['Tracer', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch', 'Anchor']
+FX_UNITS = ['Tracer', 'Arc', 'Flash', 'Burst', 'Flame', 'Smoke', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch', 'Anchor']
 
 
 def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units=()):
@@ -147,6 +147,14 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         m = child(cat['Model'], 'CModel', id='ASFx' + name + 'Model', parent='Doodad')
         child(m, 'Model', value='Derelict\\Fx\\' + name + '.m3')
         unit('ASFx' + name, 'ASFx' + name + 'Model', 1.0, 0, mobile=True, turn=7200)
+    # A fallen marine: its own model (the script swaps in the gun it held and tints the suit), played through
+    # Death and left lying on its last frame, as AS's dead marines stay where they fell.
+    a = child(cat['Actor'], 'CActorModel', id='ASDieMarine')
+    child(a, 'Model', value='ASMarineRifle')
+    child(a, 'On', Terms='ActorCreation', Send='AnimPlay Death Death PlayForever')
+    child(a, 'On', Terms='ActorCreation', Send='TimerSet 90 ASExpire')
+    child(a, 'On', Terms='TimerExpired; TimerName ASExpire', Send='Destroy')
+    child(a, 'FogVisibility', value='Visible')
     # The ripper's own animated mesh; its corpse is the same model held on the last frame of Death.
     m = child(cat['Model'], 'CModel', id='ASRipperModel', parent='Unit')
     child(m, 'Model', value='Derelict\\Ripper.m3')

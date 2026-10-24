@@ -137,9 +137,10 @@ int AS_BotFoe (int p) {
         if(d>=bd) {continue;}
         q=UnitGetPosition(as_a[i]);
         // Only what a player can see: nothing off the edge of every player's screen yet (AS's AI marines
-        // fight what the squad is looking at; ours used to drop aliens the player never saw coming). One at
-        // the bot's own elbow is fought wherever the bot is: a marine trailing below the screen's edge defends itself.
-        if(!AS_BotFull(p) && d>2.5 && !AS_OnScreen(q,0.35)) {as_botOffscreen+=1;continue;}
+        // fight what the squad is looking at; ours used to drop aliens the player never saw coming). One within
+        // 3.5 cells of the bot is fought wherever the bot is: a marine below the screen's edge, or at a door the camera
+        // is not on, meets a rush, but nothing is picked off before the player can see it.
+        if(!AS_BotFull(p) && d>3.5 && !AS_OnScreen(q,0.35)) {as_botOffscreen+=1;continue;}
         if(!AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(q),PointGetY(q))) {continue;}
         bd=d;best=i;
     }

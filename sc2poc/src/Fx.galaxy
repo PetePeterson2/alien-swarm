@@ -127,6 +127,15 @@ void AS_Lamp (fixed x, fixed y, string kind, int flicker) {
     as_lampNext[as_lampCount]=RandomFixed(0.5,4.0);
     as_lampCount+=1;
 }
+// A light made elsewhere (a wall bay's lamp box) joins the lamps, to fail or sputter as the room lamps do.
+// False when the table is full: the caller keeps it.
+bool AS_LampAdopt (unit u, int flicker) {
+    if(as_lampCount>=AS_LAMPS) {return false;}
+    as_lamp[as_lampCount]=u;as_lampFlicker[as_lampCount]=flicker;as_lampOn[as_lampCount]=true;
+    as_lampNext[as_lampCount]=as_now+RandomFixed(0.5,6.0);
+    as_lampCount+=1;
+    return true;
+}
 void AS_LampSet (int i, bool on) {
     if(as_lampOn[i]==on) {return;}
     as_lampOn[i]=on;libNtve_gf_ShowHideUnit(as_lamp[i],on);
@@ -310,10 +319,10 @@ void AS_SnowClear () {
 // Alien Swarm's rooms are never still: dust hangs in the air and catches the light, the red laser sight lights
 // up the motes it passes through, and steam curls off the grates over the lit under-deck. Each human player's
 // screen gets its share, from a pool of its own.
-const int AS_MOTES = 72;
-unit[72] as_mote;
-fixed[72] as_moteFade;            // when it starts to fade out (0 already fading)
-fixed[72] as_moteGone;            // when it is removed
+const int AS_MOTES = 96;
+unit[96] as_mote;
+fixed[96] as_moteFade;            // when it starts to fade out (0 already fading)
+fixed[96] as_moteGone;            // when it is removed
 int as_moteNext;
 fixed as_steamVentNext;
 unit AS_Mote (fixed x, fixed y, fixed z, fixed scale, string tint, fixed rise, fixed life) {
@@ -321,7 +330,7 @@ unit AS_Mote (fixed x, fixed y, fixed z, fixed scale, string tint, fixed rise, f
     as_moteNext=(as_moteNext+1)%AS_MOTES;
     if(AS_Solid(x,y)) {return null;}
     u=as_mote[i];
-    if(u==null) {UnitCreate(1,"ASFxBurst",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);u=UnitLastCreated();as_mote[i]=u;}
+    if(u==null) {UnitCreate(1,"ASFxSmoke",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);u=UnitLastCreated();as_mote[i]=u;}
     else {UnitSetPosition(u,Point(x,y),false);}
     a=libNtve_gf_MainActorofUnit(u);
     UnitSetScale(u,scale,scale,scale);
@@ -354,14 +363,27 @@ void AS_AirPulse () {
                     MaxF(0.1,0.56*(1.0-t/MaxF(1.0,d))),RandomFixed(2.5,4.0),"255,70,95",0.05,RandomFixed(0.5,0.9));
         }
     }
-    // Steam off a grate near a player: a few soft grey puffs that rise and spread.
-    if(as_grateCount>0 && as_now>=as_steamVentNext) {
-        as_steamVentNext=as_now+RandomFixed(0.8,1.6);
-        v=RandomInt(0,as_grateCount-1);vx=IntToFixed(as_grateX[v]);vy=IntToFixed(as_grateY[v]);
-        if(AS_HumanSees(Point(vx,vy))) {
-            for(i=0;i<3;i+=1) {
-                s=RandomFixed(40.0,70.0)+IntToFixed(i)*25.0;
-                AS_Mote(vx+RandomFixed(-0.6,0.6),vy+RandomFixed(-0.6,0.6),0.1+0.25*IntToFixed(i),s,"46,48,50",RandomFixed(0.9,1.5),RandomFixed(1.6,2.4));
+    // Steam off a grate, or out of a pipe run high on a wall, near a player: soft grey puffs that spread as they go.
+    if(as_grateCount+as_pipeCount>0 && as_now>=as_steamVentNext) {
+        as_steamVentNext=as_now+RandomFixed(0.7,1.4);
+        v=RandomInt(0,as_grateCount+as_pipeCount-1);
+        if(v<as_grateCount) {
+            vx=IntToFixed(as_grateX[v]);vy=IntToFixed(as_grateY[v]);
+            if(AS_HumanSees(Point(vx,vy))) {
+                for(i=0;i<3;i+=1) {
+                    s=RandomFixed(40.0,70.0)+IntToFixed(i)*25.0;
+                    AS_Mote(vx+RandomFixed(-0.6,0.6),vy+RandomFixed(-0.6,0.6),0.1+0.25*IntToFixed(i),s,"46,48,50",RandomFixed(0.9,1.5),RandomFixed(1.6,2.4));
+                }
+            }
+        }
+        else {
+            // A pipe on a wall facing the deck (rot 0 faces south): the jet blows out from the wall and sags.
+            v-=as_grateCount;vx=as_pipeX[v]+RandomFixed(-0.8,0.8);vy=as_pipeY[v];t=as_pipeRot[v]-90.0;
+            if(AS_HumanSees(Point(vx,vy))) {
+                for(i=0;i<4;i+=1) {
+                    s=RandomFixed(25.0,40.0)+IntToFixed(i)*22.0;
+                    AS_Mote(vx+Cos(t)*(0.25+0.35*IntToFixed(i)),vy+Sin(t)*(0.25+0.35*IntToFixed(i)),2.15-0.12*IntToFixed(i),s,"52,54,56",RandomFixed(0.2,0.5),RandomFixed(1.2,1.9));
+                }
             }
         }
     }

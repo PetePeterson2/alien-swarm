@@ -68,13 +68,13 @@ int AS_GunIndex (int w) {
     if(w==AS_IT_LAUNCHER) {return AS_GUN_LAUNCHER;}
     return AS_GUN_CASE;
 }
-// Each squad member's suit, as Alien Swarm's marines each wear their own colour: the pale armour tinted
-// toward their slot's HUD colour (blue, red, green, yellow).
+// Each squad member's suit, as Alien Swarm's marines each wear their own colour (its Tech steel blue, Heavy
+// brown-red, Sarge camo green, Jaeger khaki): the grey armour tinted toward their slot's HUD colour.
 string AS_SuitTint (int p) {
-    if(p==1) {return "150,190,255";}
-    if(p==2) {return "255,150,135";}
-    if(p==3) {return "150,240,160";}
-    return "255,226,120";
+    if(p==1) {return "158,184,214";}
+    if(p==2) {return "219,153,133";}
+    if(p==3) {return "158,189,138";}
+    return "219,199,143";
 }
 // Show the gun in hand: swap the marine's model when the family changes (the walk restarts on the new one).
 void AS_GunShow (int p) {
@@ -334,13 +334,35 @@ point AS_AimPoint (int p) {
 }
 
 // ---- movement ---------------------------------------------------------
+// The legs step the way the marine moves while the gun stays on the aim, as AS's marines do: a forward run, a
+// back-pedal, or side-steps (tools/marine.py SEQUENCES), chosen from the run's angle to the aim.
+int[5] as_walkDir;
+string AS_WalkAnim (int d) {
+    if(d==1) {return "Work";}
+    if(d==2) {return "Spell";}
+    if(d==3) {return "Cover";}
+    return "Walk";
+}
 void AS_Walk (int p, fixed rate) {
-    actor a=libNtve_gf_MainActorofUnit(as_m[p]);
+    actor a=libNtve_gf_MainActorofUnit(as_m[p]);fixed off;fixed b1;fixed b2;int d=0;
     if(rate<0.25) {
         if(as_walking[p]) {as_walking[p]=false;ActorSend(a,"AnimClear ASWalk");}
         return;
     }
-    if(!as_walking[p]) {as_walking[p]=true;ActorSend(a,"AnimPlay ASWalk Walk PlayForever");as_walkRate[p]=0.0;}
+    off=AS_AngleDiff(ATan2(as_mvY[p],as_mvX[p]),as_aim[p]);
+    // The boundaries (55 and 125 degrees) give ten degrees toward the gait in use, so a run along one does not
+    // flicker between two gaits.
+    b1=55.0;b2=125.0;
+    if(as_walking[p]) {
+        if(as_walkDir[p]==0) {b1=65.0;b2=135.0;}
+        else if(as_walkDir[p]==1) {b1=45.0;b2=115.0;}
+        else {b1=45.0;b2=135.0;}
+    }
+    if(AbsF(off)>b2) {d=1;}
+    else if(off>b1) {d=2;}
+    else if(off< -b1) {d=3;}
+    if(as_walking[p] && d!=as_walkDir[p]) {as_walking[p]=false;}
+    if(!as_walking[p]) {as_walking[p]=true;as_walkDir[p]=d;ActorSend(a,"AnimPlay ASWalk "+AS_WalkAnim(d)+" PlayForever");as_walkRate[p]=0.0;}
     if(AbsF(rate-as_walkRate[p])>0.15) {as_walkRate[p]=rate;ActorSend(a,"AnimSetTimeScale ASWalk "+FixedToString(AS_Clamp(rate/2.2,0.5,1.8),2));}
 }
 // AS's MaxSpeed: 290 + 10 an Agility point, scaled by the difficulty; the gun in hand may weigh it down,
@@ -536,13 +558,26 @@ void AS_CureInfestation (int p, int byP) {
         if(byP>=1 && byP!=p) {AS_AchieveEvent(byP,"infestation_savior");}
     }
 }
+// The body stays where it fell: the marine's own model with the gun it held, in its suit's colour, going over
+// backwards (tools/marine.py Death) and lying there for the rest of the fight.
+void AS_MarineCorpse (int p, fixed x, fixed y) {
+    actor a=libNtve_gf_CreateActorAtPoint("ASDieMarine",Point(x,y));
+    int g=as_gunShown[p];
+    if(g<0) {g=AS_GunIndex(as_slot[p]);}
+    ActorSend(a,libNtve_gf_SetPosition(x,y,as_floorZ));
+    ActorSend(a,"ModelSwap ASMarine"+as_gunName[g]);
+    ActorSend(a,"SetTintColor "+AS_SuitTint(p));
+    ActorSend(a,"AnimPlay Death Death PlayForever");
+    // The model's -Y is its front: SetRotation points it along the aim (MakeModelFaceAngle's vectors).
+    ActorSend(a,libNtve_gf_SetRotation(Cos(as_aim[p]),Sin(as_aim[p]),0.0,0.0,0.0,1.0));
+}
 // The marine falls: its guns drop to the deck with its spare clips; nobody comes back this mission.
 void AS_MarineDie (int p) {
     point here=UnitGetPosition(as_m[p]);int k;int q;
     as_alive[p]=false;as_hp[p]=0.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;as_slowHeal[p]=0.0;as_infestUntil[p]=0.0;
     as_deaths[p]+=1;
     if(as_using[p]>=0) {AS_UseStop(p);}
-    AS_Fx("ASDieMarine",PointGetX(here),PointGetY(here),0.0,as_aim[p]);
+    AS_MarineCorpse(p,PointGetX(here),PointGetY(here));
     AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);
     for(k=0;k<2;k+=1) {
         if(as_inv[p][k]>0) {AS_DropWeapon(p,k,PointGetX(here)+Cos(as_aim[p]+IntToFixed(k)*120.0)*0.5,PointGetY(here)+Sin(as_aim[p]+IntToFixed(k)*120.0)*0.5);}

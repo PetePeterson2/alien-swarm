@@ -237,16 +237,18 @@ def wall_hive(seed=200):
 def tex_trim(seed=12):
     """The lit lip along a wall's top edge: pale brushed metal, darker toward the hull."""
     w, h = 256, 32
-    a = np.array((172, 176, 180), float)[None, None] * (0.9 + 0.15 * _noise(0, 4, seed, 2, (h, w))[..., None])
-    a *= np.linspace(1.15, 0.55, h)[:, None, None]
-    a[:2] *= 1.2
+    # Dim: AS shows nothing past the walls but black, so the wall top is only a faint steel edge going dark.
+    a = np.array((96, 100, 106), float)[None, None] * (0.9 + 0.15 * _noise(0, 4, seed, 2, (h, w))[..., None])
+    a *= np.linspace(1.0, 0.2, h)[:, None, None]
+    a[:2] *= 1.25
     return _img(a)
 
 
 def tex_cap(seed=5, size=512):
     """The top of the hull as the camera sees it: dark blue-grey plating, conduits and vents."""
     n = _noise(size, 50, seed)
-    a = np.array((28, 32, 37), float)[None, None] * (0.8 + 0.4 * n[..., None])
+    # Near black, as everything outside AS's playable space is: only a ghost of plating catches the light.
+    a = np.array((11, 12, 14), float)[None, None] * (0.8 + 0.4 * n[..., None])
     q = size // 4
     for k in range(0, size, q):
         a[k:k + 3] *= 0.45; a[:, k:k + 3] *= 0.45
@@ -260,7 +262,42 @@ def tex_cap(seed=5, size=512):
     for k in range(2):
         y = int(r.integers(20, size - 20))
         yy = np.arange(-9, 9); s = np.sqrt(np.clip(1 - (yy / 9.0) ** 2, 0, 1))
-        a[y - 9:y + 9] = np.array((46, 50, 54))[None, None] * (0.4 + 0.8 * s)[:, None, None]
+        a[y - 9:y + 9] = np.array((20, 22, 24))[None, None] * (0.4 + 0.8 * s)[:, None, None]
+    return _img(a)
+
+
+def tex_machine(seed=31, size=512):
+    """The top of machinery standing in a room (pump housings, tanks, crate stacks), four units square: lit grey
+    plating in panels with vents, pipe runs, bolted hatches and a hazard-striped rim, as AS's rooms show from above."""
+    r = np.random.default_rng(seed)
+    a = np.array((104, 108, 110), float)[None, None] * (0.85 + 0.25 * _noise(size, 40, seed)[..., None])
+    q = size // 4
+    for k in range(0, size, q):
+        a[k:k + 3] *= 0.4; a[:, k:k + 3] *= 0.4
+        a[k + 3:k + 5] *= 1.25; a[:, k + 3:k + 5] *= 1.25
+    for _ in range(5):
+        tx, ty = r.integers(0, 4, 2) * q
+        kind = r.integers(0, 3)
+        if kind == 0:      # a vent grille
+            a[ty + 18:ty + q - 18, tx + 18:tx + q - 18] *= 0.55
+            for y in range(ty + 24, ty + q - 24, 9):
+                a[y:y + 3, tx + 22:tx + q - 22] *= 1.7
+        elif kind == 1:    # a bolted hatch with a yellow rim
+            a[ty + 14:ty + q - 14, tx + 14:tx + q - 14] = np.array((190, 150, 34))
+            a[ty + 22:ty + q - 22, tx + 22:tx + q - 22] = np.array((80, 82, 84)) * (0.9 + 0.2 * r.random())
+        else:              # a dark access well
+            a[ty + 26:ty + q - 26, tx + 26:tx + q - 26] *= 0.25
+    for k in range(3):     # pipe runs across the top
+        y = int(r.integers(24, size - 24))
+        yy = np.arange(-10, 10); sh = np.sqrt(np.clip(1 - (yy / 10.0) ** 2, 0, 1))
+        col = np.array((170, 44, 34) if k == 0 else (150, 152, 150))
+        a[y - 10:y + 10] = col[None, None] * (0.35 + 0.85 * sh)[:, None, None]
+    # The hazard-striped rim where it meets the deck below.
+    yy, xx = np.mgrid[0:size, 0:size]
+    band = (xx < 14) | (xx >= size - 14) | (yy < 14) | (yy >= size - 14)
+    stripe = ((xx + yy) // 16) % 2 == 0
+    a[band] = np.where(stripe[band][:, None], np.array((206, 160, 34)), np.array((30, 28, 26)))
+    a = _weather(a, seed + 3, 30)
     return _img(a)
 
 
@@ -274,6 +311,7 @@ def textures():
     out['wall_hive'] = wall_hive()
     out['wall_trim'] = (tex_trim(), None)
     out['cap'] = (tex_cap(), None)
+    out['machine_top'] = (tex_machine(), None)
     return out
 
 

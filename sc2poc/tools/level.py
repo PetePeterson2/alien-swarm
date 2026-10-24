@@ -202,9 +202,81 @@ def kind_at(room, x, y):
     return AREAS[i][2] if i >= 0 else 'hull'
 
 
+def _mission_points():
+    """Every point the mission uses: spawns, pickups, panels, spawners, vents, the route; clutter keeps clear of them."""
+    g = globals()
+    pts = [g.get('SPAWN')] + list(g.get('CHECKPOINTS') or []) + list(g.get('ROUTE') or []) + list(g.get('VENTS') or [])
+    pts += [(x, y) for _, x, y in g.get('PICKUPS') or []] + [p for p, *_ in g.get('PDAS') or []]
+    pts += [g.get(k) for k in ('COMPUTER', 'CONSOLE', 'SENTRY_SPOT', 'DOOR_PANEL', 'LIFT_PANEL')]
+    pts += [(r[1], r[2]) for r in g.get('SPAWNERS') or []] + [(x, y) for _, x, y in g.get('SLEEPERS') or []]
+    pts += list(g.get('BARRELS') or []) + list(g.get('AMMO') or []) + list(g.get('EGGS') or [])
+    pts += [(r[1], r[2]) for r in PROPS]
+    for d in g.get('DOORS') or []:
+        x0, y0, x1, y1 = d[1]
+        pts += [(x0 + 0.5 * (x1 - x0), y0 + 0.5 * (y1 - y0))]
+        if d[4]:
+            pts.append(d[4])
+    for key in ('DOOR',):
+        if g.get(key):
+            x0, y0, x1, y1 = g[key]; pts.append(((x0 + x1) / 2, (y0 + y1) / 2))
+    out = []
+    for p in pts:
+        if p and isinstance(p, (tuple, list)) and len(p) >= 2 and all(isinstance(v, (int, float)) for v in p[:2]):
+            out.append((float(p[0]), float(p[1])))
+    return out
+
+
+def clutter(floor, room):
+    """Crates and barrels standing against the walls of the big rooms, as Alien Swarm's storage and bays are
+    crowded with them: (piece, x, y, facing, cell). Each is solid (blocked() adds its cell, so marines and aliens
+    go round it); none within two cells of a doorway or of anything the mission uses, none beside another."""
+    import random
+    rng = random.Random(W * 131 + H * 7)
+    keep = _mission_points()
+    taken = set(); out = []
+    for i, (name, (x0, y0, x1, y1), kind) in enumerate(AREAS):
+        if kind not in ('bay', 'cargo', 'reactor', 'mess') or x1 - x0 < 7 or y1 - y0 < 7:
+            continue
+        cells = [(x, y) for y in range(y0, y1) for x in range(x0, x1) if floor[y, x] and room[y, x] == i]
+        cellset = set(cells)
+        # Where this room opens onto another (or onto anything but itself), and the cells near it.
+        opening = [(x, y) for x, y in cells for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0))
+                   if 0 <= x + dx < W and 0 <= y + dy < H and floor[y + dy, x + dx] and room[y + dy, x + dx] != i]
+        for x, y in cells:
+            hull = [not (0 <= x + dx < W and 0 <= y + dy < H) or not floor[y + dy, x + dx] for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0))]
+            if sum(hull) != 1:
+                continue
+            if any(abs(x - ox) <= 2 and abs(y - oy) <= 2 for ox, oy in opening):
+                continue
+            if any(math.hypot(x + 0.5 - px, y + 0.5 - py) < 2.2 for px, py in keep):
+                continue
+            # Never in the space the squad must all reach to finish (the escape lift, the transit platform).
+            ex = globals().get('EXTRACT')
+            if ex and ex[0] - 1 <= x < ex[2] + 1 and ex[1] - 1 <= y < ex[3] + 1:
+                continue
+            if any((x + dx, y + dy) in taken for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+                continue
+            # The three cells inward stay open, so the room never pinches.
+            dx, dy = ((0, 1), (-1, 0), (0, -1), (1, 0))[hull.index(True)]
+            if not all((x + dx * k, y + dy * k) in cellset for k in (1, 2, 3)):
+                continue
+            if rng.random() > 0.34:
+                continue
+            taken.add((x, y))
+            piece = rng.choice(['KPCrateG', 'KPCrateM', 'KPCrateM', 'KPBarrel', 'KPBarrel'])
+            # Pushed a little toward its wall, squared to it with a slight skew.
+            ox, oy = -dx * 0.08, -dy * 0.08
+            out.append((piece, x + 0.5 + ox, y + 0.5 + oy, rng.choice([0.0, 90.0]) + rng.uniform(-9, 9), (x, y)))
+    return out
+
+
 def blocked(floor):
-    """Collision cells: the hull plus every solid prop's footprint."""
+    """Collision cells: the hull plus every solid prop's footprint, and the rooms' wall clutter."""
     solid = ~floor
+    if 'AREAS' in globals():
+        _, room = carve()
+        for *_, (cx, cy) in clutter(floor, room):
+            solid[cy, cx] = True
     for model, x, y, rot, scale, rad in PROPS:
         if rad <= 0:
             continue
@@ -352,6 +424,13 @@ def kit_pieces():
         m = out[name] = ShipModel(name, (0, 0, 0))
         m.quad(('cap', False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
                [(0, 0), (0.5 * size, 0), (0.5 * size, 0.5 * size), (0, 0.5 * size)])
+        # Machinery tops over the blocks standing in rooms, at the wall's height: 4x4-patterned like the ceiling.
+        for ox in range(0, 4, size):
+            for oy in range(0, 4, size):
+                name = 'KM%d_%d%d' % (size, ox, oy)
+                m = out[name] = ShipModel(name, (0, 0, 0))
+                m.quad(('machine_top', False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
+                       [(ox / 4, 1 - oy / 4), ((ox + size) / 4, 1 - oy / 4), ((ox + size) / 4, 1 - (oy + size) / 4), (ox / 4, 1 - (oy + size) / 4)])
         # The drop off an outdoor deck's edge (tools/elevator.py tex_open), laid where a cap would be but down
         # at the deck: 4x4, 2x2 and 1x1 tiles uv'd from world position mod 4, as the ceiling is.
         for ox in range(0, 4, size):
@@ -432,6 +511,11 @@ DECAL_PIECES = {
     'KDGoo': ('decal_goo', 2.2, 2.2, True),
     'KDCable1': ('decal_cable1', 3.0, 3.0, True),
     'KDCable2': ('decal_cable2', 3.0, 3.0, True),
+    'KDCookie1': ('decal_cookie1', 5.0, 5.0, True),
+    'KDCookie2': ('decal_cookie2', 5.0, 5.0, True),
+    'KDCookie3': ('decal_cookie3', 4.4, 4.4, True),
+    'KDBlood1': ('decal_blood1', 1.8, 1.8, True),
+    'KDBlood2': ('decal_blood2', 1.6, 1.6, True),
 }
 
 
@@ -446,6 +530,15 @@ def decal_pieces(out):
         key = (tex, False, UNLIT, MULTIPLY) if mul else (tex, False, NO_SHADOW_CAST)
         a, b = ln / 2, wd / 2
         m.quad(key, (-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    # A two-by-two section of grating over the lit under-deck, laid over the plating (GRATES walkways).
+    m = out['KDGrate'] = ShipModel('KDGrate', (0, 0, 0))
+    m.quad(('floor_grate', False, NO_SHADOW_CAST), (-1, -1, 0.012), (1, -1, 0.012), (1, 1, 0.012), (-1, 1, 0.012),
+           [(0, 1), (1, 1), (1, 0), (0, 0)])
+    # Snow drifts on the outdoor deck, added over it.
+    for k in (1, 2):
+        m = out['KDSnow%d' % k] = ShipModel('KDSnow%d' % k, (0, 0, 0))
+        m.quad(('decal_snow%d' % k, False, UNLIT, ADD), (-1.3, -1.3, 0.022), (1.3, -1.3, 0.022), (1.3, 1.3, 0.022), (-1.3, 1.3, 0.022),
+               [(0, 1), (1, 1), (1, 0), (0, 0)])
 
 
 def paint_names():
@@ -475,12 +568,12 @@ def sign_pieces(slugs):
 
 
 def shaft_pieces():
-    """KVWarm / KVCold: a lamp's light shaft, a ring of eight added quads from a narrow top at the lamp to a wide
+    """KVWarm / KVCold / KVOrange: a lamp's light shaft, a ring of eight added quads from a narrow top at the lamp to a wide
     foot on the deck (the lamps hang 2.1 up, src/Fx.galaxy AS_Lamp)."""
     import math
     from tools.shipkit import ShipModel, UNLIT, ADD
     out = {}
-    for name, tex in (('KVWarm', 'shaft_warm'), ('KVCold', 'shaft_cold')):
+    for name, tex in (('KVWarm', 'shaft_warm'), ('KVCold', 'shaft_cold'), ('KVOrange', 'shaft_orange')):
         m = out[name] = ShipModel(name, (0, 0, 0))
         top, foot, z = 0.25, 1.5, 2.15
         for k in range(8):
@@ -677,6 +770,24 @@ def decal_spots(floor, room, solid, seed=7):
             oy = 0.12 if n[0] else -0.12
             piece = rng.choice(['KPBarrels', 'KPBarrels', 'KPCrateStack', 'KPBarrel', 'KPCrateM'])
             spots.append((piece, x + 0.5 + ox, y + 0.5 + oy, rng.choice([0.0, 90.0, 180.0, 270.0]) + rng.uniform(-12, 12)))
+    # The haze lit under each steady lamp (AS's asw_vol_light), in the lamp's colour.
+    for lx, ly, lk, fl in LIGHTS:
+        if fl != 0 or not kind(int(lx), int(ly)):
+            continue
+        shaft = {'white': 'KVWarm', 'whitebig': 'KVWarm', 'yellow': 'KVWarm', 'yellowbig': 'KVWarm', 'cold': 'KVCold', 'coldbig': 'KVCold',
+                 'orange': 'KVOrange', 'orangebig': 'KVOrange'}.get(lk)
+        if shaft:
+            spots.append((shaft, lx, ly, 0.0))
+    # Hard shadows under the steady lamps of the rooms (AS's girder bands and grating cookies): about half of them.
+    for lx, ly, lk, fl in LIGHTS:
+        k = kind(int(lx), int(ly))
+        if k in ('bay', 'cargo', 'reactor', 'mess', 'lab', 'hall') and fl == 0 and lk not in ('red', 'redbig') and rng.random() < 0.55:
+            spots.append((rng.choice(['KDCookie1', 'KDCookie2', 'KDCookie3']), lx + rng.uniform(-0.6, 0.6), ly + rng.uniform(-0.6, 0.6),
+                          rng.uniform(0, 360)))
+    # Where the crew fell: a few blood pools in the rooms and passages, as AS's landing bay has.
+    for x, y in rng.sample(open_cells, len(open_cells) // 110):
+        if kind(x, y) in ('bay', 'cargo', 'mess', 'lab', 'hall', 'reactor'):
+            spots.append((rng.choice(['KDBlood1', 'KDBlood2']), x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
     # Loose cables across the deck in the working rooms.
     for x, y in rng.sample(open_cells, len(open_cells) // 240):
         if kind(x, y) in ('bay', 'cargo', 'reactor', 'lab', 'mess', 'hall'):
@@ -690,15 +801,41 @@ def decal_spots(floor, room, solid, seed=7):
             continue
         signed.add(room[y, x])
         spots.append(('KDWarn', x + 0.5, y + 0.5, rng.choice([0.0, 90.0, 180.0, 270.0])))
+    spots += [(piece, x, y, rot) for piece, x, y, rot, _ in clutter(floor, room)]
+    # Grating walkways over the lit under-deck (GRATES), as AS's cargo-lift level opens on one.
+    for x0, y0, x1, y1 in globals().get('GRATES') or []:
+        for gy in range(y0, y1, 2):
+            for gx in range(x0, x1, 2):
+                spots.append(('KDGrate', gx + 1.0, gy + 1.0, 0.0))
+    # Snow over the outdoor deck, banked up against its edges, rails and walls.
+    out_rect = globals().get('OUTDOORS')
+    if out_rect:
+        for y in range(out_rect[1], out_rect[3]):
+            for x in range(out_rect[0], out_rect[2]):
+                if not kind(x, y):
+                    continue
+                edge = any(not (0 <= x + dx < W and 0 <= y + dy < H) or not floor[y + dy, x + dx] for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0)))
+                if rng.random() < (0.4 if edge else 0.1):
+                    spots.append(('KDSnow%d' % rng.choice([1, 2]), x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
     return spots + paint_spots()
 
 
 def deck_rows(floor, room):
     """The deck for the kit loader: one string per row, the room kind's digit (KIT_KINDS) on the deck, else
-    '#' hull, 'w' hull showing a window panel (WINDOWS), 'v' the drop round a lift (no wall, no cap),
+    '#' hull, 'm' a block of hull standing in a room (machinery seen from above), 'w' hull showing a window panel
+    (WINDOWS), 'v' the drop round a lift (no wall, no cap),
     'o' the open night beyond an outdoor deck's railing (OUTDOORS; a prop block in it stays hull)."""
     out_rect = globals().get('OUTDOORS')
     blocks = set((x, y) for x0, y0, x1, y1 in BLOCKS for x in range(x0, x1) for y in range(y0, y1))
+
+    def floor_near(x, y):
+        # A block standing inside a room (machinery, a crate stack): deck on at least two sides of it.
+        x0, y0, x1, y1 = next(b for b in BLOCKS if b[0] <= x < b[2] and b[1] <= y < b[3])
+        sides = [x0 - 1 >= 0 and any(floor[yy, x0 - 1] for yy in range(y0, y1)),
+                 x1 < W and any(floor[yy, x1] for yy in range(y0, y1)),
+                 y0 - 1 >= 0 and any(floor[y0 - 1, xx] for xx in range(x0, x1)),
+                 y1 < H and any(floor[y1, xx] for xx in range(x0, x1))]
+        return sum(sides) >= 2
 
     def cell(x, y):
         if floor[y, x]:
@@ -707,6 +844,8 @@ def deck_rows(floor, room):
             return 'v'
         if out_rect and out_rect[0] <= x < out_rect[2] and out_rect[1] <= y < out_rect[3] and (x, y) not in blocks:
             return 'o'
+        if (x, y) in blocks and floor_near(x, y):
+            return 'm'
         return 'w' if (x, y) in WINDOWS or (x, y) in VIEWPORTS else '#'
     return [''.join(cell(x, y) for x in range(W)) for y in range(H)]
 
