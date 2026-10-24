@@ -263,7 +263,8 @@ def tex_open(size=512):
     Deep blue haze in its exterior fog colour (39,53,86), steel lattice towers and girders far below in
     darker and paler blue, and a few lamps down there. Emissive only, tileable over 4x4 cells."""
     n = _noise(size, 48, 501, 4); f = _noise(size, 8, 507, 2)
-    haze = np.array((39, 53, 86), float)[None, None] * (0.42 + 0.38 * n[..., None] + 0.12 * f[..., None])
+    # Mostly black, as AS's drop is: the haze only thickens here and there, and is faint where it does.
+    haze = np.array((39, 53, 86), float)[None, None] * (0.08 + 0.34 * np.clip(n - 0.35, 0, 1)[..., None] + 0.05 * f[..., None])
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
     # Girders far below, nothing lined up with the deck's cells: two long diagonal beams across the tile
     # and one lattice tower (twin legs with zigzag bracing) running its height.
@@ -279,13 +280,13 @@ def tex_open(size=512):
     blur = np.asarray(Image.fromarray((lat * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5))).astype(np.float32) / 255
     # Dark steel against the haze, its upper edge catching a little of the light from above.
     rim = np.clip(blur - np.roll(blur, 3, axis=0), 0, 1)
-    a = haze * (1 - 0.75 * blur[..., None]) + np.array((90, 115, 160))[None, None] * 0.55 * rim[..., None]
+    a = haze * (1 - 0.75 * blur[..., None]) + np.array((90, 115, 160))[None, None] * 0.18 * rim[..., None]
     # Lamps far below: soft points, mostly cold white, a few red beacons.
     rng = np.random.default_rng(509)
-    for k in range(7):
+    for k in range(4):
         cx, cy = rng.integers(0, size, 2); r = np.hypot(((xx - cx + size / 2) % size) - size / 2, ((yy - cy + size / 2) % size) - size / 2)
         col = np.array((255, 70, 50)) if k % 3 == 0 else np.array((170, 200, 255))
-        a += col[None, None] * (np.clip(1 - r / 14, 0, 1) ** 2 * 0.7 + np.clip(1 - r / 3, 0, 1))[..., None]
+        a += col[None, None] * (np.clip(1 - r / 12, 0, 1) ** 2 * 0.35 + np.clip(1 - r / 2.5, 0, 1) * 0.8)[..., None]
     return _img(np.zeros((8, 8, 3))), _img(np.clip(a, 0, 255))
 
 

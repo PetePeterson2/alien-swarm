@@ -492,6 +492,24 @@ def decal_cookie(kind, seed, size=256):
     return _img(255 * (1 - d[..., None] * np.array((1.0, 0.98, 0.94))[None, None]))
 
 
+def decal_fan(size=256, blades=5):
+    """The shadow a big ventilation fan throws on the deck from the lamp above it, multiplied: broad curved
+    blades round a hub inside a ring, soft at the rim of the light. The script turns it (src/Kit.galaxy)."""
+    yy, xx = np.mgrid[0:size, 0:size].astype(float)
+    u = (xx - size / 2) / (size / 2); v = (yy - size / 2) / (size / 2)
+    r = np.hypot(u, v); a = np.arctan2(v, u)
+    phase = (a * blades / (2 * math.pi) + r * 0.35) % 1.0          # swept blades
+    blade = (phase < 0.42) & (r > 0.16) & (r < 0.84)
+    hub = r < 0.17
+    ring = (r > 0.86) & (r < 0.93)
+    strut = (np.abs(u) < 0.025) | (np.abs(v) < 0.025)
+    sh = (blade | hub | ring | (strut & (r < 0.93))).astype(float)
+    sh *= np.clip((1.0 - r) / 0.12, 0, 1) ** 0.5 + (r < 0.88)        # fade only past the ring
+    blur = Image.fromarray((np.clip(sh, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.0))
+    d = np.asarray(blur).astype(float) / 255 * 0.5 * np.clip(1.15 - r, 0, 1)
+    return _img(np.repeat(255 * (1 - d[..., None]), 3, axis=2))
+
+
 def decal_snow(seed, size=256):
     """Snow blown across the outdoor deck, added over it (black leaves it alone): soft drifts with ragged edges
     and loose flakes, cold white, as AS's night dock is dusted."""
@@ -703,6 +721,7 @@ MUL_DECALS = {
     'decal_cable2': lambda: decal_cable(52),
     'shaft_warm': lambda: light_shaft(),
     'run_light': run_light,
+    'decal_fan': decal_fan,
     'decal_cookie1': lambda: decal_cookie('beams', 81),
     'decal_cookie2': lambda: decal_cookie('beams', 82),
     'decal_cookie3': lambda: decal_cookie('grate', 83),

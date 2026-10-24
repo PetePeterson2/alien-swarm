@@ -511,6 +511,7 @@ DECAL_PIECES = {
     'KDGoo': ('decal_goo', 2.2, 2.2, True),
     'KDCable1': ('decal_cable1', 3.0, 3.0, True),
     'KDCable2': ('decal_cable2', 3.0, 3.0, True),
+    'KDFan': ('decal_fan', 3.6, 3.6, True),
     'KDCookie1': ('decal_cookie1', 5.0, 5.0, True),
     'KDCookie2': ('decal_cookie2', 5.0, 5.0, True),
     'KDCookie3': ('decal_cookie3', 4.4, 4.4, True),
@@ -778,6 +779,10 @@ def decal_spots(floor, room, solid, seed=7):
                  'orange': 'KVOrange', 'orangebig': 'KVOrange'}.get(lk)
         if shaft:
             spots.append((shaft, lx, ly, 0.0))
+    # A turning fan's shadow under a steady lamp in a few of the bigger rooms (the script turns it).
+    for lx, ly, lk, fl in LIGHTS:
+        if fl == 0 and kind(int(lx), int(ly)) in ('bay', 'cargo', 'reactor') and lk not in ('red', 'redbig') and rng.random() < 0.3:
+            spots.append(('KDFan', lx, ly, 0.0))
     # Hard shadows under the steady lamps of the rooms (AS's girder bands and grating cookies): about half of them.
     for lx, ly, lk, fl in LIGHTS:
         k = kind(int(lx), int(ly))

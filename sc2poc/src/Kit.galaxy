@@ -31,6 +31,9 @@ int as_kitFloors;
 int[64] as_grateX;
 int[64] as_grateY;
 int as_grateCount;
+// Fan shadows (KDFan) turning on the deck under their lamps.
+actor[16] as_fanA;
+int as_fanCount;
 // Pipe runs high on the walls (KPPipes): steam escapes from some of them now and then.
 fixed[48] as_pipeX;
 fixed[48] as_pipeY;
@@ -253,6 +256,7 @@ void AS_KitFloors (int x0, int y0) {
 // A decal (tools/level.py decal_spots): hazard paint, signs, grime, scorches and goo, turned counter-clockwise.
 void AS_KitDecal (string piece, fixed x, fixed y, fixed rot) {
     actor a=AS_KitPiece(piece,x,y);
+    if(piece=="KDFan" && as_fanCount<16) {as_fanA[as_fanCount]=a;as_fanCount+=1;}
     if(piece=="KPPipes" && as_pipeCount<48 && (as_kitDecals%2)==0) {as_pipeX[as_pipeCount]=x;as_pipeY[as_pipeCount]=y;as_pipeRot[as_pipeCount]=rot;as_pipeCount+=1;}
     AS_KitTurn(a,rot);
     as_kitDecals+=1;
@@ -392,7 +396,7 @@ void AS_KitClear () {
     for(i=0;i<MinI(as_kitActorN,AS_KIT_ACTORS);i+=1) {ActorSend(as_kitActor[i],"Destroy");as_kitActor[i]=null;}
     for(i=0;i<as_kitUnitN;i+=1) {if(as_kitUnit[i]!=null) {UnitRemove(as_kitUnit[i]);}as_kitUnit[i]=null;}
     as_kitActorN=0;as_kitUnitN=0;
-    as_kitWalls=0;as_kitRails=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitFloors=0;as_grateCount=0;as_pipeCount=0;as_kitDecals=0;as_kitWallLamps=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
+    as_kitWalls=0;as_kitRails=0;as_kitTiles=0;as_kitCaps=0;as_kitProps=0;as_kitFloors=0;as_grateCount=0;as_pipeCount=0;as_fanCount=0;as_kitDecals=0;as_kitWallLamps=0;as_kitBlockers=0;as_kitLeaks=0;as_kitShut=0;
     as_kitReport="";as_kitStages="";as_probeReport="";
     AS_ProbeStop();
 }
@@ -507,7 +511,9 @@ void AS_ProbeRun () {
     as_probeLeg=0;as_probeLine[0]="";as_probeLine[1]="";AS_ProbeStart();
 }
 void AS_KitPulse () {
-    point q;string s;point to=AS_ProbeTarget();
+    point q;string s;point to=AS_ProbeTarget();int i;
+    // The fans turn at 40 degrees a second, a little over a sixteenth of a turn a step.
+    for(i=0;i<as_fanCount;i+=1) {AS_KitTurn(as_fanA[i],ModF(as_now*40.0+IntToFixed(i)*37.0,360.0));}
     if(as_qa && as_probeAuto>0.0 && as_now>=as_probeAuto && (as_kitBuilt || !as_kitMode)) {
         // The baked build reads its painted pathing back too, as the baseline for the kit's readback.
         if(!as_kitMode) {AS_KitPathCheck();as_kitStages="read: baked "+AS_KitLS();}
