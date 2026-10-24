@@ -131,7 +131,15 @@ def wall_art(kind, seed):
     _rivets(a, [(x, y) for y in (U1 + 10, M0 - 10, M1 + 10, L1 - 10) for x in range(20, WW, 64)],
             (150, 136, 118) if kind == 'colony' else (172, 174, 174))
     if kind == 'clean':
-        _band(a, M0 + 6, M1 - 4, (196, 178, 120), seed + 5)          # cleanwall1's beige stripe
+        # The lit halls of AS's landing bay: pale panels, each outlined in a worn yellow frame stripe.
+        a[U1:L1] = a[U1:L1] * 0.35 + np.array((200, 202, 200)) * 0.65 * (0.92 + 0.12 * _noise(0, 30, seed + 4, 3, (L1 - U1, WW))[..., None])
+        for x0 in (0, WW // 2):
+            fx0, fx1, fy0, fy1 = x0 + 22, x0 + WW // 2 - 22, U1 + 26, L1 - 26
+            frame = np.zeros((WH, WW), bool)
+            frame[fy0:fy1, fx0:fx0 + 9] = True; frame[fy0:fy1, fx1 - 9:fx1] = True
+            frame[fy0:fy0 + 9, fx0:fx1] = True; frame[fy1 - 9:fy1, fx0:fx1] = True
+            chip = _noise(0, 7, seed + 8 + x0, 3, (WH, WW)) > 0.72
+            a[frame & ~chip] = np.array((214, 170, 36)) * (0.9 + 0.15 * _noise(0, 12, seed + 9, 2, (WH, WW))[frame & ~chip][:, None])
     elif kind == 'colony':
         _band(a, M0 + 4, M1 - 2, (200, 118, 36), seed + 5, 0.4)      # colonywall1's orange band
         _hazard(a, 0, WW, U1 + 24, U1 + 60, seed + 6)
@@ -144,6 +152,15 @@ def wall_art(kind, seed):
             for x in range(40 + k * 30, WW, 170):
                 a[cy - rad - 4:cy + rad + 4, x:x + 12] = (70, 72, 74)
                 a[cy - rad - 4:cy + rad + 4, x + 12:x + 14] *= 0.4
+        # A fat red riser climbing the bay from deck to rail, flanged, as AS's lit halls have (lb-04).
+        cx, rad = WW - 70, 24
+        xx = np.arange(-rad, rad)
+        sh = np.sqrt(np.clip(1 - (xx / rad) ** 2, 0, 1))
+        light = 0.3 + 0.8 * sh * (0.65 + 0.35 * (-xx / rad)) + 0.5 * np.clip(1 - np.abs(xx / rad + 0.45) * 4, 0, 1)
+        a[U1:K, cx - rad:cx + rad] = np.array((176, 40, 30), float)[None, None] * light[None, :, None]
+        a[U1:K, cx + rad:cx + rad + 6] *= 0.5
+        for y in range(U1 + 40, K - 20, 150):
+            a[y:y + 14, cx - rad - 5:cx + rad + 5] = np.array((214, 170, 36)) * (0.6 + 0.5 * np.r_[sh[:5] * 0, sh, sh[:5] * 0][None, :, None] + 0.25)
     elif kind == 'vent':
         _band(a, M0 + 6, M1 - 4, (120, 124, 126), seed + 5, 0.1)
         x0, x1, y0, y1 = WW // 2 - 110, WW // 2 + 110, M1 + 20, L1 - 20

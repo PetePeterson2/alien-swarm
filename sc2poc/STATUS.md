@@ -404,7 +404,7 @@ They only engage aliens on some player's screen (`AS_OnScreen`, the camera's foo
 
 **The map:**
 - Floors after AS's landing bay (its VPK textures were read for reference only): pale concrete slabs and bright galvanised grating mixed through the halls, concrete and diamond plate in the bays, and every floor given a photographic finish (grain, specks, oil stains, grime in the seams). Small floor pieces now mix the second plating too.
-- Walls weathered with grime runs; the wall struts are AS's yellow perforated girders; the pipe runs are yellow and red.
+- Walls weathered with grime runs; the plain bays are AS's pale panels each outlined in a worn yellow frame (lb-04), the pipe bays carry a fat red flanged riser; the wall struts are AS's yellow perforated girders; the pipe runs are yellow and red.
 - Hull tops are near-black, as everything outside AS's playable space is; blocks standing in rooms are machinery seen from above (plating, vents, a red pipe, a hazard rim).
 - Solid crates and barrels along the walls of the big rooms, kept clear of doorways and of every point the mission uses (pathing still 0 leaks). Hatches ringed with hazard chevrons; blood pools where the crew fell; powdery snow on the outdoor deck.
 - Dust motes drifting on screen, steam off the glowing grates and out of the wall pipe runs (a soft smoke sprite, not the ringed burst), one wall lamp in five failing or sputtering, light shafts under the steady lamps in their colour, and painted hard shadows (girder bands, grating cookies) under about half the room lamps.
@@ -435,6 +435,7 @@ They only engage aliens on some player's screen (`AS_OnScreen`, the camera's foo
 | 19 | laser end height | 110.3 s | 275.3 s | 5 |
 | 20 | no machinery tops in the hive | 110.1 s | stalled boarding the lift (bot bug, fixed) | 3 |
 | 21 | bots take the trail to the lift, guns on the deck | 109.6 s | 275.6 s | 3 |
+| 22 | AS's yellow-framed pale wall panels | 110.3 s | 280.6 s | 3 |
 
 Run 9 never started (the client sat in its menus; restarted). Run 17 raced an edit (built half-way through a change, so a wall mesh was missing: `Could not create actor ASKW9F`); run 18 is the same change built whole. A `-Demo` build fired all fifteen gun families for five minutes with no script errors.
 
