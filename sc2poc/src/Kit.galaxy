@@ -395,6 +395,8 @@ void AS_KitBuildRest (timer t, int gen) {
     if(as_kitActorN>AS_KIT_ACTORS || as_kitUnitN>=AS_KIT_UNITS) {as_kitReport=as_kitReport+" OVER THE TRACKING LIMITS: the next level will not clear it all";}
     AS_KitShow();
     AS_Log("kit built: "+IntToString(as_kitActorN)+" actors, "+IntToString(as_kitRails)+" rails, "+IntToString(as_kitBlockers)+" blockers, leaks/shut "+AS_KitLS()+", "+FixedToString(as_kitSecs,2)+" s real");
+    AS_Log("kit dressing: "+IntToString(as_kitDecals)+" decals and props, "+IntToString(as_fanCount)+" fans, "+IntToString(as_pipeCount)+" steam pipes, "
+        +IntToString(as_consoleCount)+" consoles, "+IntToString(as_grateCount)+" steam grates, "+IntToString(as_kitWallLamps)+" wall lamps");
 }
 // Clear the deck away for the next level: every kit actor and pathing blocker, and the counts.
 void AS_KitClear () {

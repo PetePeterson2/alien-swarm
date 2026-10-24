@@ -443,6 +443,9 @@ They only engage aliens on some player's screen (`AS_OnScreen`, the camera's foo
 | 25 | smoke after blasts | 107.6 s | 279.6 s | 4 |
 | 26 | laser emitter flare | 110.6 s | 280.3 s | 5 |
 | 27 | a soft glow under guns on the deck | 111.3 s | 283.1 s | 5 |
+| 28 | in-client asset and dressing log | 109.6 s | 280.3 s | 5 |
+
+Run 28 checked from inside the client what the renders can't: `models: all 31 marine, gun and effect models ok` (the 15 held-gun marines, 14 guns on the deck, the laser dot, the smoke), the marines switching gun models as they change weapons (`p1 shows the Case`, then `the PRifle`), and the kit laying 743 dressing pieces in Landing Bay and 854 in Cargo Elevator (fans, steam pipes, sparking consoles, steam grates and flickering wall lamps among them), all with no script errors.
 
 A QA build started straight into Landing Bay with a human player 1 left idle at the dock (`build.py --start 0`) ran 340 s with no script errors: the human-only paths (the laser to the cursor's deck point, the on-screen test from a real camera) held, the AI squad held off the story director's wanderers (109 kills, no deaths) and held fire 1,104 times on aliens no one could see yet.
 
