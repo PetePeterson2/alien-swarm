@@ -306,12 +306,77 @@ void AS_SnowClear () {
     int i;
     for(i=0;i<AS_FLAKES;i+=1) {if(as_flake[i]!=null) {UnitRemove(as_flake[i]);as_flake[i]=null;}}
 }
+// ---- the air ---------------------------------------------------------------
+// Alien Swarm's rooms are never still: dust hangs in the air and catches the light, the red laser sight lights
+// up the motes it passes through, and steam curls off the grates over the lit under-deck. Each human player's
+// screen gets its share, from a pool of its own.
+const int AS_MOTES = 72;
+unit[72] as_mote;
+fixed[72] as_moteFade;            // when it starts to fade out (0 already fading)
+fixed[72] as_moteGone;            // when it is removed
+int as_moteNext;
+fixed as_steamVentNext;
+unit AS_Mote (fixed x, fixed y, fixed z, fixed scale, string tint, fixed rise, fixed life) {
+    int i=as_moteNext;unit u;actor a;
+    as_moteNext=(as_moteNext+1)%AS_MOTES;
+    if(AS_Solid(x,y)) {return null;}
+    u=as_mote[i];
+    if(u==null) {UnitCreate(1,"ASFxBurst",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);u=UnitLastCreated();as_mote[i]=u;}
+    else {UnitSetPosition(u,Point(x,y),false);}
+    a=libNtve_gf_MainActorofUnit(u);
+    UnitSetScale(u,scale,scale,scale);
+    ActorSend(a,"SetTintColor "+tint);
+    ActorSend(a,"SetOpacity 0 0");ActorSend(a,"SetOpacity 1 "+FixedToString(life*0.3,2));
+    UnitSetHeight(u,z,0.0);UnitSetHeight(u,z+rise,life);
+    as_moteFade[i]=as_now+life*0.6;as_moteGone[i]=as_now+life;
+    return u;
+}
+void AS_AirPulse () {
+    int p;int i;point c;fixed d;fixed t;int v;fixed vx;fixed vy;fixed s;
+    for(i=0;i<AS_MOTES;i+=1) {
+        if(as_mote[i]==null) {continue;}
+        if(as_moteFade[i]>0.0 && as_now>=as_moteFade[i]) {ActorSend(libNtve_gf_MainActorofUnit(as_mote[i]),"SetOpacity 0 "+FixedToString(MaxF(0.1,as_moteGone[i]-as_now),2));as_moteFade[i]=0.0;}
+    }
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p] || (as_bot[p] && !(as_auto && p==1)) || as_view[p]!=0) {continue;}
+        if(as_camUnit[p]!=null) {c=UnitGetPosition(as_camUnit[p]);}
+        else {c=UnitGetPosition(as_m[p]);}
+        // Dust: a faint warm speck somewhere on screen, drifting up through the lamp light.
+        if(as_tick%2==0) {
+            s=RandomFixed(2.2,4.0);
+            AS_Mote(PointGetX(c)+RandomFixed(-4.5,4.5),PointGetY(c)+RandomFixed(-2.4,4.6),RandomFixed(0.3,2.2),s,"70,64,52",RandomFixed(0.15,0.5),RandomFixed(2.5,4.5));
+        }
+        // The motes the laser passes through glow pink for a moment (as in Landing Bay's dock, 2026-10-23).
+        if(as_tick%3==p%3) {
+            d=AS_RayWall(PointGetX(UnitGetPosition(as_laser[p])),PointGetY(UnitGetPosition(as_laser[p])),as_aim[p],8.0);
+            t=RandomFixed(0.4,MaxF(0.5,d));
+            AS_Mote(PointGetX(UnitGetPosition(as_laser[p]))+Cos(as_aim[p])*t+RandomFixed(-0.05,0.05),PointGetY(UnitGetPosition(as_laser[p]))+Sin(as_aim[p])*t+RandomFixed(-0.05,0.05),
+                    MaxF(0.1,0.56*(1.0-t/MaxF(1.0,d))),RandomFixed(2.5,4.0),"255,70,95",0.05,RandomFixed(0.5,0.9));
+        }
+    }
+    // Steam off a grate near a player: a few soft grey puffs that rise and spread.
+    if(as_grateCount>0 && as_now>=as_steamVentNext) {
+        as_steamVentNext=as_now+RandomFixed(0.8,1.6);
+        v=RandomInt(0,as_grateCount-1);vx=IntToFixed(as_grateX[v]);vy=IntToFixed(as_grateY[v]);
+        if(AS_HumanSees(Point(vx,vy))) {
+            for(i=0;i<3;i+=1) {
+                s=RandomFixed(40.0,70.0)+IntToFixed(i)*25.0;
+                AS_Mote(vx+RandomFixed(-0.6,0.6),vy+RandomFixed(-0.6,0.6),0.1+0.25*IntToFixed(i),s,"46,48,50",RandomFixed(0.9,1.5),RandomFixed(1.6,2.4));
+            }
+        }
+    }
+}
+void AS_AirClear () {
+    int i;
+    for(i=0;i<AS_MOTES;i+=1) {if(as_mote[i]!=null) {UnitRemove(as_mote[i]);as_mote[i]=null;}}
+}
 void AS_FxClear () {
     int i;
     for(i=0;i<AS_FXN;i+=1) {if(as_fx[i]!=null) {UnitRemove(as_fx[i]);as_fx[i]=null;}}
     for(i=0;i<AS_PUFFS;i+=1) {if(as_puff[i]!=null) {UnitRemove(as_puff[i]);as_puff[i]=null;}}
     for(i=0;i<AS_SPLATS;i+=1) {if(as_splat[i]!=null) {UnitRemove(as_splat[i]);as_splat[i]=null;}}
     for(i=0;i<AS_SPLATS;i+=1) {if(as_splatGlow[i]!=null) {UnitRemove(as_splatGlow[i]);as_splatGlow[i]=null;}}
+    AS_AirClear();
 }
 // Alien Swarm's kill: a bright lime-green flare of acid a cell and a half across that hangs a moment
 // and thins out, over a wider dim haze of it (seen in Landing Bay, 2026-10-23).

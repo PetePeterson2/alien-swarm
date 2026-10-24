@@ -3,7 +3,7 @@
 // then the campaign (src/Campaign.galaxy) opens the briefing.
 //
 // Keys, as Alien Swarm binds them: WASD move; LEFT fire; F or MIDDLE secondary
-// fire; RIGHT melee; R reload; Q or the wheel swap weapons; 1 the offhand item;
+// fire; RIGHT melee; R reload; Q swap weapons; the wheel zooms; 1 the offhand item;
 // E use; SPACE roll; TAB the map; F1-F4 take control of another of your marines;
 // V and X tell the AI marines to follow or hold; G drop the weapon in hand.
 // Also C top-down / third person, Z camera distance, N damage numbers, H help. Developer keys
@@ -47,7 +47,7 @@ bool AS_Pulse (bool testConds, bool runActions) {
     }
     if(as_tick%2==1) {AS_NameTagsPulse();}
     if(as_tick%4==2) {AS_HintPulse();}
-    AS_WeaponsPulse();AS_AlienPulse();AS_PuffPulse();AS_FxPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();AS_KitPulse();AS_MissionPulse();
+    AS_WeaponsPulse();AS_AlienPulse();AS_PuffPulse();AS_FxPulse();AS_AirPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();AS_KitPulse();AS_MissionPulse();
     return true;
 }
 void AS_KillAll () {
@@ -170,16 +170,19 @@ bool AS_MouseMoveT (bool testConds, bool runActions) {
     AS_MouseMoved(EventPlayer(),EventMouseMovedPosXWorld(),EventMouseMovedPosYWorld());
     return true;
 }
-// The wheel swaps weapons, as AS's inventory next / previous.
-fixed[5] as_wheelAt;
+// The wheel zooms the top-down camera (Q swaps weapons): forward in, back out, 12% a notch,
+// with the distance shown so a playtest can settle the default. Z still steps the three presets.
 bool AS_WheelT (bool testConds, bool runActions) {
-    AS_Wheel(EventPlayer());
+    AS_Wheel(EventPlayer(),EventMouseWheelSpin());
     return true;
 }
-void AS_Wheel (int p) {
-    if(!AS_Person(p) || !as_levelReady || !as_alive[p] || as_now-as_wheelAt[p]<0.2) {return;}
-    as_wheelAt[p]=as_now;
-    AS_SwapWeapon(p);
+void AS_Wheel (int p, fixed spin) {
+    if(!AS_Person(p) || !as_levelReady || as_view[p]!=0 || spin==0.0) {return;}
+    if(spin>0.0) {as_zoom[p]=as_zoom[p]/1.12;}
+    else {as_zoom[p]=as_zoom[p]*1.12;}
+    as_zoom[p]=AS_Clamp(as_zoom[p],AS_TOP_DIST_MIN,AS_TOP_DIST_MAX);
+    AS_TopDistApply(p,0.15);
+    AS_Message(p,"Camera distance "+FixedToString(as_zoom[p],1)+"  (default "+FixedToString(AS_TOP_DIST,1)+", Z steps presets)");
 }
 void AS_KeyEvents (trigger t, bool down) {
     int k;
@@ -208,16 +211,16 @@ void AS_SoundProbe () {
 // a missing one draws nothing in game and logs no error of its own.
 const int AS_CATALOG_MODEL = 54;       // c_gameCatalogModel (TriggerLibs/GameData/GameData2, not in NativeLib)
 void AS_ModelProbe () {
-    string[3] ids;int k;
-    ids[0]="HotSRaptor";ids[1]="HotSRaptorDeath";ids[2]="PrimalZergling";
-    for(k=0;k<3;k+=1) {
+    string[6] ids;int k;
+    ids[0]="HotSRaptor";ids[1]="HotSRaptorDeath";ids[2]="PrimalZergling";ids[3]="ASMarineRifle";ids[4]="ASMarineCase";ids[5]="ASFxLaserModel";
+    for(k=0;k<6;k+=1) {
         if(CatalogEntryIsValid(AS_CATALOG_MODEL,ids[k])) {AS_Log("model "+ids[k]+" ok");}
         else {AS_Log("model "+ids[k]+" MISSING");}
     }
 }
 void AS_Init () {
     int p;int q;trigger t;
-    AS_ProfilesInit();AS_ItemsInit();AS_KindsInit();AS_XpInit();AS_HintsInit();
+    AS_ProfilesInit();AS_ItemsInit();AS_GunInit();AS_KindsInit();AS_XpInit();AS_HintsInit();
     if(as_qa) {AS_SoundProbe();}
     if(as_qa || as_auto) {AS_ModelProbe();}
     as_lightId[0]="ASDerelict";as_lightName[0]="DERELICT";as_lightId[1]="ASBlackout";as_lightName[1]="BLACKOUT";

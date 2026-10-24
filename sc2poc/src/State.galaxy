@@ -481,6 +481,8 @@ unit[5] as_torch;           // flashlight unit
 unit[5] as_glow;            // soft personal light
 unit[5] as_muzzle;          // muzzle-flash light
 unit[5] as_laser;           // laser sight
+unit[5] as_laserDot;        // where the laser lands
+int[5] as_gunShown;         // the gun model the marine is showing (AS_GunIndex), -1 none yet
 fixed[5] as_infestUntil;    // parasite infestation: 20 s of damage
 fixed[5] as_hurtFlash;
 fixed[5] as_knockX;

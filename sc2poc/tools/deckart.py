@@ -68,6 +68,101 @@ def _dirt(a, seed, amount=0.3):
     return a * (1 - amount * d[..., None])
 
 
+def _finish(a, seed, grain=0.05, specks=1400, stains=5, seams=None, ao=0.22):
+    """The photographic finish Alien Swarm's floors have and soft noise alone lacks: per-pixel grain, small dark
+    and pale specks, a few oil stains with darker rims, and grime gathered along the seams (``seams`` px apart)."""
+    r = np.random.default_rng(seed)
+    a = a * (1 + grain * r.standard_normal((S, S))[..., None])
+    im = Image.new('L', (S, S), 128); d = ImageDraw.Draw(im)
+    for _ in range(specks):
+        x, y = r.integers(0, S, 2); rad = r.choice([0.6, 1.0, 1.5, 2.2], p=[0.45, 0.3, 0.17, 0.08])
+        tone = int(r.choice([40, 70, 180, 205], p=[0.35, 0.35, 0.2, 0.1]))
+        d.ellipse([x - rad, y - rad, x + rad, y + rad], fill=tone)
+    spk = (np.asarray(im.filter(ImageFilter.GaussianBlur(0.6))).astype(float) - 128) / 128
+    a = a * (1 + 0.32 * spk[..., None])
+    for _ in range(stains):
+        cx, cy = r.integers(0, S, 2); rx, ry = r.uniform(14, 46, 2)
+        yy, xx = np.mgrid[0:S, 0:S].astype(float)
+        dx = (xx - cx + S / 2) % S - S / 2; dy = (yy - cy + S / 2) % S - S / 2
+        ragged = _noise(0, 12, int(r.integers(1, 10**6)), 3, (S, S))
+        f = (dx / rx) ** 2 + (dy / ry) ** 2 + (ragged - 0.5) * 0.9
+        body = np.clip(1 - f, 0, 1) ** 0.5
+        rim = np.clip(1 - np.abs(f - 1) * 6, 0, 1)
+        a = a * (1 - (0.16 * body + 0.14 * rim)[..., None])
+    if seams:
+        yy, xx = np.mgrid[0:S, 0:S]
+        ed = np.minimum(np.minimum(xx % seams, seams - xx % seams), np.minimum(yy % seams, seams - yy % seams)).astype(float)
+        dirt = _noise(0, 24, seed + 77, 3, (S, S))
+        a = a * (1 - ao * np.clip(1 - ed / 22.0, 0, 1) ** 1.6 * (0.6 + 0.8 * dirt))[..., None]
+    return a
+
+
+def floor_concrete(seed=13, tone=(150, 148, 140)):
+    """concretefloor050a: pale poured slabs a unit square, hairline joints, cracks, water marks and tie holes,
+    the high-key floor of Alien Swarm's colony landing bay."""
+    base = np.array(tone, float)
+    n = _noise(0, 64, seed, 5, (S, S)); f = _noise(0, 6, seed + 1, 3, (S, S))
+    a = base[None, None] * (0.93 + 0.10 * n[..., None] + 0.06 * f[..., None])
+    r = np.random.default_rng(seed)
+    # Each slab its own shade, as poured concrete is.
+    for py in range(0, S, U):
+        for px in range(0, S, U):
+            a[py:py + U, px:px + U] *= r.uniform(0.93, 1.06)
+    # Water marks: pale tide lines.
+    w = np.abs(_noise(0, 70, seed + 5, 3, (S, S)) - 0.5) < 0.035
+    a[w] *= 1.03
+    # Cracks: wandering dark hairlines.
+    im = Image.new('L', (S, S), 0); d = ImageDraw.Draw(im)
+    for _ in range(4):
+        x, y = r.uniform(0, S, 2); ang = r.uniform(0, math.tau)
+        pts = [(x, y)]
+        for _ in range(int(r.integers(6, 16))):
+            ang += r.normal(0, 0.5); x += math.cos(ang) * 9; y += math.sin(ang) * 9; pts.append((x, y))
+        d.line(pts, fill=int(r.integers(120, 220)), width=1)
+    a *= (1 - 0.3 * np.asarray(im).astype(float)[..., None] / 255)
+    # Joints: a dark hairline with a pale chamfer.
+    for k in range(0, S, U):
+        a[k:k + 2] *= 0.42; a[:, k:k + 2] *= 0.42
+        a[k + 2:k + 3] *= 1.12; a[:, k + 2:k + 3] *= 1.12
+    # Form-tie holes, two to a slab.
+    a = _bolts(a, [(px + U // 4, py + U // 2) for px in (0, U) for py in (0, U)] + [(px + 3 * U // 4, py + U // 2) for px in (0, U) for py in (0, U)],
+               base * 0.55, 3)
+    return _img(_finish(a, seed + 9, 0.035, 1100, 2, U, 0.12))
+
+
+def floor_mgrate(seed=14, tone=(150, 152, 150)):
+    """metalgrate012a: bright galvanised grating panels a unit square, a framed grid of small slots with the dark
+    under-deck showing through, as the walkways of Alien Swarm's landing bay are."""
+    base = np.array(tone, float)
+    n = _noise(0, 40, seed, 4, (S, S))
+    a = base[None, None] * (0.86 + 0.22 * n[..., None])
+    yy, xx = np.mgrid[0:S, 0:S]
+    lx, ly = xx % U, yy % U
+    frame = (lx < 10) | (lx >= U - 10) | (ly < 10) | (ly >= U - 10)
+    # Slots: 9 across and 14 down inside the frame, each a dark hole with a lit lower lip and a shadowed upper one.
+    gx = (lx - 14) % 23; gy = (ly - 14) % 9
+    inside = (lx > 12) & (lx < U - 12) & (ly > 12) & (ly < U - 12)
+    hole = inside & ~frame & (gx < 17) & (gy < 5)
+    under = _noise(0, 30, seed + 3, 3, (S, S))
+    a[hole] = (np.array((26, 27, 29))[None] * (0.7 + 0.6 * under[hole][:, None]))
+    lip_lo = inside & ~frame & (gx < 17) & (gy == 5)
+    lip_hi = inside & ~frame & (gx < 17) & (gy == 8)
+    a[lip_lo] *= 1.25; a[lip_hi] *= 0.7
+    a[frame] *= 1.06
+    # Each panel its own age: a shade apart, one more worn than its neighbours.
+    r = np.random.default_rng(seed)
+    for py in (0, U):
+        for px in (0, U):
+            a[py:py + U, px:px + U] *= r.uniform(0.86, 1.05)
+    # Panel seams and the frame's bevel.
+    for k in range(0, S, U):
+        a[k:k + 2] *= 0.35; a[:, k:k + 2] *= 0.35
+        a[k + 2:k + 4] *= 1.2; a[:, k + 2:k + 4] *= 1.2
+    a = _bolts(a, [(px + 6, py + 6) for px in (0, U) for py in (0, U)] + [(px + U - 6, py + U - 6) for px in (0, U) for py in (0, U)], base * 1.05, 3)
+    a = _scratches(a, seed + 4, 40, 1.15)
+    return _img(_finish(a, seed + 9, 0.04, 900, 3, U, 0.2))
+
+
 def floor_plate(seed=1, tone=(118, 110, 98)):
     """greymetalfloor: four plates of a unit each, brown-grey, scuffed, a rivet in each corner."""
     base = np.array(tone, float)
@@ -82,7 +177,7 @@ def floor_plate(seed=1, tone=(118, 110, 98)):
     a = _bevel(a, U)
     a = _bolts(a, [(x, y) for px in (0, U) for py in (0, U) for x, y in
                    ((px + 16, py + 16), (px + U - 16, py + 16), (px + 16, py + U - 16), (px + U - 16, py + U - 16))], base * 1.15)
-    return _img(_dirt(a, seed + 4, 0.25))
+    return _img(_finish(_dirt(a, seed + 4, 0.25), 1075, seams=U))
 
 
 def floor_tile(seed=2, tone=(142, 146, 146), mottle=0.18):
@@ -95,7 +190,7 @@ def floor_tile(seed=2, tone=(142, 146, 146), mottle=0.18):
     a = _wear(a, seed + 2, 0.2)
     a = _scratches(a, seed + 3, 30, 1.15)
     a = _bevel(a, U, 0.5, 1.12, 2)
-    return _img(_dirt(a, seed + 4, 0.15))
+    return _img(_finish(_dirt(a, seed + 4, 0.15), 1088, seams=U))
 
 
 def floor_lab(seed=3, glow=True):
@@ -119,7 +214,7 @@ def floor_lab(seed=3, glow=True):
     for _ in range(2):
         tx, ty = r.integers(0, 2, 2) * U
         a[ty + 6:ty + U - 6, tx + 6:tx + U - 6] *= r.uniform(0.9, 1.04)
-    return _img(_dirt(a, seed + 4, 0.14)), (_img(emis) if glow else None)
+    return _img(_finish(_dirt(a, seed + 4, 0.14), 1112, seams=U)), (_img(emis) if glow else None)
 
 
 def floor_diamond(seed=4, tone=(140, 140, 136)):
@@ -141,7 +236,7 @@ def floor_diamond(seed=4, tone=(140, 140, 136)):
     a = _scratches(a, seed + 3, 25, 1.18)
     for k in (0,):
         a[:4] *= 0.4; a[:, :4] *= 0.4; a[4:6] *= 1.2; a[:, 4:6] *= 1.2
-    return _img(_dirt(a, seed + 4, 0.28))
+    return _img(_finish(_dirt(a, seed + 4, 0.28), 1134, seams=S))
 
 
 def floor_grille(seed=5, tone=(140, 142, 142)):
@@ -167,7 +262,7 @@ def floor_grille(seed=5, tone=(140, 142, 142)):
     a = _wear(a, seed + 2, 0.25)
     a = _bevel(a, U, 0.35, 1.2, 4)
     a = _bolts(a, [(px + 12, py + 12) for px in (0, U) for py in (0, U)] + [(px + U - 12, py + U - 12) for px in (0, U) for py in (0, U)], base * 1.1, 4)
-    return _img(_dirt(a, seed + 4, 0.2))
+    return _img(_finish(_dirt(a, seed + 4, 0.2), 1160, seams=U))
 
 
 def floor_grate(seed=6, glow=(230, 110, 30), tone=(112, 96, 84)):
@@ -190,7 +285,7 @@ def floor_grate(seed=6, glow=(230, 110, 30), tone=(112, 96, 84)):
     a[frame] *= 0.9
     a = _wear(a, seed + 2, 0.35)
     emis = np.zeros((S, S, 3)); emis[open_] = hot[open_]
-    return _img(_dirt(a, seed + 4, 0.25)), _img(emis)
+    return _img(_finish(_dirt(a, seed + 4, 0.25), 1183, seams=U)), _img(emis)
 
 
 def floor_hatch(seed=7):
@@ -215,7 +310,7 @@ def floor_hatch(seed=7):
     for cx, cy in ((44, 44), (S - 44, 44), (44, S - 44), (S - 44, S - 44)):
         a[cy - 9:cy + 9, cx - 3:cx + 3] = (210, 160, 30); a[cy - 3:cy + 3, cx - 9:cx + 9] = (210, 160, 30)
     a = _bolts(a, [(x, y) for x in (30, S - 30) for y in (110, S // 2, S - 110)], (150, 150, 145), 5)
-    return _img(_dirt(_scratches(a, seed + 5, 30, 1.2), seed + 4, 0.2))
+    return _img(_finish(_dirt(_scratches(a, seed + 5, 30, 1.2), seed + 4, 0.2), 1208, seams=U))
 
 
 def floor_brown(seed=8):
@@ -234,7 +329,7 @@ def floor_brown(seed=8):
             a[y0 + 60:y0 + 63, x0:x0 + 14] *= 0.5
     a[:10] *= 0.5; a[:, :10] *= 0.5; a[10:13] *= 1.2; a[:, 10:13] *= 1.2
     a = _bolts(a, [(x, y) for x in (24, S - 24) for y in (24, S // 2, S - 24)], (140, 120, 100), 5)
-    return _img(_dirt(_scratches(a, seed + 3, 40, 1.2), seed + 4, 0.3))
+    return _img(_finish(_dirt(_scratches(a, seed + 3, 40, 1.2), seed + 4, 0.3), 1227, seams=U))
 
 
 def floor_reactor(seed=9):
@@ -489,6 +584,8 @@ def decal_warning(size=256):
 
 
 FLOORS = {
+    'floor_concrete': lambda: (floor_concrete(), None),
+    'floor_mgrate': lambda: (floor_mgrate(), None),
     'floor_plate': lambda: (floor_plate(), None),
     'floor_plate2': lambda: (floor_plate(21, (100, 106, 112)), None),
     'floor_tile': lambda: (floor_tile(), None),
@@ -508,8 +605,8 @@ FLOORS = {
 # Each room kind's floor (tools/level.py KIT_KINDS): the main plating, the second plating mixed
 # in by 2x2 block, and the accent laid at most once per 4x4 block. The lift has its own platform.
 KIND_FLOORS = {
-    'bay': ('floor_plate', 'floor_plate2', 'floor_hatch'),
-    'hall': ('floor_diamond', 'floor_grille', 'floor_grate'),
+    'bay': ('floor_concrete', 'floor_diamond', 'floor_hatch'),
+    'hall': ('floor_mgrate', 'floor_concrete', 'floor_grate'),
     'duct': ('floor_grate', 'floor_grate', 'floor_grille'),
     'mess': ('floor_tile', 'floor_tile2', 'floor_tile'),
     'reactor': ('floor_reactor', 'floor_plate2', 'floor_grate_blue'),

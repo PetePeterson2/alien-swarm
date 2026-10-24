@@ -9,7 +9,7 @@ alarm lamps. Drawn from scratch with NumPy.
 A bay is two map units wide by the wall's 2.5 height (512 x 640 px); row 0 is the top.
 """
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from tools.shipkit import _noise, _img
 from tools.deckart import _font
@@ -78,6 +78,26 @@ def _grime(a, seed, amount=0.3):
     return a * (1 - amount * np.clip(dirt, 0, 1) - foot)[..., None]
 
 
+def _weather(a, seed, streaks=46, grain=0.035):
+    """What years of a colony's damp leave on AS's walls: grime run down in thin streaks from every ledge and
+    bolt, fine grain and small specks (soft noise alone reads as clean plastic)."""
+    r = np.random.default_rng(seed)
+    h, w = a.shape[:2]
+    a = a * (1 + grain * r.standard_normal((h, w))[..., None])
+    run = np.zeros((h, w))
+    for _ in range(streaks):
+        x = int(r.integers(0, w)); y = int(r.integers(0, h * 3 // 4)); ln = int(r.integers(40, 260)); wd = int(r.choice([1, 1, 2, 3]))
+        k = min(h, y + ln) - y
+        fade = np.linspace(1.0, 0.0, k) ** 0.7 * r.uniform(0.12, 0.3)
+        run[y:y + k, x:x + wd] = np.maximum(run[y:y + k, x:x + wd], fade[:, None])
+    run = np.asarray(Image.fromarray((run * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))).astype(float) / 255
+    spk = np.zeros((h, w))
+    for _ in range(500):
+        x, y = r.integers(0, w), r.integers(0, h)
+        spk[y, x] = r.uniform(-0.25, 0.3)
+    return a * (1 - run - spk)[..., None]
+
+
 def _cylinder(a, cy, rad, col, spec=0.5):
     yy = np.arange(-rad, rad)
     s = np.sqrt(np.clip(1 - (yy / rad) ** 2, 0, 1))
@@ -134,7 +154,7 @@ def wall_art(kind, seed):
         for cx in (x0 - 30, x1 + 22):
             for yy in range(y0, y1, 26):
                 a[yy:yy + 12, cx:cx + 8] = (210, 160, 30)
-        _label(a, 'VENT  t0.7', 0, WW, M0 - 70, M0 - 10, (40, 40, 40), 34)
+        _label(a, 'VENT  07', 0, WW, M0 - 70, M0 - 10, (40, 40, 40), 34)
     elif kind == 'screen':
         _band(a, M0 + 6, M1 - 4, (196, 178, 120), seed + 5)
         x0, x1, y0, y1 = 70, WW - 70, M1 + 22, L1 - 30
@@ -191,6 +211,7 @@ def wall_art(kind, seed):
         yy, xx = np.mgrid[0:WH, 0:WW]
         d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / rad
         a *= (1 - 0.5 * np.clip(1 - d, 0, 1) ** 2 * _noise(0, 20, seed + 50, 2, (WH, WW)) * 1.6)[..., None]
+    a = _weather(a, seed + 60)
     return _img(a), (_img(emis) if emis.max() > 0 else None)
 
 

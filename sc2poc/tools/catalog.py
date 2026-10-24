@@ -12,7 +12,7 @@ Stock model ids were checked against the catalog dump in
 """
 import xml.etree.ElementTree as ET
 
-from tools import alien, level as L
+from tools import alien, marine, level as L
 
 
 def child(e, tag, **attrs):
@@ -90,7 +90,7 @@ ONESHOTS = [
     ('ASAcidShieldbug', 'UltraliskDeathAcid', SIZE['shieldbug'], 8), ('ASAcidHarvester', 'SwarmHostMPDeathAcid', SIZE['harvester'], 7),
     ('ASBloodGeyser', 'LurkerAttackDeathBloodGeyser', 0.5, 4),
 ]
-FX_UNITS = ['Tracer', 'Laser', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch', 'Anchor']
+FX_UNITS = ['Tracer', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch', 'Anchor']
 
 
 def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units=()):
@@ -101,7 +101,7 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
     """
     cat = {k: ET.Element('Catalog') for k in ('Unit', 'Actor', 'Model', 'Light')}
 
-    def unit(ident, model, scale, life=100, speed=0.0, radius=0.0, mobile=False, flying=False, collide=False, height=0.0):
+    def unit(ident, model, scale, life=100, speed=0.0, radius=0.0, mobile=False, flying=False, collide=False, height=0.0, turn=1080):
         u = child(cat['Unit'], 'CUnit', id=ident)
         child(u, 'FlagArray', index='Unselectable', value=1)
         child(u, 'FlagArray', index='Untargetable', value=1)
@@ -113,7 +113,7 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         for tag, val in [('LifeMax', max(1, life)), ('LifeStart', max(1, life)), ('LifeRegenRate', 0), ('Radius', radius),
                          ('SeparationRadius', radius * 0.8 if mobile else 0), ('InnerRadius', radius * 0.5), ('MinimapRadius', 0),
                          ('Height', height), ('Speed', speed), ('Acceleration', 1000 if mobile else 0),
-                         ('Deceleration', 1000 if mobile else 0), ('LateralAcceleration', 46 if mobile else 0), ('TurningRate', 1080 if mobile else 0)]:
+                         ('Deceleration', 1000 if mobile else 0), ('LateralAcceleration', 46 if mobile else 0), ('TurningRate', turn if mobile else 0)]:
             child(u, tag, value=val)
         child(u, 'PlaneArray', index='Air' if flying else 'Ground', value=1)
         if flying:
@@ -135,7 +135,18 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
             child(a, 'VisibleTo', index=who, value=1)
         return a
 
-    unit('ASMarine', 'Marine', 1.0, 100, 2.25, 0.36, mobile=True, collide=True)
+    # The marines (tools/marine.py): one model per weapon family, swapped as the gun in hand changes (src/Marine.galaxy
+    # AS_GunModel). Turned by unit facing, which the engine draws smoothly between steps; a turn rate high enough
+    # that a flick of the mouse lands in one step.
+    for gun, _, _ in marine.GUNS:
+        m = child(cat['Model'], 'CModel', id='ASMarine' + gun, parent='Unit')
+        child(m, 'Model', value='Derelict\\Marine%s.m3' % gun)
+    unit('ASMarine', 'ASMarineRifle', 1.0, 100, 2.25, 0.36, mobile=True, collide=True, turn=7200)
+    # The laser sight and its dot ride with each marine, turned the same way (tools/fx.py lays the beam along a model's -Y).
+    for name in ('Laser', 'LaserDot'):
+        m = child(cat['Model'], 'CModel', id='ASFx' + name + 'Model', parent='Doodad')
+        child(m, 'Model', value='Derelict\\Fx\\' + name + '.m3')
+        unit('ASFx' + name, 'ASFx' + name + 'Model', 1.0, 0, mobile=True, turn=7200)
     # The ripper's own animated mesh; its corpse is the same model held on the last frame of Death.
     m = child(cat['Model'], 'CModel', id='ASRipperModel', parent='Unit')
     child(m, 'Model', value='Derelict\\Ripper.m3')

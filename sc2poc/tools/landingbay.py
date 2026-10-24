@@ -89,8 +89,10 @@ LIGHTS = [
     (50.0, 5.0, 'cold', 0), (56.0, 5.0, 'red', 3), (50.0, 12.0, 'coldbig', 0), (56.0, 12.0, 'cold', 0),
     (41.0, 6.5, 'purple', 0), (35.5, 12.0, 'cold', 0),
     (30.0, 19.0, 'whitebig', 0), (36.0, 21.0, 'orange', 2), (30.0, 31.0, 'white', 1), (36.0, 31.0, 'whitebig', 0),
-    (30.0, 37.0, 'red', 3), (30.0, 42.0, 'white', 0),
-    (27.0, 54.0, 'white', 0), (33.0, 48.0, 'white', 2), (33.0, 58.0, 'cold', 0), (38.0, 53.0, 'white', 1), (23.0, 56.0, 'white', 0),
+    # AS's lit and unlit rooms (seen 2026-10-23): the gate hall is high-key, floodlit white; the storage
+    # rooms behind it are near-black but for a failing lamp and a sputtering one, so the laser finds things first.
+    (30.0, 37.0, 'red', 3), (30.0, 42.0, 'whitebig', 0), (28.0, 38.5, 'whitebig', 0),
+    (33.0, 48.0, 'white', 2), (38.0, 53.0, 'white', 1),
     (22.0, 63.0, 'white', 2), (31.0, 63.0, 'white', 0),
     (14.0, 63.0, 'white', 0), (14.0, 72.0, 'orange', 2),
     (21.0, 74.0, 'cold', 0), (28.0, 70.0, 'white', 1), (28.0, 75.0, 'red', 3),

@@ -502,7 +502,7 @@ void AS_HudCreate (int p) {
     AS_Lbl(d,36,74,730,570,"ASBody",
         "<c val=\"8CC8F0\">WASD</c>  move    <c val=\"8CC8F0\">MOUSE</c>  aim    <c val=\"8CC8F0\">SPACE</c>  roll<n/>"
         +"<c val=\"8CC8F0\">LEFT MOUSE</c>  fire    <c val=\"8CC8F0\">F / MIDDLE MOUSE</c>  secondary fire    <c val=\"8CC8F0\">RIGHT MOUSE</c>  melee<n/>"
-        +"<c val=\"8CC8F0\">R</c>  reload (again in the bright window: fast reload)    <c val=\"8CC8F0\">Q / WHEEL</c>  swap weapons<n/>"
+        +"<c val=\"8CC8F0\">R</c>  reload (again in the bright window: fast reload)    <c val=\"8CC8F0\">Q</c>  swap weapons    <c val=\"8CC8F0\">WHEEL</c>  zoom<n/>"
         +"<c val=\"8CC8F0\">1</c>  offhand item (hold at a door with the welder)    <c val=\"8CC8F0\">E</c>  use: hack, pick up, build<n/>"
         +"<c val=\"8CC8F0\">G</c>  drop the weapon in hand    <c val=\"8CC8F0\">TAB</c>  full map and objectives<n/>"
         +"<c val=\"8CC8F0\">F1 - F4</c>  take control of another of your marines<n/>"

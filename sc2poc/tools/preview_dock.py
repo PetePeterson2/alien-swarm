@@ -14,7 +14,7 @@ from tools import preview_lift as P          # noqa: E402  (it also switches the
 from tools import level as L, elevator as E  # noqa: E402
 from PIL import Image                         # noqa: E402
 
-P.DIST = 6.0                                  # src/Marine.galaxy AS_TOP_DIST
+P.DIST = 5.1                                  # src/Marine.galaxy AS_TOP_DIST
 L.use('landingbay')
 floor, room = L.carve()
 rows = L.deck_rows(floor, room)

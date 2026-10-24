@@ -17,8 +17,8 @@ from tools import level as L, elevator as E
 
 L.use('cargo')
 W, H = 960, 600                           # 16:10, the shape of the test screen
-PITCH, FOV = 60.0, 48.0                   # src/Marine.galaxy AS_TOP_PITCH, AS_TOP_FOV
-DIST = float(sys.argv[1]) if len(sys.argv) > 1 else 13.0   # src/Mission.galaxy AS_RIDE_FRAME
+PITCH, FOV = 60.0, 60.0                   # src/Marine.galaxy AS_TOP_PITCH, AS_TOP_FOV
+DIST = float(sys.argv[1]) if len(sys.argv) > 1 else 10.0   # src/Mission.galaxy AS_RIDE_FRAME
 
 
 def camera(tx, ty):

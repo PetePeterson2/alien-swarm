@@ -14,6 +14,7 @@
 
 
 // ---- the QA log -------------------------------------------------------
+int as_botOffscreen;            // aliens in a bot's range it left alone because no player could see them (logged)
 void AS_Log (string s) {
     bank b;string k;
     if(!as_qa && !as_auto) {return;}
@@ -31,7 +32,7 @@ string AS_Where (int p) {
     return FixedToString(PointGetX(q),1)+","+FixedToString(PointGetY(q),1);
 }
 void AS_LogStatus () {
-    int p;string s="status aliens="+IntToString(as_alive2)+" living="+IntToString(AS_Living())+" ride="+IntToString(as_ride)+" scroll="+FixedToString(as_scroll,1)+" hack="+FixedToString(as_hack,2);
+    int p;string s="status aliens="+IntToString(as_alive2)+" living="+IntToString(AS_Living())+" ride="+IntToString(as_ride)+" scroll="+FixedToString(as_scroll,1)+" hack="+FixedToString(as_hack,2)+" offscreen="+IntToString(as_botOffscreen);
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(AS_Person(p)) {s=s+" p"+IntToString(p)+"@"+AS_Where(p)+"/hp"+IntToString(FixedToInt(as_hp[p]))+"/k"+IntToString(as_kills[p])+"/d"+IntToString(as_deaths[p]);}
     }
@@ -135,6 +136,10 @@ int AS_BotFoe (int p) {
         else {d=DistanceBetweenPoints(here,UnitGetPosition(as_a[i]));}
         if(d>=bd) {continue;}
         q=UnitGetPosition(as_a[i]);
+        // Only what a player can see: nothing off the edge of every player's screen yet (AS's AI marines
+        // fight what the squad is looking at; ours used to drop aliens the player never saw coming). One at
+        // the bot's own elbow is fought wherever the bot is: a marine trailing below the screen's edge defends itself.
+        if(!AS_BotFull(p) && d>2.5 && !AS_OnScreen(q,0.35)) {as_botOffscreen+=1;continue;}
         if(!AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(q),PointGetY(q))) {continue;}
         bd=d;best=i;
     }
@@ -322,7 +327,8 @@ bool AS_AutoInputT (bool testConds, bool runActions) {
     AS_Log("input test: after reload, "+AS_AutoHands(p));
     AS_KeyDown(p,c_keyQ,false);AS_KeyUp(p,c_keyQ);AS_Log("input test: Q, "+AS_AutoHands(p));
     Wait(0.3,c_timeGame);
-    AS_Wheel(p);AS_Log("input test: wheel, "+AS_AutoHands(p));
+    AS_Wheel(p,-1.0);AS_Log("input test: wheel out, zoom "+FixedToString(as_zoom[p],2));
+    AS_Wheel(p,1.0);AS_Log("input test: wheel in, zoom "+FixedToString(as_zoom[p],2));
     before=as_mag[p][as_slot[p]];
     AS_MouseDown(p,c_mouseButtonRight);AS_MouseUp(p,c_mouseButtonRight);AS_Log("input test: right mouse (melee)");
     Wait(0.6,c_timeGame);
@@ -430,6 +436,27 @@ void AS_BotsInit () {
     as_botCount=0;
 }
 // A bot left far behind or wedged on a corner rejoins the leader, but only where no human sees it go.
+// Whether q is on some player's screen, at least `margin` inside its edges: the top-down view's footprint on
+// the deck round the point the camera centres on (src/Marine.galaxy AS_VIEW_*), or ahead of a third-person
+// camera. The bottom edge looks down at the deck, so an alien's body shows there before its feet do: no margin.
+bool AS_OnScreen (point q, fixed margin) {
+    int h;point c;fixed d;fixed dx;fixed dy;unit u;
+    for(h=1;h<=AS_PLAYERS;h+=1) {
+        if(!AS_Person(h) || (as_bot[h] && !(as_auto && h==1))) {continue;}
+        u=AS_ViewUnit(h);
+        if(u==null) {continue;}
+        if(as_view[h]==1) {
+            c=UnitGetPosition(u);
+            if(DistanceBetweenPoints(c,q)<12.0 && AbsF(AS_AngleDiff(AngleBetweenPoints(c,q),CameraGetYaw(h)))<40.0) {return true;}
+            continue;
+        }
+        if(as_camUnit[h]!=null) {u=as_camUnit[h];}
+        c=UnitGetPosition(u);d=AS_TopDist(h);
+        dx=PointGetX(q)-PointGetX(c);dy=PointGetY(q)-PointGetY(c);
+        if(AbsF(dx)<AS_VIEW_X*d-margin && dy<AS_VIEW_N*d-margin && dy>0.0-AS_VIEW_S*d) {return true;}
+    }
+    return false;
+}
 bool AS_HumanSees (point q) {
     int h;point hq;
     for(h=1;h<=AS_PLAYERS;h+=1) {

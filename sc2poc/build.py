@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / 'tools/vendor'))
 sys.path.insert(0, str(ROOT))
 import mpyq
 import numpy as np
-from tools import alien, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout, uiart
+from tools import alien, marine, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout, uiart
 
 NAME = 'AlienPOC'
 TITLE = 'Halcyon Drift'
@@ -342,6 +342,20 @@ def hud_galaxy(frames):
     return '\n'.join(out)
 
 
+def guns_galaxy():
+    """The gun families' ids, model names and muzzles (tools/marine.py), for src/Marine.galaxy."""
+    muzzles = marine.muzzles()
+    names = [name for name, _, _ in marine.GUNS]
+    out = ['const int AS_GUN_%s = %d;' % (name.upper(), k) for k, name in enumerate(names)]
+    out += ['string[%d] as_gunName;' % len(names), 'fixed[%d] as_gunFwd;' % len(names), 'fixed[%d] as_gunLeft;' % len(names),
+            'fixed[%d] as_gunZ;' % len(names), 'void AS_GunInit () {']
+    for k, name in enumerate(names):
+        f, l, z = muzzles[name]
+        out.append('    as_gunName[%d]="%s";as_gunFwd[%d]=%.3f;as_gunLeft[%d]=%.3f;as_gunZ[%d]=%.3f;' % (k, name, k, f, k, l, k, z))
+    out.append('}')
+    return '\n'.join(out)
+
+
 def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=BANK, frames=()):
     bodies = []
     for name in MODULES:
@@ -356,7 +370,7 @@ def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=
         elif name == 'Mission':
             bodies.append((ROOT / 'src' / 'Mission.galaxy').read_text(encoding='utf-8') + '\n' + mission_common() + '\n' + '\n'.join(missions))
         else:
-            bodies.append((ROOT / 'src' / (name + '.galaxy')).read_text(encoding='utf-8'))
+            bodies.append((ROOT / 'src' / (name + '.galaxy')).read_text(encoding='utf-8').replace('@GUNS@', guns_galaxy()))
     decls, seen = [], set()
     for n, src in enumerate(bodies):
         for ret, func, params in SIGNATURE.findall(src):
@@ -515,6 +529,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     fx_files, _ = fx.build()
     files.update(fx_files)
     files.update(alien.build())
+    files.update(marine.build())
     ui, frames = ui_textures(maps)
     files.update(ui)
     catalog.build(files, [], set(), kit_models=sorted(models), runtime_props=props, mesh_units=sorted(pieces))

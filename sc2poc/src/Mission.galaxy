@@ -286,7 +286,7 @@ const fixed AS_RIDE_LEN = 108.0;     // a multiple of AS_PANEL: the exit lintel 
 const fixed AS_WAVE_STRETCH = 1.35;  // the wave times were set for a 75 s ride
 // The ride's framing: AS's camera shows the whole platform (70% of the screen's width) with the shaft
 // walls round it and the north wall above. This platform is twice AS's, so the camera stands twice as far.
-const fixed AS_RIDE_FRAME = 13.0;
+const fixed AS_RIDE_FRAME = 10.0;      // 13 at the old FOV 48: the same picture at FOV 60
 const fixed AS_RIDE_BIAS = 2.0;
 unit[16][5] as_pan;
 unit[16][5] as_panSpare;             // the door slots' plain panel, used once the lintel has gone by

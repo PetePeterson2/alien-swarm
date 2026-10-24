@@ -11,7 +11,7 @@
 // (Accuracy for most guns), doubled inside a damage amp field, and doubled
 // again on a lucky roll near an officer (3% a Leadership point).
 // Keys: LEFT fire, F or MIDDLE secondary fire, RIGHT melee, R reload (press it
-// again in the marked window for a fast reload), Q swap weapons (or the wheel),
+// again in the marked window for a fast reload), Q swap weapons,
 // 1 the extra item, E use, SPACE roll.
 // =====================================================================
 
@@ -344,16 +344,15 @@ void AS_TriggerPulled (int p) {
     if(as_slot[p]==AS_IT_PISTOLS && as_now>=as_lastShot[p]+0.0625) {as_nextShot[p]=MinF(as_nextShot[p],as_now);}
 }
 void AS_Shoot (int p, int w) {
-    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed aim=as_aim[p];fixed gx;fixed gy;fixed ang;fixed d;fixed side;fixed dist;
+    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed aim=as_aim[p];fixed gx;fixed gy;fixed ang;fixed d;fixed dist;
     int k;int t;point at;fixed dmg;fixed cone=as_it[w].autoaim;int pierce=as_it[w].pierce;
     // The minigun burns half a round a bullet.
     if(w!=AS_IT_MINIGUN || as_shotsFired[p]%2==0) {as_mag[p][w]-=1;}
     as_lastShot[p]=as_now;as_shotsFired[p]+=1;
-    side=0.12;
-    if(w==AS_IT_PISTOLS || w==AS_IT_PDW) {as_pistolSide[p]=1-as_pistolSide[p];if(as_pistolSide[p]==0) {side= -0.14;}else {side=0.14;}}
-    gx=x+Cos(aim)*0.5+Cos(aim-90.0)*side;gy=y+Sin(aim)*0.5+Sin(aim-90.0)*side;
-    // Keep the muzzle on this side of a bulkhead the marine is pressed against.
-    if(AS_Solid(gx,gy)) {gx=x;gy=y;}
+    // Every round leaves the end of the barrel in the marine's hands (src/Marine.galaxy AS_Muzzle); dual pistols
+    // take turns, left hand and right.
+    if(w==AS_IT_PISTOLS || w==AS_IT_PDW) {as_pistolSide[p]=1-as_pistolSide[p];}
+    AS_Muzzle(p,aim);gx=as_muzX;gy=as_muzY;
     dmg=AS_ShotDamage(p,w);
     // Aim assist: snap to an alien hugging the aim line (wider for one lit by a flare).
     if(w!=AS_IT_FLAMER && w!=AS_IT_LAUNCHER && w!=AS_IT_TESLA) {
@@ -374,7 +373,7 @@ void AS_Shoot (int p, int w) {
         return;
     }
     if(w==AS_IT_TESLA) {AS_Tesla(p,gx,gy,aim,dmg);return;}
-    AS_FxUnit("ASFxFlash",gx+Cos(aim)*0.15,gy+Sin(aim)*0.15,AS_GUN_Z,RandomFixed(0.0,360.0),0.55+0.15*IntToFixed(as_it[w].pellets/3),0.55+0.15*IntToFixed(as_it[w].pellets/3),as_it[w].tint,2);
+    AS_FxUnit("ASFxFlash",gx+Cos(aim)*0.06,gy+Sin(aim)*0.06,as_muzZ,RandomFixed(0.0,360.0),0.55+0.15*IntToFixed(as_it[w].pellets/3),0.55+0.15*IntToFixed(as_it[w].pellets/3),as_it[w].tint,2);
     // Special weapons marines' rounds may pierce one more alien (20% a Piercing point).
     if(AS_Class(p)==AS_CL_SW && RandomFixed(0.0,1.0)<0.2*IntToFixed(AS_Skill(p,AS_SK_PIERCING))) {pierce+=1;}
     if(w==AS_IT_SNIPER && as_ampUntil[p]>as_now) {pierce=3;}
@@ -467,7 +466,7 @@ void AS_HealGunPulse (int p, bool self) {
     heal=5.0+IntToFixed(AS_Skill(p,AS_SK_HEALING));
     AS_Heal(best,heal,p);AS_CureInfestation(best,p);
     mq=UnitGetPosition(as_m[best]);
-    if(best!=p) {AS_FxUnit("ASFxArc",PointGetX(here),PointGetY(here),0.9,ATan2(PointGetY(mq)-PointGetY(here),PointGetX(mq)-PointGetX(here)),DistanceBetweenPoints(here,mq),0.7,"90,255,120",3);}
+    if(best!=p) {AS_Muzzle(p,as_aim[p]);AS_FxUnit("ASFxArc",as_muzX,as_muzY,as_muzZ,ATan2(PointGetY(mq)-as_muzY,PointGetX(mq)-as_muzX),DistanceBetweenPoints(Point(as_muzX,as_muzY),mq),0.7,"90,255,120",3);}
     AS_Burst(PointGetX(mq),PointGetY(mq),0.8,0.5,"90,255,120",3);
 }
 
@@ -486,12 +485,12 @@ void AS_Secondary (int p) {
         if(as_alt[p][w]<=0 && as_now-as_ammoMsgAt[p]>1.5) {as_ammoMsgAt[p]=as_now;AS_Message(p,"No grenades left for the "+as_it[w].title);}
         return;
     }
-    here=UnitGetPosition(as_m[p]);
+    here=UnitGetPosition(as_m[p]);AS_Muzzle(p,as_aim[p]);
     as_alt[p][w]-=1;as_nextAlt[p]=as_now+1.0;as_nextShot[p]=MaxF(as_nextShot[p],as_now+0.5);as_lastShot[p]=as_now;
     dist=MinF(14.0,MaxF(2.0,DistanceBetweenPoints(here,AS_AimPoint(p))));
-    if(as_it[w].alt==AS_ALT_FRAG) {AS_Lob(p,1,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p],dist,AS_GrenadeDamage(p),AS_GrenadeRadius(p));}
-    else if(as_it[w].alt==AS_ALT_STUN) {AS_Lob(p,5,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p],dist,1.0,AS_GrenadeRadius(p));}
-    else {AS_Lob(p,6,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p],MinF(dist,8.0),20.0,AS_GrenadeRadius(p));}
+    if(as_it[w].alt==AS_ALT_FRAG) {AS_Lob(p,1,as_muzX,as_muzY,as_aim[p],dist,AS_GrenadeDamage(p),AS_GrenadeRadius(p));}
+    else if(as_it[w].alt==AS_ALT_STUN) {AS_Lob(p,5,as_muzX,as_muzY,as_aim[p],dist,1.0,AS_GrenadeRadius(p));}
+    else {AS_Lob(p,6,as_muzX,as_muzY,as_aim[p],MinF(dist,8.0),20.0,AS_GrenadeRadius(p));}
     AS_Sound("Raynor_TossGrenadeLaunch",PointGetX(here),PointGetY(here),80.0,0.1);
     AS_HintEvent("alt_fire",p);
 }
@@ -500,8 +499,8 @@ void AS_SecondaryHeld (int p) {
     int w=as_slot[p];point here;int k;
     if(w==AS_IT_HEALGUN) {AS_HealGunPulse(p,true);return;}
     if(w==AS_IT_FLAMER && as_mag[p][w]>0 && as_now>=as_nextShot[p]) {
-        here=UnitGetPosition(as_m[p]);as_nextShot[p]=as_now+0.125;as_mag[p][w]-=1;as_lastShot[p]=as_now;
-        for(k=0;k<2;k+=1) {AS_Puff(p,PointGetX(here)+Cos(as_aim[p])*0.5,PointGetY(here)+Sin(as_aim[p])*0.5,as_aim[p]+RandomFixed(-8.0,8.0),5.0,0.8,0.0,0.0,true);}
+        here=UnitGetPosition(as_m[p]);AS_Muzzle(p,as_aim[p]);as_nextShot[p]=as_now+0.125;as_mag[p][w]-=1;as_lastShot[p]=as_now;
+        for(k=0;k<2;k+=1) {AS_Puff(p,as_muzX,as_muzY,as_aim[p]+RandomFixed(-8.0,8.0),5.0,0.8,0.0,0.0,true);}
     }
 }
 

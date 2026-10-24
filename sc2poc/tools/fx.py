@@ -84,6 +84,15 @@ def streak(tris, half):
     quad(tris, (0, 0, -half), (1, 0, -half), (1, 0, half), (0, 0, half), ((0, 0), (1, 0), (1, 1), (0, 1)))
 
 
+LASER_DROP = 0.52
+
+
+def beam(tris, half, drop):
+    """Two crossed quads from the origin to (0, -1, -drop): along a unit model's forward, sloping down."""
+    quad(tris, (-half, 0, 0), (-half, -1, -drop), (half, -1, -drop), (half, 0, 0), ((0, 0), (1, 0), (1, 1), (0, 1)))
+    quad(tris, (0, 0, -half), (0, -1, -drop - half), (0, -1, -drop + half), (0, 0, half), ((0, 0), (1, 0), (1, 1), (0, 1)))
+
+
 def sprite(tris, r=0.5):
     quad(tris, (-r, 0, r), (r, 0, r), (r, 0, -r), (-r, 0, -r))
     quad(tris, (0, -r, r), (0, r, r), (0, r, -r), (0, -r, -r))
@@ -107,9 +116,16 @@ def build():
     along = np.linspace(0, 1, w)[None, :]; across = 1 - np.abs(np.linspace(-1, 1, h))[:, None]
     g = (along ** 1.4) * across ** 1.5
     save('tracer.dds', np.dstack([255 * g, 235 * g, 170 * g * (0.6 + 0.4 * across)]))
-    # Laser sight: a thin even line that fades out at the far end.
-    g = (1 - along) ** 0.7 * across ** 3
-    save('laser.dds', np.dstack([255 * g, 40 * g, 30 * g]))
+    # Laser sight, after Alien Swarm's: a hot thin core in a soft red halo, even down its length and
+    # easing out only at the very end, where its dot sits. Smooth across, so it never shimmers as it turns.
+    w2, h2 = 128, 64
+    along2 = np.linspace(0, 1, w2)[None, :]; x2 = np.linspace(-1, 1, h2)[:, None]
+    core = np.exp(-(x2 / 0.07) ** 2); halo = np.exp(-(x2 / 0.38) ** 2)
+    ends = np.clip(along2 / 0.03, 0, 1) * np.clip((1 - along2) / 0.06, 0, 1) ** 0.6
+    save('laser.dds', np.dstack([(255 * core + 170 * halo) * ends, (150 * core + 18 * halo) * ends, (130 * core + 14 * halo) * ends]))
+    # Its dot where it lands: a small hot point in a red glow.
+    g = np.exp(-(r / 0.16) ** 2) + 0.5 * np.exp(-(r / 0.5) ** 2)
+    save('laserdot.dds', np.dstack([255 * np.clip(g, 0, 1), 90 * np.clip(g - 0.6, 0, 1) + 20 * g, 70 * np.clip(g - 0.6, 0, 1) + 14 * g]))
     # Tesla arc: jagged bright lines across the strip.
     arc = np.zeros((32, 256))
     rng = np.random.default_rng(4)
@@ -173,7 +189,11 @@ def build():
     save('anchor.dds', np.zeros((8, 8, 3)))
     models = {}
     t = []; streak(t, 0.035); models['Tracer'] = (t, 'tracer.dds')
-    t = []; streak(t, 0.012); models['Laser'] = (t, 'laser.dds')
+    # The laser runs along the unit's facing (a model's -Y), from the muzzle down to the deck at its far end
+    # (LASER_DROP below the muzzle, which sits LASER_DROP + 0.03 up): the script turns it by unit facing,
+    # which the engine draws smoothly between steps, and stretches its length with the scale's Y.
+    t = []; beam(t, 0.032, LASER_DROP); models['Laser'] = (t, 'laser.dds')
+    t = []; quad(t, (-.13, .13, 0), (.13, .13, 0), (.13, -.13, 0), (-.13, -.13, 0)); sprite(t, 0.05); models['LaserDot'] = (t, 'laserdot.dds')
     t = []; streak(t, 0.18); models['Arc'] = (t, 'arc.dds')
     t = []; sprite(t); models['Flash'] = (t, 'flash.dds')
     t = []; sprite(t); models['Burst'] = (t, 'burst.dds')

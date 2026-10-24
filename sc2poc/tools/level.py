@@ -385,7 +385,8 @@ def _floor_pick(kind, pattern, bx, by):
     if pattern == 3 and (bx, by) == (1, 1):
         return accent
     h = (pattern * 7 + bx * 3 + by * 5 + pattern * bx * 11) % 9
-    return second if h in (2, 6) else main
+    # Halls mix their grating and concrete about evenly, as AS's landing bay walkways do; rooms keep one plating.
+    return second if h in ((1, 2, 5, 6) if kind == 'hall' else (2, 6)) else main
 
 
 def floor_pieces(out):
@@ -406,16 +407,19 @@ def floor_pieces(out):
             for x in range(4):
                 for y in range(4):
                     cell(m, _floor_pick(kind, p, x // 2, y // 2), x, y, x, y)
-        name = 'KF%dT' % k
-        m = out[name] = ShipModel(name, (0, 0, 0))
-        for x in range(2):
-            for y in range(2):
-                cell(m, KIND_FLOORS[kind][0], x, y, x, y)
-        for px in range(2):
-            for py in range(2):
-                name = 'KF%dS%d%d' % (k, px, py)
-                m = out[name] = ShipModel(name, (0, 0, 0))
-                cell(m, KIND_FLOORS[kind][0], 0, 0, px, py)
+        # 2x2 and single-cell pieces in the main plating (T, S) and the second (U, R): src/Kit.galaxy AS_KitFloorTile
+        # mixes them by position, so narrow halls get the same mix as the big 4x4 pieces.
+        for t2, s1, tex in (('T', 'S', KIND_FLOORS[kind][0]), ('U', 'R', KIND_FLOORS[kind][1])):
+            name = 'KF%d%s' % (k, t2)
+            m = out[name] = ShipModel(name, (0, 0, 0))
+            for x in range(2):
+                for y in range(2):
+                    cell(m, tex, x, y, x, y)
+            for px in range(2):
+                for py in range(2):
+                    name = 'KF%d%s%d%d' % (k, s1, px, py)
+                    m = out[name] = ShipModel(name, (0, 0, 0))
+                    cell(m, tex, 0, 0, px, py)
 
 
 # Decal pieces, origin at their centre, laid by the script (AS_KitDecal) from each level's decal_spots.
