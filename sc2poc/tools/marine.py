@@ -179,22 +179,32 @@ def body(m, grip, fore, twohanded=True):
     m.box((0.103, 0.0, 0.60), (0.012, 0.15, 0.022), 'trim', 'Torso', pitch=-8)
     m.box((0.104, 0.05, 0.665), (0.008, 0.035, 0.035), 'lamp', 'Torso')             # chest lamp
     m.box((0.104, -0.05, 0.665), (0.010, 0.045, 0.02), 'joint', 'Torso')
-    # Shoulder pads: big rounded plates with a coloured edge.
+    # Pauldrons: layered angular plates sloping off the shoulder, a coloured edge on the lower one, over a
+    # rounded cap (AS's are plates, not balls).
     for side in (1, -1):
-        m.ellipsoid((-0.005, side * 0.165, 0.71), (0.088, 0.072, 0.04), 'armor', 'Torso', roll=side * 22, sides=14, rings=6)
-        m.ellipsoid((-0.005, side * 0.172, 0.695), (0.09, 0.074, 0.016), 'trim', 'Torso', roll=side * 22, sides=14, rings=4)
-    # The backpack: power pack, twin tanks and the antenna.
+        m.ellipsoid((-0.005, side * 0.16, 0.70), (0.07, 0.06, 0.04), 'armor2', 'Torso', sides=10, rings=5)
+        m.box((-0.005, side * 0.175, 0.725), (0.15, 0.09, 0.035), 'armor', 'Torso', roll=side * 24)
+        m.box((-0.01, side * 0.205, 0.68), (0.14, 0.06, 0.03), 'armor', 'Torso', roll=side * 48)
+        m.box((-0.01, side * 0.232, 0.655), (0.14, 0.012, 0.02), 'trim', 'Torso', roll=side * 48)
+    # The backpack: a power pack with ribbed cooling fins and a status lamp on its back, twin tanks, the antenna.
     m.box((-0.15, 0.0, 0.64), (0.11, 0.21, 0.20), 'pack', 'Torso')
-    m.box((-0.21, 0.0, 0.66), (0.025, 0.15, 0.13), 'joint', 'Torso')
+    m.box((-0.207, 0.0, 0.64), (0.02, 0.17, 0.16), 'armor2', 'Torso')
+    for k in range(4):
+        m.box((-0.219, 0.0, 0.585 + k * 0.03), (0.008, 0.13, 0.012), 'joint', 'Torso')
+    m.box((-0.15, 0.0, 0.745), (0.09, 0.17, 0.012), 'armor2', 'Torso')                 # its lid, seen from above
     for side in (1, -1):
         m.tube((-0.17, side * 0.075, 0.53), (-0.17, side * 0.075, 0.75), 0.04, slot='armor2', bone='Torso', sides=10)
-    m.box((-0.215, 0.0, 0.73), (0.012, 0.06, 0.02), 'lamp', 'Torso')
+        m.ellipsoid((-0.17, side * 0.075, 0.75), (0.04, 0.04, 0.015), 'trim', 'Torso', sides=10, rings=4)
+    m.box((-0.218, -0.05, 0.715), (0.012, 0.04, 0.018), 'lamp', 'Torso')
     m.tube((-0.17, 0.07, 0.75), (-0.19, 0.07, 1.05), 0.006, 0.003, slot='joint', bone='Antenna', sides=5)
     m.ellipsoid((-0.19, 0.07, 1.05), (0.01, 0.01, 0.01), 'gunlite', 'Antenna', sides=6, rings=4)
     # Helmet: a domed shell, a jaw guard and two glowing eye slits.
     m.limb((0.0, 0.0, 0.70), (0.005, 0.0, 0.76), 0.045, 0.045, 'joint', 'Head')
     m.ellipsoid((0.01, 0.0, 0.81), (0.085, 0.075, 0.075), 'armor', 'Head')
     m.ellipsoid((0.0, 0.0, 0.84), (0.075, 0.065, 0.05), 'armor2', 'Head')
+    m.box((0.0, 0.0, 0.89), (0.15, 0.022, 0.02), 'armor', 'Head', pitch=-6)        # a crest ridge front to back
+    for side in (1, -1):
+        m.box((-0.005, side * 0.074, 0.81), (0.07, 0.012, 0.045), 'joint', 'Head')  # ear vents
     m.box((0.06, 0.0, 0.775), (0.05, 0.10, 0.05), 'joint', 'Head', pitch=10)
     for side in (1, -1):
         m.box((0.083, side * 0.03, 0.81), (0.014, 0.05, 0.02), 'visor', 'Head', yaw=side * 14)
@@ -636,7 +646,7 @@ def textures():
         shade = 0.86 + 0.20 * n[:, x0:x0 + 32, None] + 0.08 * fine[:, x0:x0 + 32, None]
         if name in ('armor', 'armor2', 'pack'):
             # Panel seams every so often down the column, scuffed darker edges.
-            seam = ((rows % 37) < 2) * 0.35
+            seam = ((rows % 61) < 2) * 0.14
             shade = shade * (1 - seam)
         if name in ('gun', 'gun2'):
             shade = 0.8 + 0.35 * fine[:, x0:x0 + 32, None]
