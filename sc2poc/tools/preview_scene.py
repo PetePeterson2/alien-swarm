@@ -230,7 +230,7 @@ def lay_level(scene, tex, pieces, rows, tx, ty):
             return -1
         nx, ny = x + (0, 1, 0, -1)[s], y + (-1, 0, 1, 0)[s]
         if cell(nx, ny) == 'o':
-            return 1
+            return 9
         if not floor(nx, ny):
             return -1
         if c == 'w':

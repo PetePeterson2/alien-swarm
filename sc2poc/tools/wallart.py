@@ -215,6 +215,35 @@ def wall_art(kind, seed):
     return _img(a), (_img(emis) if emis.max() > 0 else None)
 
 
+def wall_concrete(seed=210):
+    """A building's outer wall seen across the dock's drop (AS's concretewall080a): pale poured concrete in form
+    panels with tie holes and rain streaks, a lit window or two (the colony is still awake), a dark plinth."""
+    r = np.random.default_rng(seed)
+    n = _noise(0, 60, seed, 4, (WH, WW)); f = _noise(0, 6, seed + 1, 2, (WH, WW))
+    a = np.array((168, 166, 160), float)[None, None] * (0.88 + 0.14 * n[..., None] + 0.06 * f[..., None])
+    emis = np.zeros((WH, WW, 3))
+    for x in range(0, WW, 256):
+        a[:, max(0, x - 1):x + 2] *= 0.6
+    for y in (WH // 3, 2 * WH // 3):
+        a[y - 1:y + 2] *= 0.65
+    for x in range(64, WW, 128):
+        for y in (WH // 6, WH // 2, 5 * WH // 6):
+            yy, xx = np.mgrid[-5:6, -5:6]
+            hole = (np.hypot(xx, yy) < 4.5)[..., None]
+            a[y - 5:y + 6, x - 5:x + 6] = a[y - 5:y + 6, x - 5:x + 6] * (1 - 0.55 * hole)
+    # A window: dark glass, a warm lit room behind it in one bay of two.
+    if r.random() < 0.6:
+        x0 = int(r.integers(60, WW - 220)); y0 = int(WH * 0.28)
+        a[y0 - 6:y0 + 106, x0 - 6:x0 + 166] = (70, 72, 74)
+        warm = np.array((255, 196, 120), float) * r.uniform(0.5, 0.9)
+        a[y0:y0 + 100, x0:x0 + 160] = warm * 0.35
+        emis[y0:y0 + 100, x0:x0 + 160] = warm * 0.55
+        a[y0:y0 + 100, x0 + 78:x0 + 82] = (60, 62, 64); emis[y0:y0 + 100, x0 + 78:x0 + 82] = 0
+    a[int(WH * 0.9):] *= 0.45
+    a = _weather(a, seed + 3, 70, 0.04)
+    return _img(a), (_img(emis) if emis.max() > 0 else None)
+
+
 def wall_hive(seed=200):
     """A bay grown over: plating under purple-brown alien skin with glowing pods."""
     plate, _ = wall_art('dark', seed)
@@ -309,6 +338,7 @@ WALLS = {'wall_plain0': ('clean', 100), 'wall_plain1': ('colony', 101), 'wall_pi
 def textures():
     out = {name: wall_art(kind, seed) for name, (kind, seed) in WALLS.items()}
     out['wall_hive'] = wall_hive()
+    out['wall_concrete'] = wall_concrete()
     out['wall_trim'] = (tex_trim(), None)
     out['cap'] = (tex_cap(), None)
     out['machine_top'] = (tex_machine(), None)

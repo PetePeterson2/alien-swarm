@@ -403,7 +403,7 @@ def hull_meshes(floor, room):
 # steps. Ceiling and cap tiles are 4x4, 2x2 and 1x1, origin at their south-west
 # corner, uv'd from world position mod 4 so the three sizes join without seams.
 KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive',
-             'wall_window']
+             'wall_window', 'wall_concrete']
 # Room kinds as the script numbers them, and the wall panels each draws from (indexes into KIT_WALLS).
 # A lift cell (the elevator platform and its bridges) gets no ceiling; the camera looks down the shaft.
 KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift']

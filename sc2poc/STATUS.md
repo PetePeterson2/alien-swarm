@@ -385,6 +385,8 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 - Every round, tracer, flame gob, grenade, tesla arc and heal beam now leaves the muzzle of the gun in hand (`AS_Muzzle`; the muzzle table is written from the models by build.py). Dual pistols alternate hands. Spent casings flick out to the right.
 - A round flies several cells a step, more than its tracer streak is long, so before this the first you ever saw of it was well out in front of the marine whatever the muzzle. A round's first frame is now a line from the muzzle to it, as AS's tracers leave the barrel.
 - The flamer's jet leaves the nozzle blue-white hot and turns to orange fire (the user's AS flamer screenshot).
+- Reloading shows: the gun dips and turns in toward the body as the clip goes in, upper body only so the legs keep running, stretched to the reload's length.
+- No laser on a chainsaw or a carried case.
 - Animations: stand, run forward, back-pedal and side-steps picked from the run's angle to the aim (the legs go where the marine moves, the gun stays on the aim), the rifle-butt swing, and a death where the body goes over and stays (`AS_MarineCorpse`) instead of SC2's marine death.
 - Second model pass: layered angular pauldrons instead of round pads, a power pack with cooling fins and a status lamp, a crested helmet with ear vents.
 - The models carry SC2 attachment points (Ref_Center for the name tags, Ref_Weapon at the muzzle, and the rest).
@@ -403,6 +405,7 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 - Solid crates and barrels along the walls of the big rooms, kept clear of doorways and of every point the mission uses (pathing still 0 leaks). Hatches ringed with hazard chevrons; blood pools where the crew fell; powdery snow on the outdoor deck.
 - Dust motes drifting on screen, steam off the glowing grates and out of the wall pipe runs (a soft smoke sprite, not the ringed burst), one wall lamp in five failing or sputtering, light shafts under the steady lamps in their colour, and painted hard shadows (girder bands, grating cookies) under about half the room lamps.
 - Fat red pipes with yellow flanged joints on saddles along a north or side wall of some bays, stores and machine rooms (solid, like the crates). WATCH YOUR STEP stencils at both ends of the stair and the ramp. The drop off the dock is near-black night with a faint haze and a few distant lights, as AS's is (it was a bright blue lattice). Fan shadows turn slowly on the deck under some room lamps.
+- Pink neon runs along the dock's edges at the railings' feet; the buildings rising out of the drop show pale concrete outer walls with a lit window here and there; damaged consoles spit sparks now and then.
 - The pump room glows sodium orange. Cargo Elevator opens on a dark bay with a grating walkway lit orange from below, as AS's does.
 - `dist/screens/visual-pass-compare.png` sets AS's captures beside renders of the same places.
 
@@ -417,5 +420,15 @@ Three asks: make the map look like Alien Swarm's, give the marines real guns tha
 | 5 | 3.5-cell self-defence, casings, caps, blood | 109.8 s | 271.6 s | 4 |
 | 6 | machinery tops, marine corpses | 111.1 s | 285.3 s | 3 |
 | 7 | grating walkway, muted suits, flickering wall lamps, pipe steam, shadow bands | 109.1 s | 275.1 s | 4 |
+| 8 | light shafts, turning fans | 109.1 s | 268.1 s | 5 |
+| 10 | marine second pass, dark drop | 108.8 s | 275.6 s | 4 |
+| 11 | tracers from the barrel, big pipes | 107.6 s | stalled at the door console (autopilot bug, fixed) | 1 |
+| 12 | autopilot holds the console | 110.1 s | 287.8 s | 6 |
+| 13 | paper litter | 99.8 s | 274.3 s | 3 |
+| 14 | reload motion, console sparks | 108.6 s | 274.8 s | 2 |
+| 16 | no laser on chainsaw or case, livelier dust | 109.3 s | 279.6 s | 4 |
+| 18 | pink dock neon, concrete outer walls | 108.3 s | 275.8 s | 3 |
+
+Run 9 never started (the client sat in its menus; restarted). Run 17 raced an edit (built half-way through a change, so a wall mesh was missing: `Could not create actor ASKW9F`); run 18 is the same change built whole. A `-Demo` build fired all fifteen gun families for five minutes with no script errors.
 
 Not seen on screen: all of it. In particular check by hand (`.\launch.ps1 -QA`): that the marine models and the laser turn smoothly and together, the suit tints, the gun swaps, the corpses, the new lens, and how the snow, girders, machinery tops and grating walkway look under SC2's lights.

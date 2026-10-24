@@ -15,6 +15,7 @@ int as_kitRails;
 const int AS_KIND_HIVE = 7;
 const int AS_KIND_LIFT = 8;       // no ceiling over the lift and its bridges
 const int AS_PANEL_WINDOW = 8;    // KIT_WALLS index of the window panel
+const int AS_PANEL_CONCRETE = 9;  // KIT_WALLS index of the outer concrete wall a building shows across the drop
 int[@W@][@H@] as_kitMark;         // scratch: 1 a tile covers the cell, 2 a pathing block does
 bool[@W@][@H@] as_kitNear;        // hull cell within five of the deck: gets a cap
 bool[@W@][@H@] as_kitEdge;        // collision cell touching the deck: gets a pathing blocker
@@ -122,7 +123,7 @@ int AS_FacePanel (int x, int y, int s) {
     else if(s==2) {ny+=1;}
     else {nx-=1;}
     // A block of hull standing in the open night is a building: plain walls down to the drop.
-    if(nx>=0 && ny>=0 && nx<AS_W && ny<AS_H && as_cell[nx][ny]==AS_OPEN) {return 1;}
+    if(nx>=0 && ny>=0 && nx<AS_W && ny<AS_H && as_cell[nx][ny]==AS_OPEN) {return AS_PANEL_CONCRETE;}
     if(!AS_Floor(nx,ny)) {return -1;}
     if(as_cell[x][y]==AS_WINDOW) {return AS_PANEL_WINDOW;}
     return AS_KitPanel(as_cell[nx][ny],nx/2,ny/2,s);
