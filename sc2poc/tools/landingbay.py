@@ -74,6 +74,7 @@ BLOCKS = [
 ]
 
 VIEWPORTS = [(50, 2), (51, 2), (55, 2), (56, 2)]   # the dock's outer wall looks onto the landing field
+OUTDOORS = (26, 0, 64, 34)                          # under the night sky: the dock, its walkway, the ramp and the freight yard
 SPAWN = (51.0, 7.5)
 SPAWN_FACING = 180.0
 LIFT = None
@@ -82,9 +83,12 @@ WINDOWS = []
 
 # Lamps (x, y, kind, flicker): 0 steady, 1 failing, 2 sputtering, 3 alarm pulse.
 LIGHTS = [
-    (50.0, 5.0, 'yellow', 0), (56.0, 5.0, 'yellow', 0), (50.0, 12.0, 'whitebig', 0), (56.0, 12.0, 'yellow', 0),
-    (41.0, 6.5, 'white', 2), (35.5, 12.0, 'white', 0),
-    (30.0, 19.0, 'white', 0), (36.0, 21.0, 'orange', 2), (30.0, 31.0, 'white', 1), (36.0, 31.0, 'white', 0),
+    # Outside, as AS's opening is (seen 2026-10-23): a snowy night dock in cold blue light with a red alarm
+    # turning and pink neon on the walkway, then hard white floodlights over the freight yard. Snow falls
+    # here (src/Objects.galaxy AS_SnowPulse, OUTDOORS below).
+    (50.0, 5.0, 'cold', 0), (56.0, 5.0, 'red', 3), (50.0, 12.0, 'coldbig', 0), (56.0, 12.0, 'cold', 0),
+    (41.0, 6.5, 'purple', 0), (35.5, 12.0, 'cold', 0),
+    (30.0, 19.0, 'whitebig', 0), (36.0, 21.0, 'orange', 2), (30.0, 31.0, 'white', 1), (36.0, 31.0, 'whitebig', 0),
     (30.0, 37.0, 'red', 3), (30.0, 42.0, 'white', 0),
     (27.0, 54.0, 'white', 0), (33.0, 48.0, 'white', 2), (33.0, 58.0, 'cold', 0), (38.0, 53.0, 'white', 1), (23.0, 56.0, 'white', 0),
     (22.0, 63.0, 'white', 2), (31.0, 63.0, 'white', 0),

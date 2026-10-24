@@ -279,9 +279,15 @@ void AS_VentBlow () {
 const int AS_SLOTS = 5;
 const fixed AS_PANEL = 6.0;          // panel height (tools/elevator.py PANEL_H)
 const fixed AS_CYCLE = 30.0;         // AS_SLOTS panels: the wall always reaches 24 up, above the top of the screen
-const fixed AS_RIDE_V = 1.5;         // top speed, units a second
+// AS's shaft walls run 2655 units at 25 a second: a descent of 106 s that creeps. This one takes about 100 s.
+const fixed AS_RIDE_V = 1.1;         // top speed, units a second
 const fixed AS_RIDE_A = 0.55;        // braking and starting
 const fixed AS_RIDE_LEN = 108.0;     // a multiple of AS_PANEL: the exit lintel then stops at the floor
+const fixed AS_WAVE_STRETCH = 1.35;  // the wave times were set for a 75 s ride
+// The ride's framing: AS's camera shows the whole platform (70% of the screen's width) with the shaft
+// walls round it and the north wall above. This platform is twice AS's, so the camera stands twice as far.
+const fixed AS_RIDE_FRAME = 13.0;
+const fixed AS_RIDE_BIAS = 2.0;
 unit[16][5] as_pan;
 unit[16][5] as_panSpare;             // the door slots' plain panel, used once the lintel has gone by
 fixed[16][5] as_panH;
@@ -308,6 +314,8 @@ unit[2] as_alarm;
 unit[2] as_liftSpin;
 unit[6] as_shaftLight;
 fixed[6] as_shaftLightPhase;
+unit[3] as_liftFlood;                // the warm floodlights over the platform: on until the walls move, on again at the bottom
+fixed as_steamNext;
 int as_rideWave;
 fixed as_rideClock;                  // seconds since the platform started moving
 bool as_surge;
@@ -377,6 +385,12 @@ void AS_LiftBuild () {
         UnitCreate(1,"ASLightRedbig",c_unitCreateIgnorePlacement,0,Point(cx,cy),270.0);
         as_liftSpin[k]=UnitLastCreated();UnitSetHeight(as_liftSpin[k],3.0,0.0);libNtve_gf_ShowHideUnit(as_liftSpin[k],false);
     }
+    // AS's lift waits under warm sodium light (light_spin_ele_top), switched off as the walls start to move.
+    for(k=0;k<3;k+=1) {
+        UnitCreate(1,"ASLightYellowbig",c_unitCreateIgnorePlacement,0,Point(cx+IntToFixed(k-1)*3.8,cy+1.5-AbsF(IntToFixed(k-1))*3.0),270.0);
+        as_liftFlood[k]=UnitLastCreated();UnitSetHeight(as_liftFlood[k],3.4,0.0);
+        ActorSend(libNtve_gf_MainActorofUnit(as_liftFlood[k]),"SetScale 2.6");
+    }
     // Lamps fixed in the shaft that sweep past as the lift goes down.
     for(k=0;k<6;k+=1) {
         c=(k*7)%as_colCount;
@@ -430,6 +444,67 @@ void AS_ShaftSet (fixed s) {
     }
 }
 
+// The ride's wide framing on, or back to each player's own distance.
+void AS_RideFrame (bool on) {
+    int p;
+    as_camWide=0.0;as_camBiasY=0.0;
+    if(on) {as_camWide=AS_RIDE_FRAME;as_camBiasY=AS_RIDE_BIAS;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_TopDistApply(p,1.5);}}
+}
+void AS_LiftFloods (bool on) {
+    int k;
+    for(k=0;k<3;k+=1) {if(as_liftFlood[k]!=null) {libNtve_gf_ShowHideUnit(as_liftFlood[k],on);}}
+}
+// AS's landingbay_lift_start_dust: the shaft's grime shaken loose as the platform lurches off.
+void AS_LiftDust () {
+    int k;unit u;fixed cx=(as_liftX0+as_liftX1)*0.5;fixed cy=(as_liftY0+as_liftY1)*0.5;fixed s;
+    for(k=0;k<10;k+=1) {
+        s=RandomFixed(1.6,3.2);
+        u=AS_FxUnit("ASFxBurst",cx+RandomFixed(-6.5,6.5),cy+RandomFixed(-6.5,6.5),RandomFixed(0.3,2.5),0.0,s,s,"70,60,46",24);
+        if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 1.5");}
+    }
+}
+// AS's landingbay_lift_steam_jet: a pipe on a shaft wall venting across the drop now and then.
+void AS_LiftSteam () {
+    int c=RandomInt(0,as_colCount-1);int k;unit u;fixed off=RandomFixed(-0.35,0.35)*as_colW[c];fixed z=RandomFixed(1.5,4.0);fixed x;fixed y;fixed s;
+    for(k=0;k<4;k+=1) {
+        x=as_colX[c]+AS_ColAlongX(c)*off+Cos(as_colFace[c])*(0.3+0.45*IntToFixed(k));
+        y=as_colY[c]+AS_ColAlongY(c)*off+Sin(as_colFace[c])*(0.3+0.45*IntToFixed(k));
+        s=0.5+0.3*IntToFixed(k);
+        u=AS_FxUnit("ASFxBurst",x,y,z+0.1*IntToFixed(k),0.0,s,s,"84,86,86",10+3*k);
+        if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 "+FixedToString(0.6+0.2*IntToFixed(k),2));}
+    }
+}
+// AS's relay_lift_exit_lights: three lamps along the way out light in turn, 0.3 s apart, round and round.
+void AS_LiftExitLights () {
+    int k=(as_tick/5)%3;fixed y=(IntToFixed(as_brOut[1])+IntToFixed(as_brOut[3]))*0.5;
+    fixed x=IntToFixed(as_brOut[0])+0.4+IntToFixed(k)*1.6;
+    if(as_tick%5!=0) {return;}
+    AS_Burst(x,y-1.1,0.12,0.55,"255,190,70",4);AS_Burst(x,y+1.1,0.12,0.55,"255,190,70",4);
+}
+
+// AS's env_slomo: the moment the first wave lands on the deck, time slows for a breath, then snaps back.
+bool as_slomoDone;
+fixed as_slomoEnd;
+int as_slomoSpeed;
+void AS_Slomo () {
+    if(as_slomoDone) {return;}
+    as_slomoDone=true;as_slomoSpeed=GameGetSpeedValue();
+    GameSetSpeedValue(c_gameSpeedSlower);as_slomoEnd=as_now+0.9;
+    AS_Log("slomo: speed "+IntToString(as_slomoSpeed)+" -> "+IntToString(GameGetSpeedValue()));
+}
+void AS_SlomoEnd () {
+    if(as_slomoEnd<=0.0) {return;}
+    as_slomoEnd=0.0;GameSetSpeedValue(as_slomoSpeed);
+    AS_Log("slomo over: speed "+IntToString(GameGetSpeedValue()));
+}
+// The shaft's brown haze (AS's landingbay_lift_fog_volume) drifting over the deck while it runs.
+void AS_LiftHaze () {
+    unit u;fixed s=RandomFixed(5.0,8.0);
+    u=AS_FxUnit("ASFxBurst",RandomFixed(as_liftX0,as_liftX1),RandomFixed(as_liftY0,as_liftY1+2.0),RandomFixed(1.5,3.5),0.0,s,s,"26,21,16",40);
+    if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 0");ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 1 0.8");}
+}
+
 // Boarding: everyone alive on the platform for five seconds starts the lift.
 void AS_BoardPulse () {
     int on;int alive;int p;string s;
@@ -473,6 +548,7 @@ void AS_RideStart () {
     AS_AllSound("Alert_BaseUnderAttackKlaxon");
     for(k=0;k<2;k+=1) {libNtve_gf_ShowHideUnit(as_alarm[k],true);ActorSend(libNtve_gf_MainActorofUnit(as_alarm[k]),"AnimPlay Spin Stand PlayForever");}
     AS_All("CARGO ELEVATOR","Going down. Hold the platform.");AS_Log("lift boarded, gates closing");
+    AS_RideFrame(true);
 }
 void AS_RideMove () {
     fixed left;fixed want;fixed t;int k;fixed cx=(as_liftX0+as_liftX1)*0.5;fixed cy=(as_liftY0+as_liftY1)*0.5;point q;
@@ -492,6 +568,8 @@ void AS_RideMove () {
             // The running rumble under everything until the lift stops.
             SoundPlay(SoundLink("Ambience_Lab02Train",-1),PlayerGroupAll(),70.0,0.0);as_rideSnd=SoundLastPlayed();
             AS_ShakeAll(0.2,0.8);
+            // The sodium lights die and the dust comes down as it lurches off: the red alarm light has the platform.
+            AS_LiftFloods(false);AS_LiftDust();as_steamNext=as_now+RandomFixed(2.0,4.0);
         }
         return;
     }
@@ -514,6 +592,9 @@ void AS_RideMove () {
             AS_Fx("ASFxSpark",PointGetX(q),PointGetY(q),RandomFixed(0.2,1.2),as_colFace[k]);
             if(RandomInt(0,3)==0) {AS_Flash(PointGetX(q),PointGetY(q),0.6,0.5,"255,170,80");}
         }
+        if(as_now>=as_steamNext) {as_steamNext=as_now+RandomFixed(2.0,4.5);AS_LiftSteam();}
+        if(as_tick%20==0) {AS_LiftHaze();}
+        if(as_slomoEnd>0.0 && as_now>=as_slomoEnd) {AS_SlomoEnd();}
         AS_RideWaves();
         if(as_scroll>=AS_RIDE_LEN-0.0001) {AS_RideArrive();}
     }
@@ -532,8 +613,10 @@ void AS_RideMove () {
             as_stage=AS_ST_ESCAPE;as_stageAt=as_now;as_checkpoint=5;
             AS_MarkAt((as_extX0+as_extX1)*0.5,(as_extY0+as_extY1)*0.5);
             as_lowerLevel=true;
+            AS_RideFrame(false);
         }
     }
+    if(as_ride>=3 && as_now-as_rideAt<14.0) {AS_LiftExitLights();}
     // The red lights circle the platform while the alarm runs.
     if(as_ride>=2 && as_ride<4) {
         for(k=0;k<2;k+=1) {UnitSetPosition(as_liftSpin[k],Point(cx+Cos(as_now*200.0+IntToFixed(k)*180.0)*4.5,cy+Sin(as_now*200.0+IntToFixed(k)*180.0)*4.5),true);}
@@ -547,6 +630,8 @@ void AS_RideArrive () {
     AS_AllSound("Event_Space02_CameraQuake");
     SoundPlayAtPoint(SoundLink("Doodad_SecurityGateDiagonalOpen",-1),PlayerGroupAll(),Point(as_colX[as_outCol],as_colY[as_outCol]),0.5,100.0,0.0);
     GameSetLighting("ASDerelict",2.5);
+    // AS's lower landing is lit warm again.
+    AS_LiftFloods(true);
     // The rumble stops; the lower level sounds alive.
     if(as_rideSnd!=null) {SoundStop(as_rideSnd,true);}
     if(as_amb!=null) {SoundStop(as_amb,true);}
@@ -598,6 +683,7 @@ void AS_ClimbPulse () {
         x=AS_Clamp(as_climbX[i]+Cos(as_climbFace[i])*1.6,as_liftX0+0.6,as_liftX1-0.6);y=AS_Clamp(as_climbY[i]+Sin(as_climbFace[i])*1.6,as_liftY0+0.6,as_liftY1-0.6);
         j=AS_SpawnAlien(as_climbKind[i],x,y,true);
         if(j>=0) {
+            if(as_ride==2) {AS_Slomo();}
             UnitSetHeight(as_a[j],1.3,0.0);UnitSetHeight(as_a[j],0.0,0.35);
             as_aNextOrder[j]=as_now+0.3;as_aNextAttack[j]=as_now+0.6;
             AS_Sound("Broodling_Attack",x,y,70.0,0.15);
@@ -618,7 +704,7 @@ void AS_Climbers (int kind, int n) {
     for(i=0;i<(n*7+2)/5;i+=1) {AS_Climber(kind);}
 }
 void AS_RideWaves () {
-    int n=AS_Humans();fixed t=as_rideClock;int k;
+    int n=AS_Humans();fixed t=as_rideClock/AS_WAVE_STRETCH;int k;
     // Each wave once, at its time; climbers trickle, so a wave is a few seconds of contacts.
     if(as_rideWave==0 && t>5.0) {as_rideWave=1;AS_AllMsg("<c val=\"FF5040\">Movement on the shaft walls</c>");AS_Climbers(AS_DRONE,AS_Scaled(3));}
     if(as_rideWave==1 && t>9.0) {as_rideWave=2;AS_Climbers(AS_DRONE,AS_Scaled(3));}
@@ -811,6 +897,7 @@ void AS_MissionInit () {
     as_burstNext= -1;as_ventBlowAt=0.0;
     as_inCol= -1;as_outCol= -1;as_outSlot=0;as_inGone=false;as_outSet=false;
     as_scroll=0.0;as_scrollV=0.0;as_ride=0;as_rideAt=0.0;as_boardAt=0.0;as_rideWave=0;as_rideClock=0.0;as_surge=false;
+    as_slomoDone=false;AS_SlomoEnd();
     as_holdAt=0.0;as_holdWave=0.0;as_lowerLevel=false;
     as_crumbHead= -1;as_crumbN=0;
     for(k=0;k<5;k+=1) {as_objState[k]=0;}
@@ -852,6 +939,8 @@ void AS_MissionClear () {
     AS_UnitGone(as_lintelIn);AS_UnitGone(as_lintelOut);AS_UnitGone(as_bridgeIn);AS_UnitGone(as_bridgeOut);AS_UnitGone(as_platform);AS_UnitGone(as_void);
     as_lintelIn=null;as_lintelOut=null;as_bridgeIn=null;as_bridgeOut=null;as_platform=null;as_void=null;
     for(k=0;k<6;k+=1) {AS_UnitGone(as_shaftLight[k]);as_shaftLight[k]=null;}
+    for(k=0;k<3;k+=1) {AS_UnitGone(as_liftFlood[k]);as_liftFlood[k]=null;}
+    as_camWide=0.0;as_camBiasY=0.0;AS_SlomoEnd();
     for(k=0;k<AS_CLIMB;k+=1) {if(as_climbA[k]!=null) {ActorSend(as_climbA[k],"Destroy");as_climbA[k]=null;}}
     if(as_ventFire!=null) {ActorSend(as_ventFire,"Destroy");as_ventFire=null;}
     if(as_rideSnd!=null) {SoundStop(as_rideSnd,true);as_rideSnd=null;}
@@ -939,6 +1028,7 @@ void AS_BayClear () {
     if(as_bayShip!=null) {ActorSend(as_bayShip,"Destroy");as_bayShip=null;}
     if(as_baySentrySpot!=null) {UnitRemove(as_baySentrySpot);as_baySentrySpot=null;}
     as_lineN=0;as_lineUntil=0.0;as_weldWatch="";
+    AS_SnowClear();
 }
 // The level's things on the deck at the start: drones asleep, barrels, pickups.
 void AS_BayPopulate () {
@@ -962,6 +1052,7 @@ void AS_BayPulse () {
         if(d>=0 && !as_drBroken[d]) {AS_DoorBreak(d);}
     }
     AS_WeldWatchPulse();
+    AS_SnowPulse();
 }
 // A trigger's action that is the mission's own (src/Objects.galaxy passes the rest to the spawners).
 void AS_MissionAction (string act, string arg) {

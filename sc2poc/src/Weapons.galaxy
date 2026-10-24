@@ -62,7 +62,7 @@ void AS_SelectHand (int p, int hand) {
     as_hand[p]=hand;as_slot[p]=it;as_reloadEnd[p]=0.0;as_spin[p]=0.0;as_zoomScope[p]=0.0;
     as_nextShot[p]=MaxF(as_nextShot[p],as_now+0.3);
     as_semiReady[p]=true;
-    if(as_view[p]==0 && !as_bot[p]) {CameraSetValue(p,c_cameraValueDistance,as_zoom[p],0.3,-1,0.0);}
+    if(!as_bot[p]) {AS_TopDistApply(p,0.3);}
     AS_HintEvent("switched_weapon",p);
 }
 void AS_SwapWeapon (int p) {AS_SelectHand(p,1-as_hand[p]);}
@@ -476,8 +476,9 @@ void AS_Secondary (int p) {
     int w=as_slot[p];point here;fixed dist;
     if(!as_alive[p] || w<=0 || as_using[p]>=0) {return;}
     if(as_it[w].alt==AS_ALT_ZOOM) {
-        if(as_zoomScope[p]>0.5) {as_zoomScope[p]=0.0;CameraSetValue(p,c_cameraValueDistance,as_zoom[p],0.3,-1,0.0);}
-        else {as_zoomScope[p]=1.0;CameraSetValue(p,c_cameraValueDistance,as_zoom[p]*1.45,0.3,-1,0.0);}
+        if(as_zoomScope[p]>0.5) {as_zoomScope[p]=0.0;}
+        else {as_zoomScope[p]=1.0;}
+        AS_TopDistApply(p,0.3);
         return;
     }
     if(as_it[w].alt!=AS_ALT_FRAG && as_it[w].alt!=AS_ALT_STUN && as_it[w].alt!=AS_ALT_FIRE) {return;}

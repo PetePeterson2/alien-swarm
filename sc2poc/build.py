@@ -270,6 +270,7 @@ def mission_galaxy(n):
     out.append('    as_pnRows=%d;as_pnCols=%d;as_pnWires=%d;' % (rows, cols, wires))
     sx, sy = getattr(L, 'SENTRY_SPOT', (0.0, 0.0))
     out.append('    as_sentrySpotX=%.2f;as_sentrySpotY=%.2f;' % (sx, sy))
+    out.append('    as_outX0=%d.0;as_outY0=%d.0;as_outX1=%d.0;as_outY1=%d.0;' % getattr(L, 'OUTDOORS', (0, 0, 0, 0)))
     if L.LIFT is not None:
         out.append('    as_liftX0=%d.0;as_liftY0=%d.0;as_liftX1=%d.0;as_liftY1=%d.0;' % L.LIFT)
         out.append('    as_doorX0=%d;as_doorY0=%d;as_doorX1=%d;as_doorY1=%d;' % L.DOOR)

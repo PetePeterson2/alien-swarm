@@ -90,7 +90,7 @@ ONESHOTS = [
     ('ASAcidShieldbug', 'UltraliskDeathAcid', SIZE['shieldbug'], 8), ('ASAcidHarvester', 'SwarmHostMPDeathAcid', SIZE['harvester'], 7),
     ('ASBloodGeyser', 'LurkerAttackDeathBloodGeyser', 0.5, 4),
 ]
-FX_UNITS = ['Tracer', 'Laser', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch']
+FX_UNITS = ['Tracer', 'Laser', 'Arc', 'Flash', 'Burst', 'Flame', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch', 'Anchor']
 
 
 def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units=()):

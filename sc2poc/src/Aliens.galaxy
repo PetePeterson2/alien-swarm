@@ -257,6 +257,7 @@ void AS_Gore (int i, int k, int kind, fixed x, fixed y, fixed facing) {
     AS_Fx("ASFxRail",x,y,0.4+z,ang);
     AS_Spray(x,y,0.35+z,ang,1.1+big);
     AS_Splat(x+Cos(ang)*0.3,y+Sin(ang)*0.3,ang,0.6+big*1.3);
+    if(kind!=1) {AS_AcidCloud(x,y,z,big);}
 }
 // Acid, bile and bursts: harm every marine within reach (a rolling marine slips the spit).
 void AS_AlienSplash (fixed x, fixed y, fixed radius, fixed dmg, string fx) {

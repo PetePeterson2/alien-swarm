@@ -169,6 +169,8 @@ def build():
     soot = np.clip((spikes - rr) * 2.2, 0, 1) * (0.7 + 0.5 * ragged)
     soot = np.clip(soot, 0, 1)
     save('scorch.dds', 255 * (1 - soot[..., None] * (1 - np.array((0.16, 0.14, 0.13)))[None, None]))
+    # The camera's anchor (src/Marine.galaxy as_camAnchor): black added to the picture draws nothing.
+    save('anchor.dds', np.zeros((8, 8, 3)))
     models = {}
     t = []; streak(t, 0.035); models['Tracer'] = (t, 'tracer.dds')
     t = []; streak(t, 0.012); models['Laser'] = (t, 'laser.dds')
@@ -181,6 +183,7 @@ def build():
         t = []; quad(t, (-1, 1, .03), (1, 1, .03), (1, -1, .03), (-1, -1, .03)); models['Splat%d' % k] = (t, 'splat%d.dds' % k, MULTIPLY)
         t = []; quad(t, (-1, 1, .034), (1, 1, .034), (1, -1, .034), (-1, -1, .034)); models['SplatGlow%d' % k] = (t, 'splatglow%d.dds' % k, ADD)
     t = []; quad(t, (-1, 1, .028), (1, 1, .028), (1, -1, .028), (-1, -1, .028)); models['Scorch'] = (t, 'scorch.dds', MULTIPLY)
+    t = []; quad(t, (-.01, .01, 0), (.01, .01, 0), (.01, -.01, 0), (-.01, -.01, 0)); models['Anchor'] = (t, 'anchor.dds')
     for name, spec in models.items():
         tris, tex = spec[0], spec[1]
         blend = spec[2] if len(spec) > 2 else ADD

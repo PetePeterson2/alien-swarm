@@ -61,10 +61,21 @@ def tex_shaft(seed, lights=False, w=512, h=768):
         if lights:
             for x in range(70, w - 60, 124):
                 a[gy - 14:gy + 14, x - 4:x + 34] = (30, 28, 24)
-                a[gy - 10:gy + 10, x:x + 30] = (255, 190, 90)
-                emis[gy - 10:gy + 10, x:x + 30] = (255, 160, 60)
+                # Caged lamps with AS's orange-red glow (its shaft sprites are 200,47,2).
+                a[gy - 10:gy + 10, x:x + 30] = (255, 150, 70)
+                emis[gy - 10:gy + 10, x:x + 30] = (255, 95, 25)
                 for k in range(3):
                     a[gy - 12:gy + 12, x + 4 + k * 10:x + 6 + k * 10] = (40, 36, 30)
+    # Alien Swarm's shaft wall: a big horizontal pipe with red flanged joints across the plain panels.
+    if not lights:
+        py0, py1 = int(h * 0.38), int(h * 0.50)
+        rows = np.linspace(-1, 1, py1 - py0)[:, None]
+        shade = (0.55 + 0.6 * np.sqrt(np.clip(1 - rows ** 2, 0, 1)) - 0.25 * np.clip(rows, 0, 1))
+        a[py0:py1] = np.array((58, 60, 62))[None, None] * shade[..., None] * (0.9 + 0.2 * n[py0:py1, :, None])
+        for fx in range(40, w, 170):
+            a[py0 - 8:py1 + 8, fx:fx + 26] = np.array((150, 36, 26)) * (0.6 + 0.6 * np.sqrt(np.clip(1 - np.linspace(-1, 1, py1 - py0 + 16) ** 2, 0, 1)))[:, None, None]
+            for by in (py0 - 4, py1 + 1):
+                a[by:by + 3, fx + 4:fx + 22:6] = (210, 190, 170)
     # Hazard band low down, where the platform's edge runs past.
     _hazard(a, int(h * 0.88), int(h * 0.94), seed)
     # Wet streaks running down from the girders.
@@ -243,8 +254,22 @@ def tex_seam(w=64, h=256):
 def textures():
     t = {'asdoor': tex_asdoor(), 'doorseam': tex_seam(), 'shaft_a': tex_shaft(81), 'shaft_b': tex_shaft(82, lights=True), 'shaft_c': tex_sign(), 'lintel': tex_lintel(), 'gate': tex_gate(),
          'lift_deck': tex_deck(), 'bridge': tex_bridge(), 'door': tex_door(), 'wall_window': tex_window(),
-         'void': (Image.new('RGB', (16, 16), (0, 0, 0)), None), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
+         'void': tex_void(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
     return t
+
+
+def tex_void(w=256, h=256):
+    """The drop between platform and walls. AS's shaft is not black but full of dark brown haze (its
+    fog_elevator is 43,37,32 at 0.9): an unlit floor of nothing, glowing faintly in the fog colour,
+    with the shaft's cables and girders far below as darker streaks."""
+    n = _noise(0, 40, 91, 3, (h, w))
+    haze = np.array((43, 37, 32), float)[None, None] * (0.55 + 0.45 * n[..., None])
+    rng = np.random.default_rng(93)
+    for x in rng.integers(0, w, 9):
+        haze[:, x:x + 2] *= 0.55
+    for y in rng.integers(0, h, 4):
+        haze[y:y + 5] *= 0.6
+    return _img(np.zeros((h, w, 3))), _img(haze)
 
 
 # ------------------------------------------------------------- meshes

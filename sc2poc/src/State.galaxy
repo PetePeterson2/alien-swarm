@@ -441,6 +441,18 @@ fixed[5] as_aim;            // facing of the gun, degrees
 fixed[5] as_mouseDX;        // cursor offset from the marine (top-down view)
 fixed[5] as_mouseDY;
 bool[5] as_mouseSeen;
+fixed[5] as_scrX;           // the cursor's place on the screen: its offset from the camera's centre
+fixed[5] as_scrY;
+bool[5] as_scrSeen;
+fixed[5] as_leanX;          // the camera's lean toward the cursor (AS's camera shift), from the marine
+fixed[5] as_leanY;
+unit[5] as_camAnchor;       // what the top-down camera follows: the marine plus its lean
+fixed as_camWide;           // a set piece's wider framing (the lift ride), 0 for none
+fixed as_camBiasY;          // and how far north of the marine it centres, to show the wall it faces
+fixed as_outX0;             // the level's stretch under the open sky (snow falls there), x0 = x1 for none
+fixed as_outY0;
+fixed as_outX1;
+fixed as_outY1;
 int[5] as_view;             // 0 top-down, 1 third person
 fixed[5] as_zoom;           // top-down camera distance
 bool[5] as_trigger;         // left mouse held

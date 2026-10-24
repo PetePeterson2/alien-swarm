@@ -19,9 +19,17 @@ const fixed AS_MARINE_R = 0.33;
 const fixed AS_RUN = 3.0;
 const fixed AS_TOP_PITCH = 60.0;
 const fixed AS_TOP_FOV = 48.0;
-const fixed AS_TOP_DIST = 8.0;         // AS frames about 6 cells top to bottom (412 units at FOV 75); this shows 7
-const fixed AS_TOP_DIST_MID = 11.0;    // Z steps out to these and back
-const fixed AS_TOP_DIST_FAR = 15.0;
+// AS's camera is 412 units out at FOV 75: about 8.5 cells across and 6.4 deep on the deck (its 6-cell lift
+// platform fills 70% of the screen's width). At pitch 60 and FOV 48 this distance shows the same; 8 showed 11.5.
+const fixed AS_TOP_DIST = 6.0;
+const fixed AS_TOP_DIST_MID = 8.5;     // Z steps out to these and back
+const fixed AS_TOP_DIST_FAR = 12.0;
+// The lean (asw_in_camera.cpp CalculateCameraShift): the cursor's offset from the screen's centre, as a
+// fraction of the screen (-0.5..0.5), times 300 units across, 200 north and 380 south (asw_cam_marine_shift_*;
+// 97 units a cell). Aiming south slides the view nearly two cells that way, so what is coming shows first.
+const fixed AS_SHIFT_X = 3.1;
+const fixed AS_SHIFT_N = 2.07;
+const fixed AS_SHIFT_S = 3.93;
 const fixed AS_TP_DIST = 3.4;
 const fixed AS_TP_HEIGHT = 1.45;
 const fixed AS_TP_FOV = 68.0;
@@ -108,6 +116,9 @@ void AS_MarineSpawn (int p) {
         UnitSetScale(as_glow[p],45.0,45.0,45.0);
         libNtve_gf_ShowHideUnit(as_muzzle[p],false);
     }
+    if(as_camAnchor[p]==null) {UnitCreate(1,"ASFxAnchor",c_unitCreateIgnorePlacement,0,q,0.0);as_camAnchor[p]=UnitLastCreated();}
+    as_leanX[p]=0.0;as_leanY[p]=0.0;as_scrX[p]=0.0;as_scrY[p]=0.0;
+    UnitSetPosition(as_camAnchor[p],q,false);
     AS_TorchShow(p);
     AS_CameraMode(p,as_view[p],0.0);
 }
@@ -132,6 +143,12 @@ void AS_CameraMode (int p, int mode, fixed blend) {
     unit u=AS_ViewUnit(p);
     as_view[p]=mode;
     if(as_bot[p] && !(as_auto && p==1)) {return;}
+    // The top-down camera follows its anchor (the marine plus the lean); watching a squadmate, it does not lean (as AS).
+    if(mode==0 && u==as_m[p] && as_camAnchor[p]!=null) {
+        AS_LeanUpdate(p);
+        UnitSetPosition(as_camAnchor[p],PointWithOffset(UnitGetPosition(u),as_leanX[p],as_leanY[p]+as_camBiasY),false);
+        u=as_camAnchor[p];
+    }
     if(as_camUnit[p]!=null) {CameraFollowUnitGroup(p,libNtve_gf_ConvertUnitToUnitGroup(as_camUnit[p]),false,false);}
     as_camUnit[p]=u;
     CameraFollowUnitGroup(p,libNtve_gf_ConvertUnitToUnitGroup(u),true,false);
@@ -141,7 +158,7 @@ void AS_CameraMode (int p, int mode, fixed blend) {
         CameraForceMouseRelative(p,false);CameraSetMouseRotates(p,false);CameraLockInput(p,true);
         CameraSetValue(p,c_cameraValueYaw,90.0,blend,-1,0.0);
         CameraSetValue(p,c_cameraValuePitch,AS_TOP_PITCH,blend,-1,0.0);
-        CameraSetValue(p,c_cameraValueDistance,as_zoom[p],blend,-1,0.0);
+        CameraSetValue(p,c_cameraValueDistance,AS_TopDist(p),blend,-1,0.0);
         CameraSetValue(p,c_cameraValueFieldOfView,AS_TOP_FOV,blend,-1,0.0);
         CameraSetValue(p,c_cameraValueHeightOffset,0.4,blend,-1,0.0);
         UISetCursorVisible(AS_Me(p),true);
@@ -157,16 +174,44 @@ void AS_CameraMode (int p, int mode, fixed blend) {
     }
     AS_HudView(p);
 }
+// The top-down camera's distance: the player's Z step, out further through a scope, and at least a set
+// piece's own framing (the lift ride shows the whole platform and the shaft round it, as AS's does).
+fixed AS_TopDist (int p) {
+    fixed d=as_zoom[p]*(1.0+0.45*as_zoomScope[p]);
+    if(as_camWide>d) {d=as_camWide;}
+    return d;
+}
+void AS_TopDistApply (int p, fixed blend) {
+    if(as_view[p]==0 && (!as_bot[p] || (as_auto && p==1))) {CameraSetValue(p,c_cameraValueDistance,AS_TopDist(p),blend,-1,0.0);}
+}
 // Z: the top-down camera's three distances, AS's own framing first.
 void AS_ZoomStep (int p) {
     if(as_zoom[p]<AS_TOP_DIST_MID-0.5) {as_zoom[p]=AS_TOP_DIST_MID;}
     else if(as_zoom[p]<AS_TOP_DIST_FAR-0.5) {as_zoom[p]=AS_TOP_DIST_FAR;}
     else {as_zoom[p]=AS_TOP_DIST;}
-    if(as_view[p]==0) {CameraSetValue(p,c_cameraValueDistance,as_zoom[p]*(1.0+0.45*as_zoomScope[p]),0.35,-1,0.0);}
+    AS_TopDistApply(p,0.35);
+}
+// The lean from where the cursor sits on the screen. The screen is the deck seen at pitch 60 and FOV 48 (16:10):
+// from the centre, 0.71 of the distance to either side, 0.76 of it to the top edge and 0.40 to the bottom.
+// The lean grows with the distance, so a wider view leans as far in screen terms.
+void AS_LeanUpdate (int p) {
+    fixed d;fixed fx;fixed fy;fixed k;
+    if(as_view[p]!=0 || !as_scrSeen[p] || !as_alive[p]) {as_leanX[p]=0.0;as_leanY[p]=0.0;return;}
+    d=AS_TopDist(p);k=d/AS_TOP_DIST;
+    fx=AS_Clamp(as_scrX[p]/(1.42*d),-0.5,0.5);
+    if(as_scrY[p]>=0.0) {fy=AS_Clamp(as_scrY[p]/(1.52*d),0.0,0.5);as_leanY[p]=fy*AS_SHIFT_N*k;}
+    else {fy=AS_Clamp(as_scrY[p]/(0.80*d),-0.5,0.0);as_leanY[p]=fy*AS_SHIFT_S*k;}
+    as_leanX[p]=fx*AS_SHIFT_X*k;
+    // The gun points at the cursor, wherever the lean has carried the screen.
+    as_mouseDX[p]=as_leanX[p]+as_scrX[p];as_mouseDY[p]=as_leanY[p]+as_camBiasY+as_scrY[p];
 }
 fixed[5] as_tpDist;
 void AS_Camera (int p) {
     fixed d;fixed yaw;point here;
+    if(as_view[p]==0 && as_camUnit[p]==as_camAnchor[p] && as_camAnchor[p]!=null) {
+        UnitSetPosition(as_camAnchor[p],PointWithOffset(UnitGetPosition(as_m[p]),as_leanX[p],as_leanY[p]+as_camBiasY),true);
+        return;
+    }
     if(as_view[p]!=1 || !as_alive[p]) {return;}
     // The boom comes in short of a bulkhead behind the marine, fast in, slow out.
     here=UnitGetPosition(as_m[p]);yaw=CameraGetYaw(p);
@@ -194,6 +239,7 @@ void AS_KeyMove (int p, int k, bool down) {
 void AS_AimUpdate (int p) {
     fixed want;
     if(as_view[p]==1) {as_aim[p]=CameraGetYaw(p);return;}
+    if(as_scrSeen[p] && !as_bot[p]) {AS_LeanUpdate(p);}
     if(!as_mouseSeen[p]) {return;}
     if(as_mouseDX[p]*as_mouseDX[p]+as_mouseDY[p]*as_mouseDY[p]<0.04) {return;}
     want=ATan2(as_mouseDY[p],as_mouseDX[p]);
@@ -204,6 +250,9 @@ void AS_MouseMoved (int p, fixed wx, fixed wy) {
     if(!AS_Person(p) || as_m[p]==null || as_bot[p]) {return;}
     here=UnitGetPosition(as_m[p]);
     as_mouseDX[p]=wx-PointGetX(here);as_mouseDY[p]=wy-PointGetY(here);as_mouseSeen[p]=true;
+    // Where it sits on the screen: its offset from what the camera centres on (the anchor, where it is now).
+    if(as_view[p]==0 && as_camUnit[p]==as_camAnchor[p] && as_camAnchor[p]!=null) {here=UnitGetPosition(as_camAnchor[p]);}
+    as_scrX[p]=wx-PointGetX(here);as_scrY[p]=wy-PointGetY(here);as_scrSeen[p]=true;
 }
 point AS_AimPoint (int p) {
     point here=UnitGetPosition(as_m[p]);
@@ -342,7 +391,7 @@ int AS_AuraBest (int sk, fixed x, fixed y, fixed r) {
 // kind: 0 an alien, 1 a squadmate's fire (byP), 2 the world. Leadership may halve a hit; heavy armour takes a fifth;
 // a single hit bigger than the health left leaves a marine on 1 (asw_marine_death_protection), once.
 void AS_HurtMarineBy (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock, int kind, int byP) {
-    point here;fixed ang;fixed before;int lead;
+    point here;fixed ang;fixed before;int lead;int k;fixed d;
     if(!as_alive[p] || dmg<=0.0) {return;}
     here=UnitGetPosition(as_m[p]);
     if(knock>0.0) {
@@ -364,6 +413,13 @@ void AS_HurtMarineBy (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock, i
     as_hp[p]-=dmg;as_hurtFlash[p]=as_now;
     if(kind==0) {AS_DirectorHurt(p,dmg,before);}
     AS_Fx("ASFxBlood",PointGetX(here),PointGetY(here),0.5,RandomFixed(0.0,360.0));
+    // AS's marine is cut open in a bright red spray of streaks, thrown away from the claw.
+    ang=ATan2(PointGetY(here)-fromY,PointGetX(here)-fromX);
+    for(k=0;k<3;k+=1) {
+        d=ang+RandomFixed(-45.0,45.0);
+        AS_Tracer(PointGetX(here),PointGetY(here),PointGetX(here)+Cos(d)*RandomFixed(0.4,0.8),PointGetY(here)+Sin(d)*RandomFixed(0.4,0.8),0.6,"255,40,25",2.0,3);
+    }
+    AS_Burst(PointGetX(here),PointGetY(here),0.6,0.5,"200,20,10",2);
     if(dmg>=10.0) {CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.05,2.5,40.0,0.18);}
     if(as_hp[p]<=0.0) {AS_MarineDie(p);return;}
     UnitSetPropertyFixed(as_m[p],c_unitPropLife,MaxF(1.0,as_hp[p]));

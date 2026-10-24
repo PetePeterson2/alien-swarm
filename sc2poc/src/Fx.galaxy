@@ -110,7 +110,7 @@ int as_lampCount;
 string AS_LightUnit (string kind) {
     if(kind=="red" || kind=="redbig") {return "ASLightRedbig";}
     if(kind=="orange" || kind=="orangebig") {return "ASLightOrangebig";}
-    if(kind=="cold") {return "ASLightColdbig";}
+    if(kind=="cold" || kind=="coldbig") {return "ASLightColdbig";}
     if(kind=="green") {return "ASLightGreenbig";}
     if(kind=="purple") {return "ASLightPurplebig";}
     if(kind=="yellow") {return "ASLightYellowbig";}
@@ -277,12 +277,50 @@ void AS_SplatPulse () {
     if(as_splatGlow[i]!=null) {UnitRemove(as_splatGlow[i]);as_splatGlow[i]=null;}
 }
 // Every effect unit still out (tracer meshes, flame puffs, splats), cleared between levels.
+// ---- snow -------------------------------------------------------------
+// Landing Bay opens outdoors in falling snow, as AS's dock does: flakes drift down round each player
+// while they are under the sky, thinning out as they fall. A pool of its own, so a fight never takes them.
+const int AS_FLAKES = 96;
+unit[96] as_flake;
+int as_flakeNext;
+void AS_SnowPulse () {
+    int p;unit u;point c;fixed fall;
+    if(as_outX1<=as_outX0) {return;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p] || (as_bot[p] && !(as_auto && p==1))) {continue;}
+        c=UnitGetPosition(as_m[p]);
+        if(!AS_InRect(c,as_outX0,as_outY0,as_outX1,as_outY1)) {continue;}
+        u=as_flake[as_flakeNext];
+        if(u==null) {
+            UnitCreate(1,"ASFxBurst",c_unitCreateIgnorePlacement,0,c,0.0);u=UnitLastCreated();as_flake[as_flakeNext]=u;
+            UnitSetScale(u,4.5,4.5,4.5);ActorSend(libNtve_gf_MainActorofUnit(u),"SetTintColor 200,210,235");
+        }
+        as_flakeNext=(as_flakeNext+1)%AS_FLAKES;
+        fall=RandomFixed(2.0,3.2);
+        UnitSetPosition(u,PointWithOffset(c,RandomFixed(-6.0,6.0),RandomFixed(-3.5,7.5)),false);
+        UnitSetHeight(u,RandomFixed(4.0,6.0),0.0);UnitSetHeight(u,0.05,fall);
+        ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 1 0");ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 "+FixedToString(fall,2));
+    }
+}
+void AS_SnowClear () {
+    int i;
+    for(i=0;i<AS_FLAKES;i+=1) {if(as_flake[i]!=null) {UnitRemove(as_flake[i]);as_flake[i]=null;}}
+}
 void AS_FxClear () {
     int i;
     for(i=0;i<AS_FXN;i+=1) {if(as_fx[i]!=null) {UnitRemove(as_fx[i]);as_fx[i]=null;}}
     for(i=0;i<AS_PUFFS;i+=1) {if(as_puff[i]!=null) {UnitRemove(as_puff[i]);as_puff[i]=null;}}
     for(i=0;i<AS_SPLATS;i+=1) {if(as_splat[i]!=null) {UnitRemove(as_splat[i]);as_splat[i]=null;}}
     for(i=0;i<AS_SPLATS;i+=1) {if(as_splatGlow[i]!=null) {UnitRemove(as_splatGlow[i]);as_splatGlow[i]=null;}}
+}
+// Alien Swarm's kill: a bright lime-green flare of acid a cell and a half across that hangs a moment
+// and thins out, over a wider dim haze of it (seen in Landing Bay, 2026-10-23).
+void AS_AcidCloud (fixed x, fixed y, fixed z, fixed big) {
+    unit u;fixed s=1.1+big*1.2;
+    u=AS_FxUnit("ASFxBurst",x,y,0.45+z,0.0,s,s,"150,255,40",12);
+    if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 0.7");}
+    u=AS_FxUnit("ASFxBurst",x,y,0.3+z,0.0,s*1.6,s*1.6,"40,90,10",18);
+    if(u!=null) {ActorSend(libNtve_gf_MainActorofUnit(u),"SetOpacity 0 1.1");}
 }
 // A spray of alien blood along the direction the hit travelled.
 void AS_Spray (fixed x, fixed y, fixed z, fixed ang, fixed size) {

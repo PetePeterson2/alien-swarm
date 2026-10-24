@@ -616,11 +616,14 @@ void AS_HudUpdate (int p) {
     key=n*4;
     if(blink && (low || none)) {key+=1;}
     if(none) {key+=2;}
+    // AS says so in red while a clip goes in.
+    if(as_reloadEnd[p]>0.0 && as_alive[p]) {key= -2-n;}
     if(key!=as_kAmmo[p]) {
         as_kAmmo[p]=key;
         if(blink && (low || none)) {AS_Text(as_cAmmo[p],p,"<c val=\"C81919\">"+AS_Three(n)+"</c>");}
         else {AS_Text(as_cAmmo[p],p,AS_Three(n));}
-        if(!(blink && (low || none))) {AS_Text(as_cLow[p],p,"");}
+        if(key<= -2) {AS_Text(as_cLow[p],p,"- RELOADING -");}
+        else if(!(blink && (low || none))) {AS_Text(as_cLow[p],p,"");}
         else if(none) {AS_Text(as_cLow[p],p,"- NO AMMO -");}
         else {AS_Text(as_cLow[p],p,"- LOW AMMO -");}
     }

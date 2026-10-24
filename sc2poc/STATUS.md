@@ -329,3 +329,33 @@ Autopilot runs (Normal, Crash, no script errors; the autopilot marine has god mo
 The original tuning lost about 2 marines a run.
 
 Not checked: how any of it looks or feels, since nobody has looked at the screen. In particular: the new camera framing in every room and on the lift ride, the raptor's animations and its facing, and whether the bigger models clip walls in corridors.
+
+## Alien Swarm side by side: camera, lift ride, kills (2026-10-23)
+
+The Steam game's first two missions were played at its high effects setting, with screenshots, screen clips, demos and the maps' entity data captured. The notes are in `AS-REFERENCE.md` and the captures in `dist/asref/` (the clips are git-ignored).
+
+- **Framing:** the top-down camera moves in from 8 to **6**. AS shows about 8.5 cells across; 8 showed 11.5 (measured against the lift's platform in both games). Z now steps 6 / 8.5 / 12.
+- **The camera leans toward the cursor**, as AS's does (`asw_in_camera.cpp CalculateCameraShift`): the cursor's screen offset times 300 units across, 200 north and 380 south. The camera follows an invisible anchor unit (`ASFxAnchor`, a black additive quad) placed at the marine plus the lean. The cursor is kept as a screen offset, so the aim still lands under it as the view slides. Spectating does not lean.
+- **The lift ride** is framed like AS's, with the whole platform and the shaft walls round it on screen: distance 13, centred 2 cells north of the marine (`AS_RideFrame`; `py tools/preview_lift.py` renders it). It also follows AS's sequence:
+  - Sodium floodlights over the waiting platform go out as the walls start and come back at the bottom.
+  - A dust burst at the start; steam jets off the shaft walls; three exit lamps chase toward the way out at the bottom.
+  - The ride takes about 100 s (AS: 106 s at 25 units a second; it was 75 s), with the wave schedule stretched to match.
+- **Kills** add a lingering lime-green acid flare over a wider haze (`AS_AcidCloud`); **a marine hit** throws a red spray of streaks away from the claw.
+
+**Checked in a fresh client** (autopilot, Normal, Crash; no `ScriptError.txt` for the session):
+- Landing Bay complete in 108.6 s.
+- The ride lasted **100.3 s**, with the exit lintel set and the entrance gone.
+- Cargo Elevator complete in 279.3 s, then CAMPAIGN COMPLETE.
+- All three AI marines died during the ride, between its 40th and 60th second (the surge and the waves after it). Earlier tuning runs lost one to three, so this is the top of that range. Watch for it in the next runs.
+
+Not checked: how any of it looks. Nobody has looked at the client's screen: the lean, the 6-distance framing, the ride's framing and lights, and the acid flares.
+
+**Second round** (same day; details in `AS-REFERENCE.md`):
+- The lift's void ring is the shaft's dim brown haze instead of black.
+- The shaft panels carry red-flanged pipes, and their lamps glow orange-red.
+- Brown haze drifts over the deck during the ride.
+- AS's slow-motion beat comes when the first climber lands (Slower for 0.9 game seconds, logged).
+- Landing Bay opens outdoors: snow from the dock to the freight yard, cold blue, red and pink light on the dock, white floods over the yard.
+- "- RELOADING -" in red over the portrait.
+
+The build passes the static checks. Its autopilot run was still going at this commit.
