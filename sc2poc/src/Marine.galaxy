@@ -467,8 +467,10 @@ void AS_Face (int p) {
 // The laser sight, as Alien Swarm's: from the muzzle along the aim, down to the deck where the cursor is,
 // stopping short at a bulkhead or the first alien in its way, with a glowing dot where it lands. It turns by
 // unit facing over the step, as the marine does, so the two stay together and both move smoothly.
+const fixed AS_LASER_DROP = 0.52;
+fixed[5] as_laserZ;              // the height the laser ends at, eased
 void AS_Attachments (int p) {
-    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed d;fixed c;fixed s;fixed t;fixed off;bool lit;int j;
+    point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed d;fixed c;fixed s;fixed t;fixed off;bool lit;int j;fixed endZ;
     fixed aim=as_aim[p];
     if(as_lightOn[p]) {
         UnitSetPosition(as_torch[p],Point(x+Cos(aim)*0.3,y+Sin(aim)*0.3),true);UnitSetFacing(as_torch[p],aim,AS_DT);
@@ -480,23 +482,27 @@ void AS_Attachments (int p) {
     lit=as_now-as_lastShot[p]<0.07 && as_slot[p]!=AS_IT_RAILGUN && as_slot[p]!=AS_IT_SNIPER && !AS_IsDeployable(as_slot[p]) && as_slot[p]!=AS_IT_HEALGUN && as_slot[p]!=AS_IT_CHAINSAW;
     if(lit!=as_muzzleOn[p]) {as_muzzleOn[p]=lit;libNtve_gf_ShowHideUnit(as_muzzle[p],lit);}
     c=Cos(aim);s=Sin(aim);
-    d=AS_RayWall(as_muzX,as_muzY,aim,16.0);
+    // Where the beam ends and at what height: on a bulkhead at gun height, on an alien at its body, or down on
+    // the deck under a player's cursor. The end height eases over a few steps, so the beam's slope never snaps.
+    d=AS_RayWall(as_muzX,as_muzY,aim,16.0);endZ=as_muzZ-0.04;
     // A player's laser comes down to the deck under the cursor; a bot's runs on to what it hits.
     if(as_view[p]==0 && as_mouseSeen[p] && (!as_bot[p] || (as_auto && p==1))) {
         t=(x+as_mouseDX[p]-as_muzX)*c+(y+as_mouseDY[p]-as_muzY)*s;
-        d=MinF(d,MaxF(0.35,t));
+        if(MaxF(0.35,t)<d) {d=MaxF(0.35,t);endZ=0.03;}
     }
     for(j=0;j<AS_MAXALIEN;j+=1) {
         if(as_a[j]==null || as_aKind[j]==AS_BIOMASS) {continue;}
         t=(as_aX[j]-as_muzX)*c+(as_aY[j]-as_muzY)*s;
         if(t<=0.0 || t>=d) {continue;}
         off=AbsF((as_aX[j]-as_muzX)*s-(as_aY[j]-as_muzY)*c);
-        if(off<as_aRadius[j]*0.8) {d=MaxF(0.2,t-as_aRadius[j]*0.5);}
+        if(off<as_aRadius[j]*0.8) {d=MaxF(0.2,t-as_aRadius[j]*0.5);endZ=MinF(as_muzZ-0.04,0.45);}
     }
+    as_laserZ[p]+=(endZ-as_laserZ[p])*0.5;
     UnitSetPosition(as_laser[p],Point(as_muzX,as_muzY),true);UnitSetHeight(as_laser[p],as_muzZ,0.0);
     UnitSetFacing(as_laser[p],aim,AS_DT);
-    UnitSetScale(as_laser[p],100.0,d*100.0,100.0);
-    UnitSetPosition(as_laserDot[p],Point(as_muzX+c*d,as_muzY+s*d),true);
+    // The beam mesh drops AS_LASER_DROP over its length (tools/fx.py LASER_DROP): its height scale sets the drop.
+    UnitSetScale(as_laser[p],100.0,d*100.0,MaxF(2.0,(as_muzZ-as_laserZ[p])/AS_LASER_DROP*100.0));
+    UnitSetPosition(as_laserDot[p],Point(as_muzX+c*d,as_muzY+s*d),true);UnitSetHeight(as_laserDot[p],as_laserZ[p],0.0);
     if(as_lightOn[p]) {libNtve_gf_MakeModelFaceAngle(libNtve_gf_MainActorofUnit(as_torch[p]),aim);}
 }
 
