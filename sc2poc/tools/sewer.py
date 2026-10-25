@@ -135,6 +135,29 @@ LIGHTS = _lights()
 PROPS = []
 
 
+# Scum and litter riding the flooded halls and channels (KDFoam, KDDebris, decals: nothing solid), the scum drawn
+# out along whichever way the water runs longer at that cell.
+def _water():
+    import random
+    rng = random.Random(61)
+    wet = sorted(c for c, k in CELL_KINDS.items() if k == 'channel')
+    wetset = set(wet)
+    out = []
+    for x, y in wet:
+        roll = rng.random()
+        if roll < 0.15:
+            run_x = sum((x + d, y) in wetset for d in range(-3, 4))
+            run_y = sum((x, y + d) in wetset for d in range(-3, 4))
+            rot = (0.0 if run_x >= run_y else 90.0) + rng.uniform(-14, 14) + rng.choice([0.0, 180.0])
+            out.append((rng.choice(['KDFoam1', 'KDFoam2']), x + rng.random(), y + rng.random(), rot))
+        elif roll < 0.21:
+            out.append((rng.choice(['KDDebris1', 'KDDebris2']), x + rng.random(), y + rng.random(), rng.uniform(0, 360)))
+    return out
+
+
+SPOTS = _water()
+
+
 def _snap(x, y, reach=6):
     ix, iy = int(x), int(y)
     if 0 <= ix < W and 0 <= iy < H and DECK[iy, ix]:

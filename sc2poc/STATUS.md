@@ -559,9 +559,10 @@ Jacob's Rest's sixth mission, traced from `asi-jac6-sewerjunction` as the others
 - **New art** (`tools/wallart.py`, `tools/deckart.py`):
   - walls: stained form-course concrete with a water line, pipe runs, a lit outfall grate, slime-streaked concrete, and a work lamp with the junction's "B5" and a hazard band;
   - floors: cracked concrete, murky water with ripples and scum, glowing slime, and a drain grate;
+  - on the water: drifts of scum drawn out along the flow and floating litter (`KDFoam`, `KDDebris`, decals the level lays itself through a new `SPOTS` list), so the flooded pump hall and channels read as moving water rather than a plain floor. Overhead mains were tried first and dropped: at that height they hid the marine;
   - room kinds `sewer`, `channel`, `catwalk` and `growth`.
 - **Packing** (`tools/pack.py`): six levels no longer fit with bottom-left placement in any order. `search()` tries six placement rules per level and backtracks; Landing Bay goes in the top-right corner and Rydberg left-first. It runs only when the plain orders fail, and takes about 45 s.
 - **Route:** 48 legs, none blocked, and every egg within reach of a wait-7 stop. The autopilot shoots a named barrel from beyond its blast (`src/Hive.galaxy`), and it leaves alone any growth that no objective counts. Sewer Junction has no `trigger_asw_button_area`, so there is no wire panel.
-- **Render:** `dist/scene-sewer.png`.
+- **Render:** `dist/scene-sewer.png`. Judged next to Landing Bay's, Deima's, Rydberg's and Residential's renders: the halls carry as much detail as Rydberg's tiled rooms, in the sewer's own palette.
 
 Still to check by hand in the client: the tunnel's collapse and the yard wall.

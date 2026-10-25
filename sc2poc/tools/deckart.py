@@ -569,6 +569,55 @@ def decal_snow(seed, size=256):
     return _img(np.dstack([g * 92, g * 100, g * 114]))
 
 
+def decal_foam(seed, w=256, h=128):
+    """Scum riding the sewer's water, added over it (black leaves it alone): pale streaks drawn out along the
+    flow (x), clotted in places, with loose bubbles, fading to nothing at the edges."""
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    streak = np.repeat(_noise(0, 26, seed, 4, (h, w // 8)), 8, axis=1)
+    clot = _noise(0, 30, seed + 1, 3, (h, w))
+    cover = np.clip((streak * 0.65 + clot * 0.35 - 0.5) * 4.0, 0, 1)
+    edge = np.clip(1 - np.hypot((xx - w / 2) / (w * 0.5), (yy - h / 2) / (h * 0.5)), 0, 1) ** 0.7
+    cover *= edge
+    bubbles = Image.new('L', (w, h), 0)
+    d = ImageDraw.Draw(bubbles)
+    for _ in range(70):
+        x, y = r.uniform(8, w - 8), r.uniform(6, h - 6)
+        if edge[int(y), int(x)] < 0.25:
+            continue
+        rad = r.uniform(1.0, 2.6)
+        d.ellipse((x - rad, y - rad, x + rad, y + rad), outline=int(r.uniform(120, 220)))
+    g = np.clip(cover * 0.8 + np.asarray(bubbles, float) / 255 * 0.6, 0, 1)
+    g = np.asarray(Image.fromarray((g * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8)), float) / 255
+    return _img(np.dstack([g * 150, g * 156, g * 122]))
+
+
+def decal_debris(seed, size=128):
+    """Litter floating in the sewer's water, multiplied: a broken plank or two, a can, a clot of rags and leaves,
+    each with the dark of the water close round it."""
+    r = np.random.default_rng(seed)
+    ink = Image.new('L', (size, size), 0)
+    d = ImageDraw.Draw(ink)
+    c = size / 2
+    for _ in range(r.integers(1, 3)):
+        a = r.uniform(0, math.pi); ln = r.uniform(0.28, 0.42) * size; wd = r.uniform(0.05, 0.08) * size
+        ox, oy = r.uniform(-0.15, 0.15) * size, r.uniform(-0.15, 0.15) * size
+        ca, sa = math.cos(a), math.sin(a)
+        pts = [(c + ox + ca * u - sa * v, c + oy + sa * u + ca * v) for u, v in ((-ln / 2, -wd / 2), (ln / 2, -wd / 2), (ln / 2 - wd, wd / 2), (-ln / 2, wd / 2))]
+        d.polygon(pts, fill=int(r.uniform(170, 220)))
+    x, y = c + r.uniform(-0.25, 0.25) * size, c + r.uniform(-0.25, 0.25) * size
+    d.ellipse((x - 5, y - 5, x + 5, y + 5), fill=150, outline=230, width=2)
+    for _ in range(r.integers(5, 10)):
+        x, y = c + r.normal(0, 0.14) * size, c + r.normal(0, 0.14) * size
+        rad = r.uniform(2, 6)
+        d.ellipse((x - rad, y - rad * 0.6, x + rad, y + rad * 0.6), fill=int(r.uniform(110, 190)))
+    a = np.asarray(ink, float) / 255
+    halo = np.asarray(ink.filter(ImageFilter.GaussianBlur(5)), float) / 255
+    cover = np.clip(a * 0.85 + halo * 0.45, 0, 1)
+    tint = np.array((0.30, 0.29, 0.22))
+    return _img(255 * (1 - cover[..., None] * (1 - tint[None, None])))
+
+
 def decal_shadow(w=64, h=64):
     """Contact shadow at a wall's foot: dark at row 0 (the wall), fading to white (no change)."""
     t = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
@@ -1095,6 +1144,10 @@ MUL_DECALS = {
     'decal_blood2': lambda: decal_blood(72),
     'decal_snow1': lambda: decal_snow(61),
     'decal_snow2': lambda: decal_snow(62),
+    'decal_foam1': lambda: decal_foam(91),
+    'decal_foam2': lambda: decal_foam(92),
+    'decal_debris1': lambda: decal_debris(93),
+    'decal_debris2': lambda: decal_debris(94),
     'shaft_cold': lambda: light_shaft(tint=(200, 226, 255)),
     'shaft_orange': lambda: light_shaft(tint=(255, 160, 70)),
 }

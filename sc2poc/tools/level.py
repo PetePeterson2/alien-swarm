@@ -663,6 +663,10 @@ DECAL_PIECES = {
     'KDCookie3': ('decal_cookie3', 4.4, 4.4, True),
     'KDBlood1': ('decal_blood1', 1.8, 1.8, True),
     'KDBlood2': ('decal_blood2', 1.6, 1.6, True),
+    'KDFoam1': ('decal_foam1', 3.2, 1.6, 'add'),      # the sewer's water: scum added over it, litter multiplied
+    'KDFoam2': ('decal_foam2', 3.2, 1.6, 'add'),
+    'KDDebris1': ('decal_debris1', 1.4, 1.4, True),
+    'KDDebris2': ('decal_debris2', 1.4, 1.4, True),
 }
 
 
@@ -674,7 +678,7 @@ def decal_pieces(out):
     for name, (tex, ln, wd, mul) in DECAL_PIECES.items():
         m = out[name] = ShipModel(name, (0, 0, 0))
         z = 0.02 if mul else 0.008
-        key = (tex, False, UNLIT, MULTIPLY) if mul else (tex, False, NO_SHADOW_CAST)
+        key = (tex, False, UNLIT, ADD if mul == 'add' else MULTIPLY) if mul else (tex, False, NO_SHADOW_CAST)
         a, b = ln / 2, wd / 2
         m.quad(key, (-a, -b, z), (a, -b, z), (a, b, z), (-a, b, z), [(0, 1), (1, 1), (1, 0), (0, 0)])
     # A two-by-two section of grating over the lit under-deck, laid over the plating (GRATES walkways).
@@ -999,6 +1003,8 @@ def decal_spots(floor, room, solid, seed=7):
         signed.add(room[y, x])
         spots.append(('KDWarn', x + 0.5, y + 0.5, rng.choice([0.0, 90.0, 180.0, 270.0])))
     spots += [(piece, x, y, rot) for piece, x, y, rot, _ in clutter(floor, room)]
+    # Pieces a level lays itself (piece, x, y, facing): the sewer's scum and litter on its water.
+    spots += list(globals().get('SPOTS') or [])
     # Grating walkways over the lit under-deck (GRATES), as AS's cargo-lift level opens on one.
     for x0, y0, x1, y1 in globals().get('GRATES') or []:
         for gy in range(y0, y1, 2):

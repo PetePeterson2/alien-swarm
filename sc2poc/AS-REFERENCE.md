@@ -192,5 +192,6 @@ Not played. This comes from the installed map (`asi-jac6-sewerjunction`), read t
 - New art:
   - walls: `wall_sewer`, `wall_sewerpipe`, `wall_seweroutlet`, `wall_sewerslime`, `wall_sewerlamp`;
   - floors: `floor_sewerconc`, `floor_sewerwater`, `floor_sewerslime`, `floor_sewergrate`;
+  - on the water: `decal_foam` scum and `decal_debris` litter, for the floating scum and rubbish on AS's sewer water;
   - room kinds `sewer`, `channel`, `catwalk`, `growth`.
 - Not ported: the sump floor as walkable ground, the turbine's blades and crush volume, the hanging I-beam's physics, and the PDW, shotgun and rifle pickups.
