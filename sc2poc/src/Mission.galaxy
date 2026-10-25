@@ -981,6 +981,7 @@ void AS_MissionPanelHacked (int d, int p) {
     }
 }
 void AS_MissionHackStarted (int i, int p) {
+    if(as_level>=AS_LV_SCRIPT && i==as_bayComputer && !as_cpPda[i]) {AS_Fire("hackstart:terminal");return;}
     if(as_level!=AS_LV_BAY || i!=as_bayComputer) {return;}
     as_bayStage=MaxI(as_bayStage,3);
     AS_Log("flight data hack started");
@@ -992,6 +993,7 @@ void AS_MissionHackStarted (int i, int p) {
     AS_MarkOff();
 }
 void AS_MissionHackDone (int i, int p) {
+    if(as_level>=AS_LV_SCRIPT && i==as_bayComputer && !as_cpPda[i]) {AS_Fire("hacked:terminal");return;}
     if(as_level!=AS_LV_BAY || i!=as_bayComputer) {return;}
     // The tech requirement is lifted once the hack is through (Tech_req DisableTechMarineReq).
     as_needTech=false;as_techRestartAt=0.0;
@@ -1000,6 +1002,7 @@ void AS_MissionHackDone (int i, int p) {
 }
 void AS_MissionDownloaded (int i, int p) {
     int d=AS_DoorNamed("control");
+    if(as_level>=AS_LV_SCRIPT && i==as_bayComputer && !as_cpPda[i]) {AS_Fire("downloaded:terminal");return;}
     if(as_level!=AS_LV_BAY || i!=as_bayComputer || as_objState[1]==2) {return;}
     AS_Objective(1,2);as_bayStage=MaxI(as_bayStage,4);
     // Out to the escape lift: the extraction check (AS_ExtractPulse) runs from here.
@@ -1081,6 +1084,11 @@ void AS_BaySkip () {
 //   boom <x,y>                        a charge going off there (level cells)
 //   lightning                         the storm lights the whole sky for a moment
 //   shipguns <mover>                  the mover's two turrets cover the squad ('' stops them)
+//   mark <key,x,y>                    the objective's marker moves on (a marker of AS's enabled for the next step)
+//   countdown <secs>                  the escape against the clock (asw_objective_countdown): its time left by the
+//                                     escape's name; at nothing the mission is lost (relay_fail_effects)
+//   rockfall <x,y>                    the roof gives way there: dust, falling rock, a shudder (rocks_fall_*_relay)
+// A terminal's hack and download (COMPUTER) fire "hackstart:terminal", "hacked:terminal" and "downloaded:terminal".
 // =====================================================================
 string[5] as_objKey;
 bool[5] as_objShown;             // shown from the start (Visible 1)
@@ -1096,6 +1104,8 @@ fixed as_genShipNext;
 unit as_genShipLamp;
 unit as_genShipLamp2;
 fixed as_genFlashEnd;
+fixed as_genCountEnd;            // the countdown's end, 0 none
+string as_genCountBase;          // the escape's name without the time
 // The level's own (build.py mission_galaxy, AS_MissionData<n>): where it extracts, whether it needs a tech,
 // then its objectives in order, the last the escape.
 void AS_GenLevel (string extName, bool tech) {as_genObjN=0;as_genExtName=extName;as_genTech=tech;}
@@ -1218,7 +1228,44 @@ bool AS_GenAction (string act, string arg) {
     if(act=="shipguns") {as_genShip=arg;return true;}
     // The level's lighting preset by number (src/Main.galaxy as_lightId), eased in: the power back on.
     if(act=="lights") {as_light=StringToInt(arg);GameSetLighting(as_lightId[as_light],3.0);AS_Log("lights: "+as_lightId[as_light]);return true;}
+    if(act=="mark") {
+        at=StringFind(arg,",",c_stringCase);i=AS_GenObj(StringSub(arg,1,at-1));
+        arg=StringSub(arg,at+1,StringLength(arg));at=StringFind(arg,",",c_stringCase);
+        if(i>=0) {as_objMX[i]=as_oxF+StringToFixed(StringSub(arg,1,at-1));as_objMY[i]=as_oyF+StringToFixed(StringSub(arg,at+1,StringLength(arg)));AS_GenMark();}
+        return true;
+    }
+    if(act=="countdown") {
+        as_genCountEnd=as_now+StringToFixed(arg);as_genCountBase=as_objName[as_objCount-1];
+        AS_AllSound("Alert_UniObjectiveDiscovered");
+        AS_Log("countdown: "+arg+" s");
+        return true;
+    }
+    if(act=="rockfall") {
+        at=StringFind(arg,",",c_stringCase);
+        x=as_oxF+StringToFixed(StringSub(arg,1,at-1));y=as_oyF+StringToFixed(StringSub(arg,at+1,StringLength(arg)));
+        AS_Burst(x,y,1.4,2.6,"150,135,115",6);
+        for(i=0;i<4;i+=1) {AS_Fx("ASFxSpark",x+RandomFixed(-1.2,1.2),y+RandomFixed(-1.2,1.2),RandomFixed(0.6,2.0),RandomFixed(0.0,360.0));}
+        AS_Sound("Doodad_SecurityGateDiagonalImpact",x,y,90.0,0.0);
+        AS_ShakeAll(0.25,1.4);
+        AS_Log("rockfall at "+arg);
+        return true;
+    }
     return false;
+}
+// The escape's clock: the time left by its name, and the mission lost when it runs out (countdown_escape
+// OnCountdownFailed: the station goes up, a white-out and a shudder) unless the squad is aboard by then.
+void AS_GenCountdownPulse () {
+    int k=as_objCount-1;int left;
+    if(as_genCountEnd<=0.0 || k<0) {return;}
+    if(as_stage==AS_ST_DONE || as_objState[k]==2) {as_genCountEnd=0.0;as_objName[k]=as_genCountBase;return;}
+    left=MaxI(0,CeilingI(as_genCountEnd-as_now));
+    as_objName[k]=as_genCountBase+"  <c val=\"FF6050\">"+IntToString(left/60)+":"+StringSub(IntToString(100+left%60),2,3)+"</c>";
+    if(as_now<as_genCountEnd || as_failed || as_failAt>0.0) {return;}
+    as_genCountEnd=0.0;as_objName[k]=as_genCountBase;
+    AS_ShakeAll(1.0,2.5);GameSetLighting("ASPowered",0.05);as_genFlashEnd=as_now+2.0;
+    AS_AllSound("Doodad_SecurityGateDiagonalImpact");
+    as_failAt=as_now+1.5;as_failWhy="The warhead went off with the squad still in the station.";
+    AS_Log("countdown ran out");
 }
 // The storm: the sky flashes white-blue over the whole level for a moment, and the thunder follows.
 void AS_Lightning () {
@@ -1233,7 +1280,7 @@ void AS_Lightning () {
 // Every step of a scripted mission: snow under the sky, the storm's flash fading, the dropship's turrets.
 void AS_GenPulse () {
     int m;int t;fixed x;fixed y;fixed ang;
-    AS_SnowPulse();AS_WeldWatchPulse();AS_HivePulse();
+    AS_SnowPulse();AS_WeldWatchPulse();AS_HivePulse();AS_GenCountdownPulse();
     if(as_genFlashEnd>0.0 && as_now>=as_genFlashEnd) {as_genFlashEnd=0.0;GameSetLighting(as_lightId[as_light],0.5);}
     if(as_genShip=="") {return;}
     m=AS_MoverNamed(as_genShip);
@@ -1258,7 +1305,7 @@ void AS_GenPulse () {
 void AS_GenClear () {
     if(as_genShipLamp!=null) {UnitRemove(as_genShipLamp);as_genShipLamp=null;}
     if(as_genShipLamp2!=null) {UnitRemove(as_genShipLamp2);as_genShipLamp2=null;}
-    as_genShip="";as_genFlashEnd=0.0;as_genBroken="|";
+    as_genShip="";as_genFlashEnd=0.0;as_genBroken="|";as_genCountEnd=0.0;
     if(as_genMusic!=null) {SoundStop(as_genMusic,true);as_genMusic=null;}
 }
 // QA: Ctrl+L, the next objective done and the squad at the next marker.

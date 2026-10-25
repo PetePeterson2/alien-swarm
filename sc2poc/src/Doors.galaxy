@@ -7,6 +7,9 @@
 //   jammed   never opens
 //   glass    an office window (func_breakable): a pane in a frame that shatters for good when a marine comes
 //            up to it or a drone swipes it, or the mission opens it
+//   rock     a rock fall (Timor Station's asw_prop_laserable heaps, block_rock_exit): AS cuts the heaps with the
+//            mining laser, which the port has no item for, so a marine standing at one cuts it in its seconds
+//            (none: only the mission clears it); then it crumbles for good
 // Welds: a door's seal is seconds of welding out of 10 (totalsealtime). Any seal
 // at all locks it shut; the welder adds seal with its primary fire and cuts it
 // with its secondary, at 0.6 s a second, or the best Engineering aura of a marine
@@ -24,7 +27,9 @@ int[24] as_drX0;
 int[24] as_drY0;
 int[24] as_drX1;
 int[24] as_drY1;
-int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed, 4 gap (a ramp runs out over it), 5 block (an unseen barrier), 6 hover (a drop until a ship hovers over it), 7 glass
+int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed, 4 gap (a ramp runs out over it), 5 block (an unseen barrier), 6 hover (a drop until a ship hovers over it), 7 glass, 8 rock
+fixed[24] as_drCut;                // a rock fall's seconds of cutting (0: the mission clears it)
+fixed[24] as_drCutMsg;
 bool[24] as_drLocked;
 fixed[24] as_drSeal;
 fixed[24] as_drHp;
@@ -55,6 +60,7 @@ const int AS_DOOR_GAP = 4;
 const int AS_DOOR_BLOCK = 5;
 const int AS_DOOR_HOVER = 6;
 const int AS_DOOR_GLASS = 7;
+const int AS_DOOR_ROCK = 8;
 
 fixed AS_DoorCX (int i) {return (IntToFixed(as_drX0[i])+IntToFixed(as_drX1[i]))*0.5;}
 fixed AS_DoorCY (int i) {return (IntToFixed(as_drY0[i])+IntToFixed(as_drY1[i]))*0.5;}
@@ -77,6 +83,13 @@ void AS_Door (string name, int x0, int y0, int x1, int y1, int kind, fixed seal,
     if(!as_drAcross[i]) {face=0.0;}
     if(kind==AS_DOOR_GLASS) {
         as_drLeaf[i]=AS_Piece("ASEGlass",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
+        UnitSetScale(as_drLeaf[i],AS_DoorWidth(i)*50.0,100.0,100.0);
+        AS_DoorShut(i,true);return;
+    }
+    // A rock fall: `seal` is its seconds of cutting.
+    if(kind==AS_DOOR_ROCK) {
+        as_drCut[i]=seal;as_drSeal[i]=0.0;as_drCutMsg[i]=0.0;
+        as_drLeaf[i]=AS_Piece("ASERockfall",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
         UnitSetScale(as_drLeaf[i],AS_DoorWidth(i)*50.0,100.0,100.0);
         AS_DoorShut(i,true);return;
     }
@@ -194,6 +207,36 @@ void AS_DoorGapPulse (int i) {
         }
     }
 }
+// A rock fall: cut while a marine stands at it, gone once cut through or the mission clears it.
+void AS_DoorCutPulse (int i) {
+    int p;
+    if(as_drBroken[i]) {return;}
+    if(!as_drLocked[i]) {AS_DoorCrumble(i);return;}
+    if(as_drCut[i]<=0.0 || !AS_MarineNearDoor(i,2.6)) {return;}
+    as_drHack[i]+=AS_DT/as_drCut[i];
+    if(as_drHack[i]>=1.0) {AS_DoorCrumble(i);return;}
+    if(as_now>=as_drCutMsg[i]) {
+        as_drCutMsg[i]=as_now+1.0;
+        AS_Burst(AS_DoorCX(i),AS_DoorCY(i),0.5,0.9,"150,140,120",2);
+        for(p=1;p<=AS_PLAYERS;p+=1) {
+            if(AS_Person(p) && as_alive[p] && DistanceBetweenPoints(UnitGetPosition(as_m[p]),Point(AS_DoorCX(i),AS_DoorCY(i)))<6.0) {
+                AS_Message(p,"Cutting through the rock fall  -  "+IntToString(FixedToInt(as_drHack[i]*100.0))+"%");
+            }
+        }
+    }
+}
+// The rock comes down: the heap gone, dust and grit blown out, the rumble, a shudder; open for good.
+void AS_DoorCrumble (int i) {
+    fixed cx=AS_DoorCX(i);fixed cy=AS_DoorCY(i);int k;
+    as_drBroken[i]=true;as_drLocked[i]=false;as_drOpen[i]=1.0;
+    if(as_drLeaf[i]!=null) {UnitRemove(as_drLeaf[i]);as_drLeaf[i]=null;}
+    AS_DoorShut(i,false);
+    AS_Burst(cx,cy,1.6,2.0,"150,140,120",4);
+    for(k=0;k<4;k+=1) {AS_Fx("ASFxSpark",cx+RandomFixed(-1.2,1.2),cy+RandomFixed(-1.0,1.0),RandomFixed(0.4,1.2),RandomFixed(0.0,360.0));}
+    AS_Sound("Doodad_SecurityGateDiagonalImpact",cx,cy,100.0,0.0);
+    AS_ShakeAll(0.2,0.6);
+    AS_Log("rock cleared: "+as_drName[i]);
+}
 void AS_DoorPulseAll () {
     int i;fixed t;fixed w;fixed cx;fixed cy;bool want;
     for(i=0;i<as_drN;i+=1) {
@@ -201,6 +244,7 @@ void AS_DoorPulseAll () {
             if(!as_drBroken[i] && (!as_drLocked[i] || AS_MarineNearDoor(i,1.6))) {AS_DoorShatter(i);}
             continue;
         }
+        if(as_drKind[i]==AS_DOOR_ROCK) {AS_DoorCutPulse(i);continue;}
         if(as_drKind[i]>=AS_DOOR_GAP) {
             // Once opened a gap or block stays open; the ramp runs out over two seconds.
             if(as_drLocked[i] || as_drOpen[i]>=1.0) {continue;}

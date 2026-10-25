@@ -347,7 +347,7 @@ def mission_galaxy(n):
             out.append('    AS_GenObjective("%s","%s",%s,%.2f,%.2f);' % (key, name, 'true' if shown else 'false', mx, my))
     for name, (x, y), label, powered in getattr(L, 'BUTTONS', []):
         out.append('    AS_Button("%s",%.2f,%.2f,"%s",%s);' % ((name,) + at(x, y) + (label, 'true' if powered else 'false')))
-    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3, 'gap': 4, 'block': 5, 'hover': 6, 'glass': 7}
+    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3, 'gap': 4, 'block': 5, 'hover': 6, 'glass': 7, 'rock': 8}
     for name, r, kind, seal, panel in getattr(L, 'DOORS', []):
         x0, y0, x1, y1 = rect(r)
         px, py = at(*panel) if panel else (0.0, 0.0)

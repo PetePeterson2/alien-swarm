@@ -153,7 +153,7 @@ void AS_MissionWon () {
     AS_MissionAwards(true);
     AS_BankWin(as_level);
     if(as_level+1<AS_LEVELS) {next="Next: <c val=\"FFBA40\">"+as_levelTitle[as_level+1]+"</c>";}
-    else {next="<c val=\"FFBA40\">CAMPAIGN COMPLETE</c>  -  every mission so far is done.";}
+    else {next="<c val=\"FFBA40\">CAMPAIGN COMPLETE</c>  -  Jacob's Rest is done.";}
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p,next,true);}}
     AS_UiDump("debrief_"+IntToString(as_level),1);
     as_debriefOn=true;as_continueGo=false;

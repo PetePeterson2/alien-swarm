@@ -612,7 +612,8 @@ point AS_AutoTank () {
 }
 bool AS_AutoDataDone () {
     int d=AS_DoorNamed("control");
-    if(as_level!=AS_LV_BAY) {return true;}
+    // A scripted mission's terminal (COMPUTER, the level's first): done once its data is down.
+    if(as_level!=AS_LV_BAY) {return as_cpN<=0 || as_cpPda[as_bayComputer] || as_cpDone[as_bayComputer]>=1.0;}
     return as_objState[1]==2 && (d<0 || as_drBroken[d]);
 }
 bool as_autoShotTumb;
