@@ -90,6 +90,10 @@ ONESHOTS = [
     ('ASAcidShieldbug', 'UltraliskDeathAcid', SIZE['shieldbug'], 8), ('ASAcidHarvester', 'SwarmHostMPDeathAcid', SIZE['harvester'], 7),
     ('ASBloodGeyser', 'LurkerAttackDeathBloodGeyser', 0.5, 4),
 ]
+# The cargo lift's own models (tools/elevator.py) never fade. SC2 fades a doodad model that stands in front of a unit
+# (a Doodad's OccludingOpacity), and a shaft segment is one model as long as the shaft, so the walls went see-through
+# whenever anyone stood on the platform and the rooms outside showed through them.
+LIFT_MODELS = {'ESeg', 'ESegIn', 'ESegOut', 'EGateLeaf', 'EPlatform', 'EVoid', 'EBridge', 'EScreenR', 'EScreenG'}
 FX_UNITS = ['Tracer', 'Arc', 'Flash', 'Burst', 'Flame', 'Smoke', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch', 'Anchor']
 
 
@@ -167,6 +171,11 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
         a = unit(ident, model, scale, life, speed, radius, mobile=True, flying=flying, collide=True, height=1.3 if flying else 0.0)
         if ident == 'ASRipper':
             child(a, 'WalkAnimMoveSpeed', value=alien.WALK_SPEED)
+    # No alien is drawn through a wall: SC2's unit models show a silhouette where something stands in front of them
+    # (Occlusion Show), and from inside the cargo lift's shaft that showed the next rooms' aliens through its walls.
+    for model in sorted({model for _, model, *_ in ALIENS}):
+        m = cat['Model'].find("CModel[@id='%s']" % model)
+        child(m if m is not None else child(cat['Model'], 'CModel', id=model), 'Occlusion', value='Hide')
     a = child(cat['Actor'], 'CActorModel', id='ASDieRipper')
     child(a, 'Model', value='ASRipperModel'); child(a, 'Scale', value=SIZE['ripper'])
     child(a, 'On', Terms='ActorCreation', Send='AnimPlay Death Death PlayForever')
@@ -188,6 +197,8 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
     for name in mesh_units:
         m = child(cat['Model'], 'CModel', id='AS' + name + 'Model', parent='Doodad')
         child(m, 'Model', value='Derelict\\' + name + '.m3')
+        if name in LIFT_MODELS:
+            child(m, 'OccludingOpacity', value=1)
         unit('AS' + name,'AS' + name + 'Model', 1.0, 0)
     # Aliens crawling down the shaft walls during the elevator ride: model actors, walking forever.
     for ident, model, scale in [('ASClimbDrone', 'HotSRaptor', SIZE['drone']), ('ASClimbParasite', 'Broodling', SIZE['parasite']),
@@ -228,6 +239,8 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
     for name in kit_models:
         m = child(cat['Model'], 'CModel', id='AS' + name, parent='Doodad')
         child(m, 'Model', value='Derelict\\' + name + '.m3')
+        if name in LIFT_MODELS:
+            child(m, 'OccludingOpacity', value=1)
         a = child(cat['Actor'], 'CActorModel', id='AS' + name)
         child(a, 'Model', value='AS' + name)
         child(a, 'FogVisibility', value='Visible')
