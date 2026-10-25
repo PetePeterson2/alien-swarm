@@ -119,8 +119,9 @@ int AS_HiveNear (point to) {
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null) {continue;}
         if(as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS && !(as_aKind[i]==AS_BARREL && as_hvName[i]!="")) {continue;}
-        // Growth only where the mission counts it (Sewer Junction's tunnel goo dies with the tunnel).
-        if(as_aKind[i]==AS_BIOMASS && AS_GenObj("goo")<0) {continue;}
+        // Growth only where the mission counts it (Sewer Junction's tunnel goo dies with the tunnel; Timor Station's
+        // on the warhead's track is counted).
+        if(as_aKind[i]==AS_BIOMASS && AS_GenObj("goo")<0 && !AS_FireCounts("broken:"+as_hvName[i])) {continue;}
         if(DistanceBetweenPoints(Point(as_aX[i],as_aY[i]),to)>9.0) {continue;}
         if(AbsF(AS_CellZ(as_aX[i],as_aY[i])-AS_CellZ(PointGetX(to),PointGetY(to)))>1.0) {continue;}
         if(!AS_HiveSight(PointGetX(to),PointGetY(to),as_aX[i],as_aY[i])) {continue;}

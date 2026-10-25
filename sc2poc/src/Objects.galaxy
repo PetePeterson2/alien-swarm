@@ -392,6 +392,12 @@ void AS_Fire (string ev) {
     }
     if(any) {AS_Log("event "+ev);}
 }
+// Whether the event counts toward something (a math_counter): Timor Station's growth on the warhead's track.
+bool AS_FireCounts (string ev) {
+    int k;
+    for(k=0;k<as_onN;k+=1) {if(as_onEv[k]==ev && as_onDo[k]=="count") {return true;}}
+    return false;
+}
 
 // ---- logic_timer: fires "timer:<name>" every lo .. hi seconds while on ---------
 const int AS_TIMERS = 16;

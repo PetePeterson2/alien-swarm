@@ -154,6 +154,22 @@ fixed AS_InfestTotal () {
 bool[@W@][@H@] as_wall;          // collision cells, from tools/level.py
 fixed[@W@][@H@] as_cz;           // each cell's floor height (tools/heights.py); hull cells take their deck's
 bool[@W@][@H@] as_cslope;        // a deck cell whose floor is the slope between two heights: a stair piece, not plating
+// A level cut into pieces (tools/seams.py, src/Seams.galaxy): each seam's rectangle, its jump, the pieces it
+// joins and where a unit walks to cross it; the piece of every cell; the seam to take from piece a toward b.
+const int AS_SEAMS = 16;
+const int AS_PIECES = 8;
+int as_seamN;
+fixed[AS_SEAMS] as_seamX0;
+fixed[AS_SEAMS] as_seamY0;
+fixed[AS_SEAMS] as_seamX1;
+fixed[AS_SEAMS] as_seamY1;
+fixed[AS_SEAMS] as_seamDX;
+fixed[AS_SEAMS] as_seamDY;
+fixed[AS_SEAMS] as_seamGX;
+fixed[AS_SEAMS] as_seamGY;
+int[AS_SEAMS] as_seamTo;
+int[64] as_seamNext;
+string[@H@] as_pieceRow;
 const int AS_STAIRS = 1024;      // the slope cells' pieces (tools/heights.py stairs: flights, their rails, the pit's edge), laid by AS_KitStairs
 int as_stN;
 int[AS_STAIRS] as_stX;

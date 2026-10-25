@@ -202,3 +202,33 @@ Not played. This comes from the installed map (`asi-jac6-sewerjunction`), read t
   - on the water: `decal_foam` scum and `decal_debris` litter, for the floating scum and rubbish on AS's sewer water;
   - room kinds `sewer`, `channel`, `catwalk`, `growth`.
 - Not ported: the sump floor as walkable ground, the turbine's blades and crush volume, the hanging I-beam's physics, and the PDW, shotgun and rifle pickups.
+
+## Timor Station (2026-10-25)
+
+Not played. This comes from the installed map (`asi-jac7-timorstation`) through `tools/asextract.py` (with `--mats`) and `tools/astrace.py`. Its materials in the VPKs were looked at for palette and pattern only.
+
+**What AS has.**
+- The squad lands on a rain-swept pad at the south end. A cable railway's tunnel climbs north to the mine's substation, where a loop of galleries runs round a rock pillar. The way west is choked by a rock fall. Past it, the way down to the south hall goes through LandingBayDoor1's panel. A swing bridge crosses a lava-lit chasm to the west rooms, and a corridor runs north to the mall (shops round a court) and to a barricade of rock before the nest. The nest is a long cavern of eggs and goo with the warhead's terminal at its east end. Timor Station itself, a concrete hall with a loading dock, lies east of the south hall behind a rock slip, and Bloodhound sets down on the dock.
+- Materials, by area: `blendrockgravel001a` and `minerockwall` (the mine's gravel and green-grey rock with rust veins) over most of the floors, even round the station; `metalgrate014` on the walkways and the mall's galleries; `metal/bridge` (a tread ladder between mesh panels) on the bridge and the gantries; `concretewall082_base` (board-formed concrete) for the station's walls, with `concretewall080c`'s blue band; `concretefloor050a` in the station; the chasm's lava (`lava`), deep under the bridge.
+- The flow:
+  - `rail_button` (a 2x5 two-wire button area, hack level 5) starts `rocketmover1`, the warhead's train, and `door_thing` has power a second later and opens `LandingBayDoor4`.
+  - The mine's way west is closed by four `asw_prop_laserable` rocks (rock01..04), cut with the mining laser.
+  - `LandingBayDoor1`: a 2x6 three-wire panel, hack level 6; its hack starts `back_drone_spawn_02`.
+  - `BridgeConsole`: the bridge swings out 2 s after the press (90 degrees at 5 a second), and the gates at the walkway's foot part 23 s after it.
+  - `goo_blocker2` on the warhead's track (`count_goo`, max 1): once it burns, the warhead rolls on into the nest. Any growth in the mall burnt or lit fires `relay_sounds_mall`, which wakes its spawners.
+  - `Barricade5`: four more laserable heaps in front of the nest; any of them breaking opens it.
+  - The nest's terminal (`trigger_asw_computer_area`): its download completes `marker_obj_activate_nuke_3`, lifts the tech requirement, fires `relay_open_exit` (`block_rock_exit` killed, `trigger_rocks_fall` enabled) and four seconds later starts `countdown_escape` (140 s).
+  - `asw_marines_past_area` `area` (every living marine past the station's middle) starts `train_ship`. Bloodhound comes down her path, `esc_drone_8` spawns as she passes `path_4`, and at `path_2` her ramp is open.
+  - `timer_insane_drone`: on in the mall's north rooms, off at the nest's ledge.
+
+**What the port took.**
+- The traced floor on real heights, merged into a few levels. AS's lava chasm becomes the port's blue-fogged drop under the bridge (`tools/pitart.py`), like every other open edge in the campaign.
+- Timor Station is cut at five corridors into six pieces (`tools/seams.py`). The six levels packed before it stay where they were (`tools/pack.py` `PINNED`), and the pieces fill the room left round them. The squad, the swarm and the camera step from piece to piece where a corridor crosses a cut (`src/Seams.galaxy`). Each piece shows ten cells of the corridor past its cut, short of any door, so the step falls in a straight run of corridor.
+- Every trigger's spawner and timer I/O and the commander's lines are read from the map, so only AS's spawners spawn, with their MinSkill. `asw_marines_past_area` becomes a trigger over the station's middle that needs every living marine. It is off until the download turns it on, like `trigger_rocks_fall`.
+- The terminal fires `hackstart:`, `hacked:` and `downloaded:terminal`. The download's outputs run as AS's do, and the escape's countdown shows on the objective (`countdown`, `src/Mission.galaxy`). At zero the warhead goes off with the squad still inside and the mission fails.
+- The rock falls become a new door kind, rock (`src/Doors.galaxy` kind 8, `tools/colony.py` `ERockfall`): a heap of the mine's rock. The port has no mining laser, so a marine standing at a heap cuts it in six seconds. The exit corridor's slip clears only when the warhead is armed.
+- New art:
+  - floors: `floor_minegravel` (blendrockgravel001a), `floor_minerock` (minerockwall underfoot), `floor_timorgrate` (metalgrate014), `floor_timorbridge` (metal/bridge), `floor_timorconc` (concretefloor050a with the loading bays' yellow line);
+  - walls: `wall_minerock`, `wall_minebeam` (a steel portal propping the gallery, with a caged lamp), `wall_timorconc` (concretewall082_base's board marks), `wall_timorband` (concretewall080c's blue band, stencilled TIMOR);
+  - room kinds `mine`, `station`, `gantry` and `yard`, with each cell's kind from AS's floor material. They dress as the cargo hold: crates, barrels and hazard paint, and none of the ship's running lights.
+- Not ported: the mining lasers, blink pack and jump jet (no items in the port), the warhead's train and its track, `reactor_buttons`' little turning bridge by the terminal (the deck runs to the terminal without it), and `rock_block_backtrack`.

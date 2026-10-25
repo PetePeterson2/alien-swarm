@@ -375,6 +375,7 @@ int AS_Nearest (point q, fixed within) {
     return best;
 }
 void AS_Order (int i, point to) {
+    to=AS_SeamWay(UnitGetPosition(as_a[i]),to);
     UnitIssueOrder(as_a[i],OrderTargetingPoint(AbilityCommand("move",0),to),c_orderQueueReplace);
 }
 void AS_Halt (int i) {
@@ -881,7 +882,7 @@ void AS_AlienPulse () {
         if(as_a[i]==null) {continue;}
         AS_HitFeedbackPulse(i);
         AS_AlienThink(i);
-        if(as_a[i]!=null && !AS_IsThing(as_aKind[i]) && as_aMoveT1[i]<=0.0) {AS_Unstick(i);}
+        if(as_a[i]!=null && !AS_IsThing(as_aKind[i]) && as_aMoveT1[i]<=0.0) {AS_Unstick(i);AS_SeamAlien(i);}
     }
 }
 // Every alien, egg and growth gone at once, without gore or kills: the level is being cleared.

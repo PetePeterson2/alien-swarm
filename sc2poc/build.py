@@ -33,7 +33,7 @@ WIPE = False
 AUTO_SKILL, AUTO_ONSLAUGHT, AUTO_PROF = 2, False, 3
 MARINES = ['sarge', 'wildcat', 'faith', 'crash', 'jaeger', 'wolfe', 'bastille', 'vegas']
 REFERENCE_SOUNDS = Path.home() / 'OneDrive/Documents/sc2map/doodad-royale/reference/catalog/Sound.txt'
-MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Moments', 'Bots', 'Hive',
+MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Moments', 'Bots', 'Seams', 'Hive',
            'Progress', 'HUD', 'Hints', 'Briefing', 'Campaign', 'Main']
 SEATS = 4
 # The campaign in order, after Alien Swarm's Jacob's Rest: the level's module (tools/<name>.py), its title,
@@ -49,7 +49,9 @@ LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII // SYNTEK LANDING BAY 7',
           ('residential', 'SYNTEK RESIDENTIAL', 'DEIMA // SYNTEK RESIDENTIAL BLOCK',
            'Destroy the eggs, burn out the biomass and get to the elevators. Press H for controls.', 150),
           ('sewer', 'SEWER JUNCTION B5', 'DEIMA // SEWER JUNCTION B5',
-           'Bring down the tunnel the swarm comes up, destroy the eggs and get out to the surface. Press H for controls.', 180)]
+           'Bring down the tunnel the swarm comes up, destroy the eggs and get out to the surface. Press H for controls.', 180),
+          ('timor', 'TIMOR STATION', 'DEIMA // TIMOR STATION',
+           'Get the warhead into the nest, arm it, and get out before it goes. Press H for controls.', 265)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 
@@ -224,6 +226,17 @@ def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
     out += ['}', 'void AS_LevelData%d () {' % n, '    int i;']
     out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (at(*L.SPAWN) + (L.SPAWN_FACING,)))
     out.append('    as_kitSnowRoof=%s;' % ('true' if getattr(L, 'SNOW_ROOFS', False) else 'false'))
+    # A level cut into pieces (tools/seams.py): its seams, each cell's piece and the way from piece to piece.
+    seams = getattr(L, 'SEAMS', [])
+    out.append('    as_seamN=%d;' % len(seams))
+    for i, (x0, y0, x1, y1, dx, dy, _, to, gx, gy) in enumerate(seams):
+        (x0, y0), (x1, y1), (gx, gy) = at(x0, y0), at(x1, y1), at(gx, gy)
+        out.append('    as_seamX0[%d]=%.2f;as_seamY0[%d]=%.2f;as_seamX1[%d]=%.2f;as_seamY1[%d]=%.2f;as_seamDX[%d]=%.2f;as_seamDY[%d]=%.2f;'
+                   'as_seamTo[%d]=%d;as_seamGX[%d]=%.2f;as_seamGY[%d]=%.2f;' % (i, x0, i, y0, i, x1, i, y1, i, dx, i, dy, i, to, i, gx, i, gy))
+    for y, row in enumerate(getattr(L, 'PIECE_ROWS', []) if seams else []):
+        out.append('    as_pieceRow[%d]="%s";' % (y, row))
+    for a, row in enumerate(getattr(L, 'SEAM_NEXT', []) if seams else []):
+        out.append('    ' + ''.join('as_seamNext[%d]=%d;' % (a * 8 + b, s) for b, s in enumerate(row)))
     spots = [at(x, y) for x, y in tour_spots(solid)[:64]]
     for i, (x, y) in enumerate(spots):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))
@@ -337,7 +350,7 @@ def mission_galaxy(n):
             out.append('    AS_GenObjective("%s","%s",%s,%.2f,%.2f);' % (key, name, 'true' if shown else 'false', mx, my))
     for name, (x, y), label, powered in getattr(L, 'BUTTONS', []):
         out.append('    AS_Button("%s",%.2f,%.2f,"%s",%s);' % ((name,) + at(x, y) + (label, 'true' if powered else 'false')))
-    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3, 'gap': 4, 'block': 5, 'hover': 6, 'glass': 7}
+    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3, 'gap': 4, 'block': 5, 'hover': 6, 'glass': 7, 'rock': 8}
     for name, r, kind, seal, panel in getattr(L, 'DOORS', []):
         x0, y0, x1, y1 = rect(r)
         px, py = at(*panel) if panel else (0.0, 0.0)
@@ -796,7 +809,8 @@ def compose(qa, demo=False, auto=False, start=-1):
     # The cell tables are as big as the biggest level, rounded up to the kit's 4x4 tile blocks (AS_KitTiles reads a
     # whole block at a time); the map holds every level, packed.
     TABLES = (-(-max(w for w, h in sizes) // 4) * 4, -(-max(h for w, h in sizes) // 4) * 4)
-    packed = packer.pack([{'w': w, 'h': h, 'vert': t['vert'], 'vmask': t['vmask']} for (w, h), t in zip(sizes, hts)], base=L.FLOOR)
+    packed = packer.pack([{'name': name, 'w': w, 'h': h, 'vert': t['vert'], 'vmask': t['vmask']}
+                           for (name, *_), (w, h), t in zip(LEVELS, sizes, hts)], base=L.FLOOR)
     W, H = packed['size']
     places = packed['places']
     for n, (name, *_) in enumerate(LEVELS):

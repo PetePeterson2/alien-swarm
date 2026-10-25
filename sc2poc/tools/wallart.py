@@ -753,6 +753,132 @@ def wall_sewerlamp(seed=340):
     return _img(a), _img(emis)
 
 
+# ---- Timor Station (tools/timor.py) ---------------------------------------------------------------------------------
+def _minerock_base(seed, tone=(92, 98, 84)):
+    """minerockwall: the mine's hewn rock, green-grey with rust-brown veins, in rough benches where the drills cut
+    it, cracked, darker in its hollows, gravel heaped at the foot."""
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    n = _noise(0, 50, seed, 5, (WH, WW)); f = _noise(0, 5, seed + 1, 3, (WH, WW))
+    a = np.array(tone, float)[None, None] * (0.72 + 0.4 * n[..., None] + 0.12 * f[..., None])
+    # Benches: a few ragged ledges across the face, lit on top, shadowed under.
+    for y in sorted(r.uniform(WH * 0.12, WH * 0.75, 3)):
+        edge = y + (_noise(0, 40, seed + int(y), 3, (1, WW))[0] - 0.5) * 40
+        under = np.clip((yy - edge[None, :]) / 22.0, 0, 1) * np.clip(1 - (yy - edge[None, :]) / 60.0, 0, 1)
+        a *= (1 - 0.35 * under)[..., None]
+        a *= (1 + 0.1 * np.clip(1 - np.abs(yy - edge[None, :] + 4) / 5.0, 0, 1))[..., None]
+    vein = np.clip(1 - np.abs(_noise(0, 40, seed + 2, 4, (WH, WW)) - 0.5) * 16, 0, 1) * np.clip((_noise(0, 70, seed + 3, 3, (WH, WW)) - 0.45) * 3, 0, 1)
+    a = a * (1 - 0.5 * vein[..., None]) + np.array((126, 84, 48), float) * 0.5 * vein[..., None]
+    im = Image.new('L', (WW, WH), 0); d = ImageDraw.Draw(im)
+    for _ in range(9):
+        x, y = r.uniform(0, WW), r.uniform(0, WH * 0.8); pts = [(x, y)]
+        for _ in range(int(r.integers(5, 14))):
+            x += r.normal(0, 9); y += r.uniform(5, 14); pts.append((x, y))
+        d.line(pts, fill=int(r.integers(140, 240)), width=int(r.choice([1, 2, 2, 3])))
+    a *= (1 - 0.55 * np.asarray(im).astype(float)[..., None] / 255)
+    hollow = np.clip((_noise(0, 30, seed + 4, 4, (WH, WW)) - 0.62) * 4, 0, 1)
+    a *= (1 - 0.4 * hollow)[..., None]
+    # Gravel heaped along the foot.
+    foot = WH * 0.86 + (_noise(0, 30, seed + 5, 3, (1, WW))[0] - 0.5) * 30
+    pile = yy > foot[None, :]
+    a[pile] = a[pile] * 0.55 + np.array((86, 82, 72), float) * 0.45 * (0.7 + 0.6 * f[pile])[..., None]
+    return _weather(a, seed + 6, 20, 0.06)
+
+
+def wall_minerock(seed=350):
+    return _img(_minerock_base(seed)), None
+
+
+def wall_minebeam(seed=360):
+    """A mine bay shored up: a steel portal set against the rock, two I-beam legs and a header, their paint gone to
+    rust, chocked with timber, a caged lamp burning yellow on the header and a cable slung along it."""
+    a = _minerock_base(seed)
+    emis = np.zeros((WH, WW, 3))
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    steel = np.array((96, 84, 60), float)
+    top = int(WH * 0.12)
+    for x0 in (14, WW - 62):
+        leg = a[top:, x0:x0 + 48]
+        leg[:] = steel * (0.85 + 0.3 * _noise(0, 10, seed + x0, 3, (WH - top, 48))[..., None])
+        leg[:, :8] *= 1.25; leg[:, 40:] *= 0.6; leg[:, 20:28] *= 0.8
+    hdr = a[top:top + 46]
+    hdr[:] = steel * (0.85 + 0.3 * _noise(0, 10, seed + 9, 3, (46, WW))[..., None])
+    hdr[:8] *= 1.25; hdr[38:] *= 0.55
+    a[top + 46:top + 56] *= 0.5
+    rust = np.clip((_noise(0, 20, seed + 3, 4, (WH, WW)) - 0.55) * 3, 0, 1)
+    metal = np.zeros((WH, WW), bool); metal[top:, 14:62] = True; metal[top:, WW - 62:WW - 14] = True; metal[top:top + 46] = True
+    k = (rust * metal)[..., None] * 0.6
+    a = a * (1 - k) + np.array((118, 62, 30), float) * k
+    _rivets(a, [(x, top + 23) for x in range(40, WW - 30, 48)], (120, 108, 84), 4)
+    # Timber chocks between header and rock.
+    for x in range(90, WW - 90, 70):
+        a[top - 30:top, x:x + 34] = np.array((96, 70, 44), float) * (0.8 + 0.4 * _noise(0, 4, seed + x, 2, (30, 34))[..., None])
+        a[top - 30:top, x + 30:x + 34] *= 0.6
+    # The cable, sagging between hangers.
+    for x in range(WW):
+        y = int(top + 70 + 16 * (1 - ((x % 170) / 85.0 - 1) ** 2))
+        a[y:y + 5, x] = (30, 30, 28)
+    _hazard(a, 62, WW - 62, top + 46, top + 56, seed + 1, 14)
+    cx, cy = WW // 2, top + 90
+    a[cy - 22:cy + 22, cx - 34:cx + 34] = (52, 50, 44)
+    glass = (np.abs(yy - cy) < 16) & (np.abs(xx - cx) < 26)
+    warm = np.array((255, 196, 100), float)
+    a[glass] = warm * 0.85; emis[glass] = warm
+    cage = glass & ((((xx - cx) % 13) < 2) | (np.abs(yy - cy) < 2))
+    a[cage] = (44, 42, 38); emis[cage] = 0
+    halo = np.clip(1 - np.hypot((xx - cx) / 220, (yy - cy) / 170), 0, 1) ** 2
+    a *= (1 + 0.6 * halo)[..., None]
+    return _img(_weather(a, seed + 7, 30, 0.03)), _img(emis)
+
+
+def _boards(seed, tone=(138, 138, 134)):
+    """concretewall082: board-formed concrete, the grain of each plank pressed into it in level courses, tie holes
+    in a grid, the odd course a shade off, rain streaks and the mine's dust low down."""
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    n = _noise(0, 60, seed, 4, (WH, WW)); f = _noise(0, 5, seed + 1, 2, (WH, WW))
+    a = np.array(tone, float)[None, None] * (0.86 + 0.14 * n[..., None] + 0.06 * f[..., None])
+    step = WH // 12
+    for y in range(0, WH, step):
+        a[y:y + step] *= r.uniform(0.93, 1.06)
+        a[y:y + 2] *= 0.72
+        grain = _noise(0, 3, seed + y, 2, (step, WW // 8))
+        grain = np.asarray(Image.fromarray((grain * 255).astype(np.uint8)).resize((WW, step), Image.BICUBIC)).astype(float) / 255
+        a[y:y + step] *= (0.95 + 0.1 * grain[:a[y:y + step].shape[0]])[..., None]
+    for x in (0, WW // 2):
+        a[:, max(0, x - 1):x + 2] *= 0.75
+    for x in range(64, WW, 128):
+        for y in range(step * 2, WH, step * 4):
+            hole = (np.hypot(xx[y - 6:y + 7, x - 6:x + 7] - x, yy[y - 6:y + 7, x - 6:x + 7] - y) < 4.5)[..., None]
+            a[y - 6:y + 7, x - 6:x + 7] *= (1 - 0.6 * hole)
+    dust = np.clip((yy - WH * 0.7) / (WH * 0.3), 0, 1) ** 1.5 * (0.6 + 0.6 * n)
+    a = a * (1 - 0.35 * dust[..., None]) + np.array((110, 98, 80), float) * 0.35 * dust[..., None]
+    return a
+
+
+def wall_timorconc(seed=370):
+    a = _boards(seed)
+    a[int(WH * 0.92):] *= 0.5
+    return _img(_weather(a, seed + 3, 60, 0.04)), None
+
+
+def wall_timorband(seed=380):
+    """concretewall080c: the station's halls, smooth concrete in two panels with a painted steel-blue band across
+    it at hand height, chipped to the concrete along its edges, TIMOR stencilled over it."""
+    n = _noise(0, 60, seed, 4, (WH, WW)); f = _noise(0, 6, seed + 1, 2, (WH, WW))
+    a = np.array((170, 170, 166), float)[None, None] * (0.88 + 0.12 * n[..., None] + 0.05 * f[..., None])
+    a[:, WW // 2 - 2:WW // 2 + 2] *= 0.7
+    y0, y1 = int(WH * 0.5), int(WH * 0.8)
+    _band(a, y0, y1, (66, 112, 146), seed + 2, 0.18)
+    for x in range(64, WW, 128):
+        for y in (int(WH * 0.12), int(WH * 0.38)):
+            yy, xx = np.mgrid[-5:6, -5:6]
+            a[y - 5:y + 6, x - 5:x + 6] *= (1 - 0.55 * (np.hypot(xx, yy) < 4.5))[..., None]
+    _label(a, 'TIMOR', 40, WW - 40, int(WH * 0.22), int(WH * 0.34), (60, 70, 78), 70)
+    a[int(WH * 0.9):] *= 0.5
+    return _img(_weather(a, seed + 3, 70, 0.04)), None
+
+
 # tools/level.py KIT_WALLS names -> the bay drawn for it.
 WALLS = {'wall_plain0': ('clean', 100), 'wall_plain1': ('colony', 101), 'wall_pipes2': ('pipes', 102), 'wall_vent3': ('vent', 103),
          'wall_screen4': ('screen', 104), 'wall_light5': ('light', 105), 'wall_alarm6': ('alarm', 106)}
@@ -777,6 +903,10 @@ def textures():
     out['wall_seweroutlet'] = wall_seweroutlet()
     out['wall_sewerslime'] = wall_sewerslime()
     out['wall_sewerlamp'] = wall_sewerlamp()
+    out['wall_minerock'] = wall_minerock()
+    out['wall_minebeam'] = wall_minebeam()
+    out['wall_timorconc'] = wall_timorconc()
+    out['wall_timorband'] = wall_timorband()
     out['wall_trim'] = (tex_trim(), None)
     out['cap'] = (tex_cap(), None)
     out['machine_top'] = (tex_machine(), None)
