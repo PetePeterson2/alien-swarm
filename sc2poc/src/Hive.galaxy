@@ -142,8 +142,10 @@ int AS_AutoHiveFoe (int p) {
     if(!(as_auto && p==1) || !as_autoTask || as_routeAt>=as_routeN || as_routeWait[as_routeAt]!=7) {return -1;}
     if(i<0 || as_a[i]==null) {return -1;}
     here=UnitGetPosition(as_m[1]);
+    // Only one it can see: an alien asleep in the next room is never shot (AS_BotFoe wants a clear line), so counting
+    // it held the job for good (SynTek Residential's first office, a build of the commits alone, 2026-10-25).
     for(j=0;j<AS_MAXALIEN;j+=1) {
-        if(as_a[j]!=null && !AS_IsThing(as_aKind[j]) && DistanceBetweenPoints(here,Point(as_aX[j],as_aY[j]))<6.0) {return -1;}
+        if(as_a[j]!=null && !AS_IsThing(as_aKind[j]) && DistanceBetweenPoints(here,Point(as_aX[j],as_aY[j]))<6.0 && AS_LineClear(PointGetX(here),PointGetY(here),as_aX[j],as_aY[j])) {return -1;}
     }
     h=0;
     if(as_aKind[i]==AS_BIOMASS && as_inv[1][1]==AS_IT_FLAMER) {h=1;}
