@@ -1,0 +1,55 @@
+// ---- seams --------------------------------------------------------------
+// A level cut into pieces that sit apart in the map (tools/seams.py: Timor Station is longer than the room the
+// packed map has left). Each piece shows the corridor past its cut a few cells on; a unit half a cell over the
+// line is moved by the seam's jump to the same spot in the next piece, where the corridor goes on. Whatever heads
+// for a point in another piece (an alien after its marine, a bot after the squad, the autopilot's route) heads for
+// the seam first (AS_SeamWay).
+int AS_PieceAt (fixed x, fixed y) {
+    int cx;int cy;
+    if(as_seamN<=0) {return 0;}
+    cx=FixedToInt(x-as_oxF);cy=FixedToInt(y-as_oyF);
+    if(cx<0 || cy<0 || cx>=AS_W || cy>=AS_H) {return 0;}
+    return StringToInt(StringSub(as_pieceRow[cy],cx+1,cx+1));
+}
+int AS_SeamAt (fixed x, fixed y) {
+    int s;
+    for(s=0;s<as_seamN;s+=1) {
+        if(x>=as_seamX0[s] && x<as_seamX1[s] && y>=as_seamY0[s] && y<as_seamY1[s]) {return s;}
+    }
+    return -1;
+}
+// Where something at `here` walks to get to `to`: `to` itself in the same piece, else the next seam's crossing.
+point AS_SeamWay (point here, point to) {
+    int a;int b;int s;
+    if(as_seamN<=0 || to==null || here==null) {return to;}
+    a=AS_PieceAt(PointGetX(here),PointGetY(here));b=AS_PieceAt(PointGetX(to),PointGetY(to));
+    if(a==b) {return to;}
+    s=as_seamNext[a*AS_PIECES+b];
+    if(s<0) {return to;}
+    return Point(as_seamGX[s],as_seamGY[s]);
+}
+// A marine over a seam's line: the marine, its camera anchor and every camera watching it step through.
+void AS_SeamMarine (int p) {
+    point q;int s;int h;fixed dx;fixed dy;
+    if(as_seamN<=0 || !as_alive[p]) {return;}
+    q=UnitGetPosition(as_m[p]);s=AS_SeamAt(PointGetX(q),PointGetY(q));
+    if(s<0) {return;}
+    dx=as_seamDX[s];dy=as_seamDY[s];
+    UnitSetPosition(as_m[p],PointWithOffset(q,dx,dy),false);
+    if(as_camAnchor[p]!=null) {UnitSetPosition(as_camAnchor[p],PointWithOffset(UnitGetPosition(as_camAnchor[p]),dx,dy),false);}
+    for(h=1;h<=AS_PLAYERS;h+=1) {
+        if(!AS_Person(h) || AS_ViewUnit(h)!=as_m[p] || (as_bot[h] && !(as_auto && h==1))) {continue;}
+        CameraPan(h,PointWithOffset(CameraGetTarget(h),dx,dy),0.0,-1,0.0,false);
+    }
+    as_botLast[p]=null;
+    AS_Log("seam "+IntToString(s)+": marine "+IntToString(p)+" into piece "+IntToString(as_seamTo[s]));
+}
+void AS_SeamAlien (int i) {
+    int s;point q;
+    if(as_seamN<=0 || as_a[i]==null || AS_IsThing(as_aKind[i])) {return;}
+    q=UnitGetPosition(as_a[i]);s=AS_SeamAt(PointGetX(q),PointGetY(q));
+    if(s<0) {return;}
+    q=PointWithOffset(q,as_seamDX[s],as_seamDY[s]);
+    UnitSetPosition(as_a[i],q,false);as_aX[i]=PointGetX(q);as_aY[i]=PointGetY(q);
+    as_aNextOrder[i]=0.0;
+}

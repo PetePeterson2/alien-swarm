@@ -449,7 +449,7 @@ void AS_Move (int p) {
         }
     }
     len=SquareRoot((nx-x)*(nx-x)+(ny-y)*(ny-y));
-    if(len>0.002) {UnitSetPosition(as_m[p],Point(nx,ny),true);}
+    if(len>0.002) {UnitSetPosition(as_m[p],Point(nx,ny),true);AS_SeamMarine(p);}
     AS_Walk(p,len/AS_DT);
 }
 // SPACE: a quick roll the way the marine is moving (or aiming), clear of spit and bile.

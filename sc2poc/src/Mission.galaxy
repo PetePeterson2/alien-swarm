@@ -155,16 +155,19 @@ void AS_MarkOff () {
 }
 // "NE  34 m" from a marine to the objective, for the HUD.
 string AS_ObjBearing (int p) {
-    point here;fixed a;fixed d;string dir;int k;
+    point here;point to;fixed a;fixed d;string dir;int k;string more="";
     if(as_objAt==null || !as_alive[p]) {return "";}
-    here=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(here,as_objAt);
-    if(d<3.0) {return "<c val=\"8CFFA0\">HERE</c>";}
-    a=ATan2(PointGetY(as_objAt)-PointGetY(here),PointGetX(as_objAt)-PointGetX(here));
+    here=UnitGetPosition(as_m[p]);
+    // Through a seam (src/Seams.galaxy): the way to the seam, and the rest beyond it.
+    to=AS_SeamWay(here,as_objAt);if(to!=as_objAt) {more="+";}
+    d=DistanceBetweenPoints(here,to);
+    if(d<3.0 && more=="") {return "<c val=\"8CFFA0\">HERE</c>";}
+    a=ATan2(PointGetY(to)-PointGetY(here),PointGetX(to)-PointGetX(here));
     k=FixedToInt(ModF(a+22.5+360.0,360.0)/45.0)%8;
     dir="E";
     if(k==1) {dir="NE";}else if(k==2) {dir="N";}else if(k==3) {dir="NW";}else if(k==4) {dir="W";}
     else if(k==5) {dir="SW";}else if(k==6) {dir="S";}else if(k==7) {dir="SE";}
-    return dir+"  "+IntToString(FixedToInt(d))+" m";
+    return dir+"  "+IntToString(FixedToInt(d))+more+" m";
 }
 
 // The hull kit lays its blockers a few ticks after the mission has shut the door and the exit bridge, so it

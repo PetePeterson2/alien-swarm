@@ -137,10 +137,15 @@ def level_heights(level, rows, floor_level):
         name, hx0, hy0, upc = src
         data = asextract.load(name)
         raw = np.full((H, W), np.nan)
+        # A level laid out in pieces (tools/seams.py) samples each cell where it came from in the map.
+        sx, sy = level.get('HEIGHTS_FROM') or (None, None)
         for y in range(H):
             for x in range(W):
                 if deck[y, x]:
-                    s = _sample(data, hx0 + upc * (x + 0.5), hy0 + upc * (y + 0.5))
+                    fx, fy = (x, y) if sx is None else (sx[y, x], sy[y, x])
+                    if fx < 0:
+                        continue
+                    s = _sample(data, hx0 + upc * (fx + 0.5), hy0 + upc * (fy + 0.5))
                     if s is not None:
                         raw[y, x] = round(s / SNAP) * SNAP
         have = ~np.isnan(raw)

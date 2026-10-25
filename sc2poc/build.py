@@ -32,7 +32,7 @@ WIPE = False
 AUTO_SKILL, AUTO_ONSLAUGHT, AUTO_PROF = 2, False, 3
 MARINES = ['sarge', 'wildcat', 'faith', 'crash', 'jaeger', 'wolfe', 'bastille', 'vegas']
 REFERENCE_SOUNDS = Path.home() / 'OneDrive/Documents/sc2map/doodad-royale/reference/catalog/Sound.txt'
-MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Bots', 'Hive',
+MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Bots', 'Seams', 'Hive',
            'Progress', 'HUD', 'Hints', 'Briefing', 'Campaign', 'Main']
 SEATS = 4
 # The campaign in order, after Alien Swarm's Jacob's Rest: the level's module (tools/<name>.py), its title,
@@ -223,6 +223,17 @@ def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
     out += ['}', 'void AS_LevelData%d () {' % n, '    int i;']
     out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (at(*L.SPAWN) + (L.SPAWN_FACING,)))
     out.append('    as_kitSnowRoof=%s;' % ('true' if getattr(L, 'SNOW_ROOFS', False) else 'false'))
+    # A level cut into pieces (tools/seams.py): its seams, each cell's piece and the way from piece to piece.
+    seams = getattr(L, 'SEAMS', [])
+    out.append('    as_seamN=%d;' % len(seams))
+    for i, (x0, y0, x1, y1, dx, dy, _, to, gx, gy) in enumerate(seams):
+        (x0, y0), (x1, y1), (gx, gy) = at(x0, y0), at(x1, y1), at(gx, gy)
+        out.append('    as_seamX0[%d]=%.2f;as_seamY0[%d]=%.2f;as_seamX1[%d]=%.2f;as_seamY1[%d]=%.2f;as_seamDX[%d]=%.2f;as_seamDY[%d]=%.2f;'
+                   'as_seamTo[%d]=%d;as_seamGX[%d]=%.2f;as_seamGY[%d]=%.2f;' % (i, x0, i, y0, i, x1, i, y1, i, dx, i, dy, i, to, i, gx, i, gy))
+    for y, row in enumerate(getattr(L, 'PIECE_ROWS', []) if seams else []):
+        out.append('    as_pieceRow[%d]="%s";' % (y, row))
+    for a, row in enumerate(getattr(L, 'SEAM_NEXT', []) if seams else []):
+        out.append('    ' + ''.join('as_seamNext[%d]=%d;' % (a * 8 + b, s) for b, s in enumerate(row)))
     spots = [at(x, y) for x, y in tour_spots(solid)[:64]]
     for i, (x, y) in enumerate(spots):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))

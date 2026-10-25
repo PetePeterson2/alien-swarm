@@ -90,6 +90,8 @@ point AS_BotGoal (int p) {
     }
     if(as_leader==0 || as_leader==p) {return null;}
     lq=UnitGetPosition(as_m[as_leader]);
+    // The leader through a seam: after it (AS_BotPulse sends the bot to the crossing).
+    if(AS_PieceAt(PointGetX(here),PointGetY(here))!=AS_PieceAt(PointGetX(lq),PointGetY(lq))) {return lq;}
     // Everyone aboard: hold a spot on the platform until the ride is over.
     // A spot it can't walk straight to (round the drop's corner onto the bridge) is reached by the leader's trail first:
     // straight at it, a bot south of the bridge pinned itself against the drop for good (autopilot run, 2026-10-24).
@@ -211,7 +213,7 @@ void AS_BotPulse (int p) {
     if(as_demo) {as_trigger[p]=false;as_botVX[p]=0.0;as_botVY[p]=0.0;return;}
     here=UnitGetPosition(as_m[p]);
     // The trail search is the costly part: once every four steps, each bot on its own step.
-    if(as_tick%4==p%4 || as_botGoalPt[p]==null || (as_auto && p==1)) {as_botGoalPt[p]=AS_BotGoal(p);}
+    if(as_tick%4==p%4 || as_botGoalPt[p]==null || (as_auto && p==1)) {as_botGoalPt[p]=AS_SeamWay(here,AS_BotGoal(p));}
     goal=as_botGoalPt[p];
     AS_BotCatchUp(p,here);
     as_botVX[p]=0.0;as_botVY[p]=0.0;

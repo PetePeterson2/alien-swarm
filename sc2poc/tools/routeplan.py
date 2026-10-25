@@ -175,12 +175,22 @@ def plan(stops):
     return rows
 
 
-def check(route):
+def piece(x, y):
+    """A level laid out in pieces (tools/seams.py): the piece the cell is in."""
+    return L.PIECE_ROWS[int(y)][int(x)]
+
+
+def check(route, seams=None):
+    """The legs that are not clear. A leg from one piece to the next (tools/seams.py) goes through the seam, not
+    across the map between them: those go into `seams` instead."""
     solid = grid()
     bad = []
     here = L.SPAWN
     for i, (x, y, wait) in enumerate(route):
-        if not leg_clear(solid, here, (x, y)):
+        if getattr(L, 'PIECE_ROWS', None) and piece(*here) != piece(x, y):
+            if seams is not None:
+                seams.append((i, here, (x, y)))
+        elif not leg_clear(solid, here, (x, y)):
             bad.append((i, here, (x, y)))
         here = (x, y)
     return bad
@@ -220,10 +230,11 @@ def main():
             print('    ' + ' '.join('(%s, %s, %d),' % r for r in rows[k:k + 6]))
         print(']')
         return
-    bad = check(L.ROUTE)
+    seams = []
+    bad = check(L.ROUTE, seams)
     for i, a, b in bad:
         print('leg %d from %s to %s is not clear' % (i, a, b))
-    print('%s: %d legs, %d not clear' % (name, len(L.ROUTE), len(bad)))
+    print('%s: %d legs, %d not clear' % (name, len(L.ROUTE), len(bad)) + (', %d through a seam' % len(seams) if seams else ''))
     left = unswept(L.ROUTE)
     for kind, x, y in left:
         print("%s at (%.1f, %.1f) is in no wait-7 stop's reach" % (kind, x, y))
