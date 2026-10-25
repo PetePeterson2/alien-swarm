@@ -1,0 +1,1289 @@
+{
+ "bastille_close_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.79,
+  "tag": "[panicked]",
+  "text": "They're too close!",
+  "voice": "Iapetus"
+ },
+ "bastille_close_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.0,
+  "tag": "[panicked]",
+  "text": "Get it off me!",
+  "voice": "Iapetus"
+ },
+ "bastille_die_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.05,
+  "tag": "[dying]",
+  "text": "Aaargh...",
+  "voice": "Iapetus"
+ },
+ "bastille_die_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.38,
+  "tag": "[dying]",
+  "text": "No...!",
+  "voice": "Iapetus"
+ },
+ "bastille_down_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.74,
+  "tag": "[shouting, alarmed]",
+  "text": "Marine down!",
+  "voice": "Iapetus"
+ },
+ "bastille_down_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.69,
+  "tag": "[shouting, alarmed]",
+  "text": "Man down!",
+  "voice": "Iapetus"
+ },
+ "bastille_down_2": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.65,
+  "tag": "[shouting, alarmed]",
+  "text": "We lost one!",
+  "voice": "Iapetus"
+ },
+ "bastille_eggs_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.87,
+  "tag": "[tense, quiet]",
+  "text": "Eggs. Careful.",
+  "voice": "Iapetus"
+ },
+ "bastille_eggs_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.05,
+  "tag": "[tense, quiet]",
+  "text": "Alien eggs up ahead.",
+  "voice": "Iapetus"
+ },
+ "bastille_ff_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.89,
+  "tag": "[angry]",
+  "text": "Watch your fire!",
+  "voice": "Iapetus"
+ },
+ "bastille_ff_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.57,
+  "tag": "[angry]",
+  "text": "Hey! Same side!",
+  "voice": "Iapetus"
+ },
+ "bastille_ff_2": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.11,
+  "tag": "[angry]",
+  "text": "Check your targets!",
+  "voice": "Iapetus"
+ },
+ "bastille_firing_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 2.19,
+  "tag": "[shouting]",
+  "text": "Contact! Engaging!",
+  "voice": "Iapetus"
+ },
+ "bastille_firing_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.35,
+  "tag": "[shouting]",
+  "text": "Eat this!",
+  "voice": "Iapetus"
+ },
+ "bastille_firing_2": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.62,
+  "tag": "[shouting]",
+  "text": "Take that, bug!",
+  "voice": "Iapetus"
+ },
+ "bastille_healing_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 2.11,
+  "tag": "[reassuring]",
+  "text": "Hold still, patching you up.",
+  "voice": "Iapetus"
+ },
+ "bastille_healing_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.87,
+  "tag": "[reassuring]",
+  "text": "Healing!",
+  "voice": "Iapetus"
+ },
+ "bastille_hold_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.73,
+  "tag": "[calm]",
+  "text": "Holding here.",
+  "voice": "Iapetus"
+ },
+ "bastille_hold_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.79,
+  "tag": "[calm]",
+  "text": "Holding position.",
+  "voice": "Iapetus"
+ },
+ "bastille_idle_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 3.17,
+  "tag": "[uneasy, quiet]",
+  "text": "Quiet. Too quiet.",
+  "voice": "Iapetus"
+ },
+ "bastille_idle_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.61,
+  "tag": "[uneasy, quiet]",
+  "text": "Anyone else hear that?",
+  "voice": "Iapetus"
+ },
+ "bastille_idle_2": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.95,
+  "tag": "[uneasy, quiet]",
+  "text": "Let's keep moving.",
+  "voice": "Iapetus"
+ },
+ "bastille_infested_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.93,
+  "tag": "[panicked]",
+  "text": "I'm infested! Medic!",
+  "voice": "Iapetus"
+ },
+ "bastille_infested_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 1.32,
+  "tag": "[panicked]",
+  "text": "Something's inside me!",
+  "voice": "Iapetus"
+ },
+ "bastille_noammo_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.71,
+  "tag": "[frustrated]",
+  "text": "I'm out of ammo!",
+  "voice": "Iapetus"
+ },
+ "bastille_noammo_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 2.38,
+  "tag": "[frustrated]",
+  "text": "Dry! Need ammo!",
+  "voice": "Iapetus"
+ },
+ "bastille_pain_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.41,
+  "tag": "[pained]",
+  "text": "Ugh!",
+  "voice": "Iapetus"
+ },
+ "bastille_pain_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.39,
+  "tag": "[pained]",
+  "text": "I'm hit!",
+  "voice": "Iapetus"
+ },
+ "bastille_pain_2": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.4,
+  "tag": "[pained]",
+  "text": "Argh!",
+  "voice": "Iapetus"
+ },
+ "bastille_painbig_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.49,
+  "tag": "[shouting in pain]",
+  "text": "I'm hit bad!",
+  "voice": "Iapetus"
+ },
+ "bastille_painbig_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 2.1,
+  "tag": "[shouting in pain]",
+  "text": "Aagh! That hurt!",
+  "voice": "Iapetus"
+ },
+ "bastille_parasite_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 3.23,
+  "tag": "[shouting]",
+  "text": "Parasites! Don't let them latch on!",
+  "voice": "Iapetus"
+ },
+ "bastille_parasite_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.41,
+  "tag": "[shouting]",
+  "text": "Parasite!",
+  "voice": "Iapetus"
+ },
+ "bastille_reload_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.58,
+  "tag": "[urgent]",
+  "text": "Reloading!",
+  "voice": "Iapetus"
+ },
+ "bastille_reload_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 0.53,
+  "tag": "[urgent]",
+  "text": "Changing mags!",
+  "voice": "Iapetus"
+ },
+ "bastille_reload_2": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 2.34,
+  "tag": "[urgent]",
+  "text": "Cover me, reloading!",
+  "voice": "Iapetus"
+ },
+ "bastille_shieldbug_0": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 2.67,
+  "tag": "[shouting]",
+  "text": "Shieldbug! Hit it from behind!",
+  "voice": "Iapetus"
+ },
+ "bastille_shieldbug_1": {
+  "heard": "",
+  "model": "gemini-3.8-flash-tts",
+  "ok": false,
+  "seconds": 3.52,
+  "tag": "[shouting]",
+  "text": "Big one! Shieldbug!",
+  "voice": "Iapetus"
+ },
+ "crash_close_0": {
+  "heard": "They're too close!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.83,
+  "tag": "[panicked]",
+  "text": "They're too close!",
+  "voice": "Puck"
+ },
+ "crash_close_1": {
+  "heard": "Get it off me!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.76,
+  "tag": "[panicked]",
+  "text": "Get it off me!",
+  "voice": "Puck"
+ },
+ "crash_die_0": {
+  "heard": "Argh!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.47,
+  "tag": "[dying]",
+  "text": "Aaargh...",
+  "voice": "Puck"
+ },
+ "crash_die_1": {
+  "heard": "No!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.71,
+  "tag": "[dying]",
+  "text": "No...!",
+  "voice": "Puck"
+ },
+ "crash_down_0": {
+  "heard": "Marine down!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.82,
+  "tag": "[shouting, alarmed]",
+  "text": "Marine down!",
+  "voice": "Puck"
+ },
+ "crash_down_1": {
+  "heard": "Man down!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.74,
+  "tag": "[shouting, alarmed]",
+  "text": "Man down!",
+  "voice": "Puck"
+ },
+ "crash_down_2": {
+  "heard": "We lost one!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.84,
+  "tag": "[shouting, alarmed]",
+  "text": "We lost one!",
+  "voice": "Puck"
+ },
+ "crash_eggs_0": {
+  "heard": "Eggs. Careful.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.6,
+  "tag": "[tense, quiet]",
+  "text": "Eggs. Careful.",
+  "voice": "Puck"
+ },
+ "crash_eggs_1": {
+  "heard": "Alien eggs up ahead.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.08,
+  "tag": "[tense, quiet]",
+  "text": "Alien eggs up ahead.",
+  "voice": "Puck"
+ },
+ "crash_ff_0": {
+  "heard": "Watch your fire!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.85,
+  "tag": "[angry]",
+  "text": "Watch your fire!",
+  "voice": "Puck"
+ },
+ "crash_ff_1": {
+  "heard": "Hey, same side!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.7,
+  "tag": "[angry]",
+  "text": "Hey! Same side!",
+  "voice": "Puck"
+ },
+ "crash_ff_2": {
+  "heard": "Check your targets!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.94,
+  "tag": "[angry]",
+  "text": "Check your targets!",
+  "voice": "Puck"
+ },
+ "crash_firing_0": {
+  "heard": "Contact! Engaging!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.59,
+  "tag": "[shouting]",
+  "text": "Contact! Engaging!",
+  "voice": "Puck"
+ },
+ "crash_firing_1": {
+  "heard": "Eat this!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.73,
+  "tag": "[shouting]",
+  "text": "Eat this!",
+  "voice": "Puck"
+ },
+ "crash_firing_2": {
+  "heard": "Take that, bug!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.95,
+  "tag": "[shouting]",
+  "text": "Take that, bug!",
+  "voice": "Puck"
+ },
+ "crash_healing_0": {
+  "heard": "Hold still, patching you up.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.38,
+  "tag": "[reassuring]",
+  "text": "Hold still, patching you up.",
+  "voice": "Puck"
+ },
+ "crash_healing_1": {
+  "heard": "Healing.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.5,
+  "tag": "[reassuring]",
+  "text": "Healing!",
+  "voice": "Puck"
+ },
+ "crash_hold_0": {
+  "heard": "Holding here.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.67,
+  "tag": "[calm]",
+  "text": "Holding here.",
+  "voice": "Puck"
+ },
+ "crash_hold_1": {
+  "heard": "Holding position.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.8,
+  "tag": "[calm]",
+  "text": "Holding position.",
+  "voice": "Puck"
+ },
+ "crash_idle_0": {
+  "heard": "Quiet. Too quiet.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.92,
+  "tag": "[uneasy, quiet]",
+  "text": "Quiet. Too quiet.",
+  "voice": "Puck"
+ },
+ "crash_idle_1": {
+  "heard": "Anyone else hear that?",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.91,
+  "tag": "[uneasy, quiet]",
+  "text": "Anyone else hear that?",
+  "voice": "Puck"
+ },
+ "crash_idle_2": {
+  "heard": "Let's keep moving.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.69,
+  "tag": "[uneasy, quiet]",
+  "text": "Let's keep moving.",
+  "voice": "Puck"
+ },
+ "crash_infested_0": {
+  "heard": "I'm infested! Medic!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.57,
+  "tag": "[panicked]",
+  "text": "I'm infested! Medic!",
+  "voice": "Puck"
+ },
+ "crash_infested_1": {
+  "heard": "Something's inside me!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.2,
+  "tag": "[panicked]",
+  "text": "Something's inside me!",
+  "voice": "Puck"
+ },
+ "crash_noammo_0": {
+  "heard": "I'm out of ammo!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.81,
+  "tag": "[frustrated]",
+  "text": "I'm out of ammo!",
+  "voice": "Puck"
+ },
+ "crash_noammo_1": {
+  "heard": "Dry! Need ammo!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.39,
+  "tag": "[frustrated]",
+  "text": "Dry! Need ammo!",
+  "voice": "Puck"
+ },
+ "crash_pain_0": {
+  "heard": "Ugh!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.48,
+  "tag": "[pained]",
+  "text": "Ugh!",
+  "voice": "Puck"
+ },
+ "crash_pain_1": {
+  "heard": "I'm hit!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.52,
+  "tag": "[pained]",
+  "text": "I'm hit!",
+  "voice": "Puck"
+ },
+ "crash_pain_2": {
+  "heard": "Ugh!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.55,
+  "tag": "[pained]",
+  "text": "Argh!",
+  "voice": "Puck"
+ },
+ "crash_painbig_0": {
+  "heard": "I'm hit bad!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.88,
+  "tag": "[shouting in pain]",
+  "text": "I'm hit bad!",
+  "voice": "Puck"
+ },
+ "crash_painbig_1": {
+  "heard": "Ah! That hurt!",
+  "model": "gemini-3.1-flash-tts-preview",
+  "ok": true,
+  "seconds": 1.97,
+  "tag": "[shouting in pain]",
+  "text": "Aagh! That hurt!",
+  "voice": "Puck"
+ },
+ "crash_parasite_0": {
+  "heard": "Parasites! Don't let them latch on!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.71,
+  "tag": "[shouting]",
+  "text": "Parasites! Don't let them latch on!",
+  "voice": "Puck"
+ },
+ "crash_parasite_1": {
+  "heard": "Parasite!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.57,
+  "tag": "[shouting]",
+  "text": "Parasite!",
+  "voice": "Puck"
+ },
+ "crash_reload_0": {
+  "heard": "Reloading!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.58,
+  "tag": "[urgent]",
+  "text": "Reloading!",
+  "voice": "Puck"
+ },
+ "crash_reload_1": {
+  "heard": "Changing mags!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.75,
+  "tag": "[urgent]",
+  "text": "Changing mags!",
+  "voice": "Puck"
+ },
+ "crash_reload_2": {
+  "heard": "Cover me, reloading!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.06,
+  "tag": "[urgent]",
+  "text": "Cover me, reloading!",
+  "voice": "Puck"
+ },
+ "crash_shieldbug_0": {
+  "heard": "Shieldbug! Hit it from behind!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.56,
+  "tag": "[shouting]",
+  "text": "Shieldbug! Hit it from behind!",
+  "voice": "Puck"
+ },
+ "crash_shieldbug_1": {
+  "heard": "Big one, Shieldbug!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.01,
+  "tag": "[shouting]",
+  "text": "Big one! Shieldbug!",
+  "voice": "Puck"
+ },
+ "jaeger_close_0": {
+  "heard": "Get it off me!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 0.83,
+  "tag": "[panicked]",
+  "text": "They're too close!",
+  "voice": "Fenrir"
+ },
+ "jaeger_close_1": {
+  "heard": "Shieldbug! Hit it from behind!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.56,
+  "tag": "[panicked]",
+  "text": "Get it off me!",
+  "voice": "Fenrir"
+ },
+ "jaeger_die_0": {
+  "heard": "Ugh! No!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 3.07,
+  "tag": "[dying]",
+  "text": "Aaargh...",
+  "voice": "Fenrir"
+ },
+ "jaeger_die_1": {
+  "heard": "Reloading!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 2.49,
+  "tag": "[dying]",
+  "text": "No...!",
+  "voice": "Fenrir"
+ },
+ "jaeger_down_0": {
+  "heard": "Let's keep moving.",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.59,
+  "tag": "[shouting, alarmed]",
+  "text": "Marine down!",
+  "voice": "Fenrir"
+ },
+ "jaeger_down_1": {
+  "heard": "Marine down!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 0.74,
+  "tag": "[shouting, alarmed]",
+  "text": "Man down!",
+  "voice": "Fenrir"
+ },
+ "jaeger_down_2": {
+  "heard": "Man down!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 0.89,
+  "tag": "[shouting, alarmed]",
+  "text": "We lost one!",
+  "voice": "Fenrir"
+ },
+ "jaeger_eggs_0": {
+  "heard": "Careful!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 0.59,
+  "tag": "[tense, quiet]",
+  "text": "Eggs. Careful.",
+  "voice": "Fenrir"
+ },
+ "jaeger_eggs_1": {
+  "heard": "Alien eggs up ahead!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 1.05,
+  "tag": "[tense, quiet]",
+  "text": "Alien eggs up ahead.",
+  "voice": "Fenrir"
+ },
+ "jaeger_firing_1": {
+  "heard": "Yeet this!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.21,
+  "tag": "[shouting]",
+  "text": "Eat this!",
+  "voice": "Fenrir"
+ },
+ "jaeger_firing_2": {
+  "heard": "Take that, bug!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 0.75,
+  "tag": "[shouting]",
+  "text": "Take that, bug!",
+  "voice": "Fenrir"
+ },
+ "jaeger_healing_0": {
+  "heard": "Hold still, patching you up!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 1.41,
+  "tag": "[reassuring]",
+  "text": "Hold still, patching you up.",
+  "voice": "Fenrir"
+ },
+ "jaeger_healing_1": {
+  "heard": "Healing!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 0.44,
+  "tag": "[reassuring]",
+  "text": "Healing!",
+  "voice": "Fenrir"
+ },
+ "jaeger_hold_0": {
+  "heard": "Holding here!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 0.61,
+  "tag": "[calm]",
+  "text": "Holding here.",
+  "voice": "Fenrir"
+ },
+ "jaeger_hold_1": {
+  "heard": "Holding position!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 0.74,
+  "tag": "[calm]",
+  "text": "Holding position.",
+  "voice": "Fenrir"
+ },
+ "jaeger_idle_0": {
+  "heard": "Quiet.",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 2.51,
+  "tag": "[uneasy, quiet]",
+  "text": "Quiet. Too quiet.",
+  "voice": "Fenrir"
+ },
+ "jaeger_idle_1": {
+  "heard": "Too quiet.",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 0.7,
+  "tag": "[uneasy, quiet]",
+  "text": "Anyone else hear that?",
+  "voice": "Fenrir"
+ },
+ "jaeger_idle_2": {
+  "heard": "Anyone else hear that?",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 0.77,
+  "tag": "[uneasy, quiet]",
+  "text": "Let's keep moving.",
+  "voice": "Fenrir"
+ },
+ "jaeger_infested_0": {
+  "heard": "We lost one!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 7.6,
+  "tag": "[panicked]",
+  "text": "I'm infested! Medic!",
+  "voice": "Fenrir"
+ },
+ "jaeger_infested_1": {
+  "heard": "I'm infested! Medic! Something's inside me!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 3.9,
+  "tag": "[panicked]",
+  "text": "Something's inside me!",
+  "voice": "Fenrir"
+ },
+ "jaeger_noammo_0": {
+  "heard": "I'm out of ammo!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 0.92,
+  "tag": "[frustrated]",
+  "text": "I'm out of ammo!",
+  "voice": "Fenrir"
+ },
+ "jaeger_noammo_1": {
+  "heard": "Dry, need ammo!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 1.33,
+  "tag": "[frustrated]",
+  "text": "Dry! Need ammo!",
+  "voice": "Fenrir"
+ },
+ "jaeger_parasite_0": {
+  "heard": "Parasite!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.04,
+  "tag": "[shouting]",
+  "text": "Parasites! Don't let them latch on!",
+  "voice": "Fenrir"
+ },
+ "jaeger_parasite_1": {
+  "heard": "Eggs!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 1.06,
+  "tag": "[shouting]",
+  "text": "Parasite!",
+  "voice": "Fenrir"
+ },
+ "jaeger_reload_0": {
+  "heard": "Changing mags!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": true,
+  "seconds": 0.85,
+  "tag": "[urgent]",
+  "text": "Reloading!",
+  "voice": "Fenrir"
+ },
+ "jaeger_reload_1": {
+  "heard": "Cover me, reloading!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.36,
+  "tag": "[urgent]",
+  "text": "Changing mags!",
+  "voice": "Fenrir"
+ },
+ "jaeger_reload_2": {
+  "heard": "They're too close!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.09,
+  "tag": "[urgent]",
+  "text": "Cover me, reloading!",
+  "voice": "Fenrir"
+ },
+ "jaeger_shieldbug_0": {
+  "heard": "Big one! Shieldbug!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.12,
+  "tag": "[shouting]",
+  "text": "Shieldbug! Hit it from behind!",
+  "voice": "Fenrir"
+ },
+ "jaeger_shieldbug_1": {
+  "heard": "Parasites! Don't let them latch on!",
+  "model": "gemini-3.8-flash-lite-tts",
+  "ok": false,
+  "seconds": 1.69,
+  "tag": "[shouting]",
+  "text": "Big one! Shieldbug!",
+  "voice": "Fenrir"
+ },
+ "sarge_close_0": {
+  "heard": "They're too close!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.77,
+  "tag": "[panicked]",
+  "text": "They're too close!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_close_1": {
+  "heard": "Get it off me!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.73,
+  "tag": "[panicked]",
+  "text": "Get it off me!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_die_0": {
+  "heard": "Argh!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.24,
+  "tag": "[dying]",
+  "text": "Aaargh...",
+  "voice": "Rasalgethi"
+ },
+ "sarge_die_1": {
+  "heard": "No!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.43,
+  "tag": "[dying]",
+  "text": "No...!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_down_0": {
+  "heard": "Marine down!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.96,
+  "tag": "[shouting, alarmed]",
+  "text": "Marine down!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_down_1": {
+  "heard": "Man down!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.82,
+  "tag": "[shouting, alarmed]",
+  "text": "Man down!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_down_2": {
+  "heard": "We lost one!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.92,
+  "tag": "[shouting, alarmed]",
+  "text": "We lost one!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_eggs_0": {
+  "heard": "Eggs! Careful!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.34,
+  "tag": "[tense, quiet]",
+  "text": "Eggs. Careful.",
+  "voice": "Rasalgethi"
+ },
+ "sarge_eggs_1": {
+  "heard": "Alien eggs up ahead!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.99,
+  "tag": "[tense, quiet]",
+  "text": "Alien eggs up ahead.",
+  "voice": "Rasalgethi"
+ },
+ "sarge_ff_0": {
+  "heard": "Watch your fire!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.04,
+  "tag": "[angry]",
+  "text": "Watch your fire!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_ff_1": {
+  "heard": "Hey, same side!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.28,
+  "tag": "[angry]",
+  "text": "Hey! Same side!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_ff_2": {
+  "heard": "Check your targets!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.01,
+  "tag": "[angry]",
+  "text": "Check your targets!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_firing_0": {
+  "heard": "Contact, engaging!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.35,
+  "tag": "[shouting]",
+  "text": "Contact! Engaging!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_firing_1": {
+  "heard": "Eat this!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.81,
+  "tag": "[shouting]",
+  "text": "Eat this!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_firing_2": {
+  "heard": "Take that, bug!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.06,
+  "tag": "[shouting]",
+  "text": "Take that, bug!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_healing_0": {
+  "heard": "Hold still, patching you up.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.42,
+  "tag": "[reassuring]",
+  "text": "Hold still, patching you up.",
+  "voice": "Rasalgethi"
+ },
+ "sarge_healing_1": {
+  "heard": "Healing!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.43,
+  "tag": "[reassuring]",
+  "text": "Healing!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_hold_0": {
+  "heard": "Holding here.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.63,
+  "tag": "[calm]",
+  "text": "Holding here.",
+  "voice": "Rasalgethi"
+ },
+ "sarge_hold_1": {
+  "heard": "Holding position.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.79,
+  "tag": "[calm]",
+  "text": "Holding position.",
+  "voice": "Rasalgethi"
+ },
+ "sarge_idle_0": {
+  "heard": "Quiet. Too quiet.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 2.14,
+  "tag": "[uneasy, quiet]",
+  "text": "Quiet. Too quiet.",
+  "voice": "Rasalgethi"
+ },
+ "sarge_idle_1": {
+  "heard": "Anyone else hear that?",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.93,
+  "tag": "[uneasy, quiet]",
+  "text": "Anyone else hear that?",
+  "voice": "Rasalgethi"
+ },
+ "sarge_idle_2": {
+  "heard": "Let's keep moving.",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.81,
+  "tag": "[uneasy, quiet]",
+  "text": "Let's keep moving.",
+  "voice": "Rasalgethi"
+ },
+ "sarge_infested_0": {
+  "heard": "I'm infested! Medic!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.45,
+  "tag": "[panicked]",
+  "text": "I'm infested! Medic!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_infested_1": {
+  "heard": "Something's inside me!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.12,
+  "tag": "[panicked]",
+  "text": "Something's inside me!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_noammo_0": {
+  "heard": "I'm out of ammo!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.83,
+  "tag": "[frustrated]",
+  "text": "I'm out of ammo!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_noammo_1": {
+  "heard": "Dry! Need ammo!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.38,
+  "tag": "[frustrated]",
+  "text": "Dry! Need ammo!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_pain_0": {
+  "heard": "Ugh!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.32,
+  "tag": "[pained]",
+  "text": "Ugh!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_pain_1": {
+  "heard": "Ugh, I'm hit!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.13,
+  "tag": "[pained]",
+  "text": "I'm hit!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_pain_2": {
+  "heard": "Ugh!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.7,
+  "tag": "[pained]",
+  "text": "Argh!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_painbig_0": {
+  "heard": "I'm hit bad!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.91,
+  "tag": "[shouting in pain]",
+  "text": "I'm hit bad!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_painbig_1": {
+  "heard": "Argh, that hurt!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.51,
+  "tag": "[shouting in pain]",
+  "text": "Aagh! That hurt!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_parasite_0": {
+  "heard": "Parasites, don't let 'em latch on!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.61,
+  "tag": "[shouting]",
+  "text": "Parasites! Don't let them latch on!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_parasite_1": {
+  "heard": "Parasite!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.61,
+  "tag": "[shouting]",
+  "text": "Parasite!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_reload_0": {
+  "heard": "Reloading!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.63,
+  "tag": "[urgent]",
+  "text": "Reloading!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_reload_1": {
+  "heard": "Changing mags!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 0.81,
+  "tag": "[urgent]",
+  "text": "Changing mags!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_reload_2": {
+  "heard": "Cover me! Reloading!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.07,
+  "tag": "[urgent]",
+  "text": "Cover me, reloading!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_shieldbug_0": {
+  "heard": "Shieldbug, hit it from behind!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.59,
+  "tag": "[shouting]",
+  "text": "Shieldbug! Hit it from behind!",
+  "voice": "Rasalgethi"
+ },
+ "sarge_shieldbug_1": {
+  "heard": "Big one, Shieldbug!",
+  "model": "gemini-3.8-flash-tts",
+  "ok": true,
+  "seconds": 1.13,
+  "tag": "[shouting]",
+  "text": "Big one! Shieldbug!",
+  "voice": "Rasalgethi"
+ }
+}

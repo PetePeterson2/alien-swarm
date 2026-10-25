@@ -76,7 +76,7 @@ void AS_Reload (int p) {
     // A part-used clip is thrown away.
     if(as_mag[p][w]>0 && IntToFixed(as_mag[p][w])>=IntToFixed(as_it[w].mag)*0.6 && as_it[w].mag>=2) {AS_HintEvent("clip_wasted",p);}
     t=AS_ReloadTime(p,w);
-    as_reloadStart[p]=as_now;as_reloadEnd[p]=as_now+t;as_spin[p]=0.0;as_fastTried[p]=false;
+    as_reloadStart[p]=as_now;as_reloadEnd[p]=as_now+t;as_spin[p]=0.0;as_fastTried[p]=false;AS_ChatReload(p);
     width=0.10;
     if(as_skill==3) {width=RandomFixed(0.08,0.12);}else if(as_skill==4) {width=RandomFixed(0.06,0.10);}else if(as_skill==5) {width=RandomFixed(0.055,0.09);}
     width*=1.0+0.05*IntToFixed(AS_Skill(p,AS_SK_RELOADING));
@@ -331,7 +331,7 @@ void AS_FirePulse (int p) {
     if(w==AS_IT_HEALGUN) {AS_HealGunPulse(p,false);return;}
     if(as_mag[p][w]<=0) {
         if(as_reserve[p][w]>0) {AS_Reload(p);}
-        else if(as_now-as_ammoMsgAt[p]>2.0) {as_ammoMsgAt[p]=as_now;AS_Message(p,"<c val=\"FF5040\">OUT OF AMMO</c>  -  find more or switch weapons (Q)");AS_HintEvent("no_ammo",p);}
+        else if(as_now-as_ammoMsgAt[p]>2.0) {as_ammoMsgAt[p]=as_now;AS_Message(p,"<c val=\"FF5040\">OUT OF AMMO</c>  -  find more or switch weapons (Q)");AS_HintEvent("no_ammo",p);AS_Chatter(p,AS_CH_NOAMMO);}
         return;
     }
     // From a standing start the first round goes now; in a stream each round keeps its
@@ -481,6 +481,7 @@ void AS_HealGunPulse (int p, bool self) {
     as_nextShot[p]=as_now+as_it[AS_IT_HEALGUN].rate;as_mag[p][AS_IT_HEALGUN]-=1;as_lastShot[p]=as_now;
     heal=5.0+IntToFixed(AS_Skill(p,AS_SK_HEALING));
     AS_Heal(best,heal,p);AS_CureInfestation(best,p);
+    if(best!=p) {AS_Chatter(p,AS_CH_HEALING);}
     mq=UnitGetPosition(as_m[best]);
     if(best!=p) {AS_Muzzle(p,as_aim[p]);AS_FxUnit("ASFxArc",as_muzX,as_muzY,as_muzZ,ATan2(PointGetY(mq)-as_muzY,PointGetX(mq)-as_muzX),DistanceBetweenPoints(Point(as_muzX,as_muzY),mq),0.7,"90,255,120",3);}
     AS_Burst(PointGetX(mq),PointGetY(mq),0.8,0.5,"90,255,120",3);

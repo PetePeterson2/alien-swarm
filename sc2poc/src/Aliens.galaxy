@@ -412,7 +412,7 @@ void AS_ParasiteThink (int i, int p, fixed d, fixed ang) {
             as_infestUntil[p]=as_now+20.0;
             AS_HurtMarine(p,AS_KindDamage(AS_PARASITE),x,y,0.0);
             AS_Message(p,"<c val=\"90FF60\">INFESTED!</c>  -  heal to survive it");
-            AS_HintEvent("infested",p);
+            AS_HintEvent("infested",p);AS_Chatter(p,AS_CH_INFESTED);
             UnitRemove(as_a[i]);as_a[i]=null;as_alive2-=1;AS_AlienGone(i);
             if(as_aParent[i]>=0) {as_aChildren[as_aParent[i]]=MaxI(0,as_aChildren[as_aParent[i]]-1);}
         }

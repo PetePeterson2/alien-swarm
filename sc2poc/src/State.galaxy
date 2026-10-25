@@ -56,6 +56,24 @@ fixed[5] as_botAimErr;                 // degrees off the target, set on each ne
 fixed[5] as_botFireAt;                 // no shot before then: the turn onto a new target
 fixed[5] as_botDryAt;                  // a dry bot scrounges a clip then (0 not dry)
 int[5] as_botOrder;                    // 0 follow, 1 hold (V and X, as AS's single player)
+// Chatter: the lines the marines bark (src/Bots.galaxy AS_Chatter, after asw_marine_speech.cpp).
+const int AS_CH_N = 16;
+const int AS_CH_FF = 0;
+const int AS_CH_PAIN = 1;
+const int AS_CH_PAINBIG = 2;
+const int AS_CH_FIRING = 3;
+const int AS_CH_IDLE = 4;
+const int AS_CH_DOWN = 5;
+const int AS_CH_INFESTED = 6;
+const int AS_CH_DIE = 7;
+const int AS_CH_RELOAD = 8;
+const int AS_CH_CLOSE = 9;
+const int AS_CH_SHIELDBUG = 10;
+const int AS_CH_PARASITE = 11;
+const int AS_CH_EGGS = 12;
+const int AS_CH_NOAMMO = 13;
+const int AS_CH_HOLD = 14;
+const int AS_CH_HEALING = 15;
 point[5] as_botHoldAt;
 point[48] as_crumb;                    // the leader's trail, newest at as_crumbHead
 int as_crumbHead = -1;

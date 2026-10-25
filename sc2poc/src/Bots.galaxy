@@ -239,6 +239,101 @@ void AS_BotMedic (int p) {
 }
 bool AS_FieldBusy (int p) {return false;}
 
+// ---- chatter (asw_marine_speech.cpp) --------------------------------------------------------
+// AS's 124 spoken lines become a short line of text over the marine. One line at a time for the squad, the next
+// no sooner than this one would take to say (21-23); firing on the swarm, running dry and the spotting lines wait
+// 30 s to come again, friendly fire 12 s (373-378, 468-480, 671-676), a drone in a marine's face 10 to 30 s.
+fixed as_chatNext;
+fixed[16] as_chatCool;
+fixed[5] as_chatPainAt;
+fixed[5] as_chatStillAt;
+point[5] as_chatStillPt;
+fixed as_chatIdleAt;
+fixed as_chatDownAt;
+int as_chatDownBy;
+// The lines of each kind and each marine's voice clip of them (tools/barks.py; build.py writes them here):
+// AS_ChatCount, AS_ChatKey, AS_ChatLine(k, r), as_barkLen[profile][k][r] (0: not voiced) and AS_BarkInit.
+@BARKS@
+void AS_Chatter (int p, int k) {
+    string line;int r;fixed secs=0.0;
+    if(p<1 || p>AS_PLAYERS || !AS_Person(p) || as_m[p]==null || !as_levelReady || AS_MissionOver() || as_demo) {return;}
+    if(!as_alive[p] && k!=AS_CH_DIE) {return;}
+    if(k!=AS_CH_DIE && (as_now<as_chatNext || as_now<as_chatCool[k])) {return;}
+    // Chances (asw_marine_profile.cpp 454-460): holding 20%, healing 50%.
+    if(k==AS_CH_HOLD && RandomInt(1,5)!=1) {return;}
+    if(k==AS_CH_HEALING && RandomInt(0,1)==0) {return;}
+    if(!as_barkReady) {AS_BarkInit();}
+    r=RandomInt(0,AS_ChatCount(k)-1);
+    line=AS_ChatLine(k,r);
+    if(as_prof[p]>=0) {secs=as_barkLen[as_prof[p]][k][r];}
+    // The next line waits for this one to be said: its clip, or the time to read it.
+    if(k!=AS_CH_DIE) {as_chatNext=as_now+MaxF(1.0+0.06*IntToFixed(StringLength(line)),secs+0.4);}
+    if(k==AS_CH_FF) {as_chatCool[k]=as_now+12.0;}
+    else if(k==AS_CH_FIRING || k==AS_CH_NOAMMO || k==AS_CH_SHIELDBUG || k==AS_CH_PARASITE || k==AS_CH_EGGS) {as_chatCool[k]=as_now+30.0;}
+    else if(k==AS_CH_CLOSE) {as_chatCool[k]=as_now+RandomFixed(10.0,30.0);}
+    else if(k==AS_CH_HEALING) {as_chatCool[k]=as_now+8.0;}
+    TextTagCreate(StringToText("<c val=\"C8E6FF\">"+line+"</c>"),18,UnitGetPosition(as_m[p]),2.3,true,false,PlayerGroupAll());
+    TextTagSetTextShadow(TextTagLastCreated(),true);TextTagAttachToUnit(TextTagLastCreated(),as_m[p],2.3);
+    TextTagSetTime(TextTagLastCreated(),c_textTagTimeDuration,MaxF(2.2,secs+0.5));TextTagSetTime(TextTagLastCreated(),c_textTagTimeFadeOut,0.5);
+    // The marine says it, in its own voice, to the whole squad.
+    if(secs>0.0) {SoundPlay(SoundLink("ASBark_"+as_pfFace[as_prof[p]]+"_"+AS_ChatKey(k)+"_"+IntToString(r),-1),PlayerGroupAll(),100.0,0.0);}
+    if(as_auto) {AS_Log("chatter p"+IntToString(p)+": "+line+" ("+FixedToString(secs,2)+" s voiced)");}
+}
+// Pain: the big line past 35 damage, at most every 0.7 s a marine (asw_marine.cpp 1451, 1466-1474).
+void AS_ChatPain (int p, fixed dmg) {
+    if(as_now-as_chatPainAt[p]<0.7) {return;}
+    as_chatPainAt[p]=as_now;
+    if(dmg>35.0) {AS_Chatter(p,AS_CH_PAINBIG);}else {AS_Chatter(p,AS_CH_PAIN);}
+}
+// Reloading is only called with the swarm about (asw_weapon_shared.cpp 739-742).
+void AS_ChatReload (int p) {
+    int i;point here=UnitGetPosition(as_m[p]);
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]!=null && !AS_IsThing(as_aKind[i]) && DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]))<8.0) {AS_Chatter(p,AS_CH_RELOAD);return;}
+    }
+}
+// A marine falls: its last line, and 0.5 to 1.5 s on the nearest squadmate calls it (asw_marine.cpp 3321, 3381, 3391).
+void AS_ChatDied (int p) {
+    int q;fixed bd=1000.0;fixed d;point here=UnitGetPosition(as_m[p]);
+    AS_Chatter(p,AS_CH_DIE);
+    as_chatDownBy=0;
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(q==p || !AS_Person(q) || !as_alive[q] || as_m[q]==null) {continue;}
+        d=DistanceBetweenPoints(here,UnitGetPosition(as_m[q]));
+        if(d<bd) {bd=d;as_chatDownBy=q;}
+    }
+    as_chatDownAt=as_now+RandomFixed(0.5,1.5);
+}
+// Four times a second: the lines nothing else calls. Firing on the swarm, a drone in a marine's face, a shieldbug,
+// parasites or eggs in sight (eggs within 500 units), and after 20 to 30 s standing still, 15 to 25 s since the last
+// idle line, a word to the squad (asw_marine.cpp 1620-1667, 2015-2077; asw_drone_advanced.cpp 1555-1564;
+// asw_shieldbug.cpp 931; asw_parasite.cpp 1243; asw_egg.cpp 261-268).
+void AS_ChatterPulse () {
+    int p;int i;point here;fixed d;bool fight=false;
+    if(!as_levelReady || AS_MissionOver()) {return;}
+    if(as_chatDownBy>0 && as_now>=as_chatDownAt) {AS_Chatter(as_chatDownBy,AS_CH_DOWN);as_chatDownBy=0;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p] || as_m[p]==null) {continue;}
+        here=UnitGetPosition(as_m[p]);
+        for(i=0;i<AS_MAXALIEN;i+=1) {
+            if(as_a[i]==null || AS_IsThing(as_aKind[i])) {continue;}
+            d=DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]));
+            if(d>8.0) {continue;}
+            fight=true;
+            if(as_aKind[i]==AS_EGG) {if(d<6.25 && as_now>=as_chatCool[AS_CH_EGGS] && AS_LineClear(PointGetX(here),PointGetY(here),as_aX[i],as_aY[i])) {AS_Chatter(p,AS_CH_EGGS);}continue;}
+            if((as_aKind[i]==AS_DRONE || as_aKind[i]==AS_RIPPER || as_aKind[i]==AS_UBER) && d<1.5) {AS_Chatter(p,AS_CH_CLOSE);}
+            if(as_aKind[i]==AS_SHIELDBUG && as_now>=as_chatCool[AS_CH_SHIELDBUG] && AS_LineClear(PointGetX(here),PointGetY(here),as_aX[i],as_aY[i])) {AS_Chatter(p,AS_CH_SHIELDBUG);}
+            if((as_aKind[i]==AS_PARASITE || as_aKind[i]==AS_XENOMITE) && as_now>=as_chatCool[AS_CH_PARASITE] && AS_LineClear(PointGetX(here),PointGetY(here),as_aX[i],as_aY[i])) {AS_Chatter(p,AS_CH_PARASITE);}
+        }
+        if(fight && as_trigger[p] && as_now-as_lastShot[p]<0.3) {AS_Chatter(p,AS_CH_FIRING);}
+        if(as_chatStillPt[p]==null || DistanceBetweenPoints(here,as_chatStillPt[p])>0.5 || fight) {as_chatStillPt[p]=here;as_chatStillAt[p]=as_now+RandomFixed(20.0,30.0);}
+        else if(as_now>=as_chatStillAt[p] && as_now>=as_chatIdleAt) {
+            as_chatStillAt[p]=as_now+RandomFixed(20.0,30.0);as_chatIdleAt=as_now+RandomFixed(15.0,25.0);
+            AS_Chatter(p,AS_CH_IDLE);
+        }
+    }
+}
+
 // ---- the autopilot's jobs on Landing Bay ---------------------------------------------
 bool AS_AutoBusy () {return as_extraHeld[1];}
 // A door panel's hack: the autopilot stands at it until the door is open, rather than leaving it to whichever bot

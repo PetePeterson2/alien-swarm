@@ -422,6 +422,91 @@ def mission_galaxy(n):
     return '\n'.join(out)
 
 
+BARKS = ROOT / 'assets' / 'barks'
+
+
+_bark_clips = None
+
+
+def bark_clips():
+    """{clip key: (profile, kind, line, seconds)} for every marine's chatter clip in assets/barks voiced from its
+    line's current text (tools/barks.py)."""
+    global _bark_clips
+    if _bark_clips is not None:
+        return _bark_clips
+    from tools import barks
+    manifest = BARKS / 'manifest.json'
+    have = json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {}
+    faces = [face for face, _, _ in barks.MARINES]
+    kinds = [kind for kind, _, _ in barks.BARKS]
+    out = {}
+    for key, (face, kind, n, text, _, _) in barks.clips().items():
+        entry = have.get(key)
+        # Only a clip the transcription heard right: one cut in the wrong place would say the wrong words.
+        if entry and entry['text'] == text and entry['ok'] and (BARKS / (key + '.ogg')).exists():
+            out[key] = (faces.index(face), kinds.index(kind), n, entry['seconds'])
+    missing = len(barks.clips()) - len(out)
+    if missing:
+        print('%d chatter lines not voiced (text only until py tools/barks.py)' % missing, file=sys.stderr)
+    _bark_clips = out
+    return out
+
+
+def bark_files(files):
+    """The marines' chatter clips into the map, each a CSound ASBark_<marine>_<kind>_<n> in the Voice category,
+    added to whatever SoundData.xml the map already has (the commander's clips, when there are any)."""
+    path = 'Base.SC2Data/GameData/SoundData.xml'
+    root = ET.fromstring(files[path]) if path in files else ET.Element('Catalog')
+    for key in sorted(bark_clips()):
+        files['Base.SC2Assets/Derelict/Barks/%s.ogg' % key] = (BARKS / (key + '.ogg')).read_bytes()
+        s = ET.SubElement(root, 'CSound', id='ASBark_' + key)
+        ET.SubElement(s, 'AssetArray', File='Derelict\\Barks\\%s.ogg' % key)
+        ET.SubElement(s, 'Category', value='Voice')
+        ET.SubElement(s, 'Volume', value='-2.000000,-2.000000')
+    ET.indent(root, space='    ')
+    files[path] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+
+MUSIC = ROOT / 'assets' / 'music'
+
+
+def music_files(files):
+    """The score's loops (assets/music, tools/music.py) into the map, each a CSound ASMus_<id> in the Music
+    category (the music slider) that loops until stopped, added to the SoundData.xml voice_files wrote."""
+    manifest = MUSIC / 'manifest.json'
+    have = json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {}
+    path = 'Base.SC2Data/GameData/SoundData.xml'
+    root = ET.fromstring(files[path]) if path in files else ET.Element('Catalog')
+    for key in sorted(have):
+        if not (MUSIC / (key + '.ogg')).exists():
+            continue
+        files['Base.SC2Assets/Derelict/Music/%s.ogg' % key] = (MUSIC / (key + '.ogg')).read_bytes()
+        s = ET.SubElement(root, 'CSound', id='ASMus_' + key.capitalize())
+        ET.SubElement(s, 'AssetArray', File='Derelict\\Music\\%s.ogg' % key)
+        ET.SubElement(s, 'Category', value='Music')
+        ET.SubElement(s, 'Volume', value='-3.000000,-3.000000')
+        ET.SubElement(s, 'LoopCount', value='-1')
+    ET.indent(root, space='    ')
+    files[path] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+
+def barks_galaxy():
+    """The chatter lines of each kind (tools/barks.py BARKS, in AS_CH_* order) and each marine's clip lengths."""
+    from tools import barks
+    assert len(barks.MARINES) == 8 and len(barks.BARKS) == 16 and max(len(t) for _, _, t in barks.BARKS) <= 3, 'as_barkLen size'
+    out = ['int AS_ChatCount (int k) {']
+    out += ['    if(k==%d) {return %d;}' % (k, len(texts)) for k, (_, _, texts) in enumerate(barks.BARKS)]
+    out += ['    return 1;', '}', 'string AS_ChatKey (int k) {']
+    out += ['    if(k==%d) {return "%s";}' % (k, kind) for k, (kind, _, _) in enumerate(barks.BARKS)]
+    out += ['    return "";', '}', 'string AS_ChatLine (int k, int r) {']
+    for k, (_, _, texts) in enumerate(barks.BARKS):
+        out.append('    if(k==%d) {%s}' % (k, ''.join('if(r==%d) {return "%s";}' % (n, t.replace('"', "'")) for n, t in enumerate(texts))))
+    out += ['    return "";', '}', 'fixed[8][16][3] as_barkLen;', 'bool as_barkReady;', 'void AS_BarkInit () {']
+    out += ['    as_barkLen[%d][%d][%d]=%.2f;' % (pf, k, n, secs) for pf, k, n, secs in sorted(bark_clips().values())]
+    out += ['    as_barkReady=true;', '}']
+    return '\n'.join(out)
+
+
 def mission_common():
     out = ['void AS_MissionData () {']
     for n in range(len(LEVELS)):
@@ -511,7 +596,7 @@ def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=
         elif name == 'Mission':
             bodies.append((ROOT / 'src' / 'Mission.galaxy').read_text(encoding='utf-8') + '\n' + mission_common() + '\n' + '\n'.join(missions))
         else:
-            bodies.append((ROOT / 'src' / (name + '.galaxy')).read_text(encoding='utf-8').replace('@GUNS@', guns_galaxy()))
+            bodies.append((ROOT / 'src' / (name + '.galaxy')).read_text(encoding='utf-8').replace('@GUNS@', guns_galaxy()).replace('@BARKS@', barks_galaxy()))
     decls, seen = [], set()
     for n, src in enumerate(bodies):
         for ret, func, params in SIGNATURE.findall(src):
@@ -700,6 +785,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     frames = [(x0 + p[0], y0 + p[1], size) for (x0, y0, size), p in zip(frames, places)]
     files.update(ui)
     catalog.build(files, [], set(), kit_models=sorted(models), runtime_props=props, mesh_units=sorted(pieces))
+    bark_files(files)
     files['Objects'] = objects(at(*L.SPAWN))
     files['MapScript.galaxy'] = script(levels, missions, *TABLES, qa, demo, auto, start, bank, frames).encode()
     return files, report

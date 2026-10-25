@@ -534,7 +534,7 @@ void AS_HurtMarineBy (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock, i
     }
     if(kind==1) {
         dmg*=AS_FFScale();
-        if(byP>=1 && byP<=AS_PLAYERS && byP!=p) {as_ffDealt[byP]+=dmg;AS_HintEvent("friendly_fire",byP);}
+        if(byP>=1 && byP<=AS_PLAYERS && byP!=p) {as_ffDealt[byP]+=dmg;AS_HintEvent("friendly_fire",byP);AS_Chatter(p,AS_CH_FF);}
     }
     lead=AS_AuraBest(AS_SK_LEADERSHIP,PointGetX(here),PointGetY(here),7.5);
     if(lead>0 && RandomFixed(0.0,1.0)<0.06*IntToFixed(lead)) {dmg*=0.5;}
@@ -557,6 +557,7 @@ void AS_HurtMarineBy (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock, i
     if(dmg>=10.0) {CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.05,2.5,40.0,0.18);}
     if(as_hp[p]<=0.0) {AS_MarineDie(p);return;}
     UnitSetPropertyFixed(as_m[p],c_unitPropLife,MaxF(1.0,as_hp[p]));
+    if(byP<1 && kind!=3) {AS_ChatPain(p,dmg);}
     if(as_hp[p]<as_hpMax[p]*0.4) {AS_HintEvent("hurt",p);}
 }
 void AS_HurtMarine (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock) {AS_HurtMarineBy(p,dmg,fromX,fromY,knock,0,0);}
@@ -596,6 +597,7 @@ void AS_MarineDie (int p) {
     point here=UnitGetPosition(as_m[p]);int k;int q;
     as_alive[p]=false;as_hp[p]=0.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;as_slowHeal[p]=0.0;as_infestUntil[p]=0.0;
     as_deaths[p]+=1;
+    AS_ChatDied(p);
     if(as_using[p]>=0) {AS_UseStop(p);}
     AS_MarineCorpse(p,PointGetX(here),PointGetY(here));
     AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);

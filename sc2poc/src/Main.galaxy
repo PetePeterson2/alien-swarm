@@ -50,6 +50,7 @@ bool AS_Pulse (bool testConds, bool runActions) {
     }
     if(as_tick%2==1) {AS_NameTagsPulse();}
     if(as_tick%4==2) {AS_HintPulse();}
+    if(as_tick%4==1) {AS_ChatterPulse();}
     AS_WeaponsPulse();AS_AlienPulse();AS_PuffPulse();AS_FxPulse();AS_AirPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();AS_KitPulse();AS_MissionPulse();
     return true;
 }
@@ -142,7 +143,10 @@ void AS_SquadOrder (int p, int ord) {
         as_botOrder[q]=ord;as_botHoldAt[q]=UnitGetPosition(as_m[q]);
     }
     if(ord==0) {AS_Message(p,"Squad: follow me");AS_HintSuccess(p,AS_LS_FOLLOW);}
-    else {AS_Message(p,"Squad: hold position");AS_HintSuccess(p,AS_LS_HOLD);}
+    else {
+        AS_Message(p,"Squad: hold position");AS_HintSuccess(p,AS_LS_HOLD);
+        for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Owns(p,q) && q!=p && as_alive[q]) {AS_Chatter(q,AS_CH_HOLD);break;}}
+    }
 }
 bool AS_MouseDownT (bool testConds, bool runActions) {
     AS_MouseDown(EventPlayer(),EventMouseClickedButton());

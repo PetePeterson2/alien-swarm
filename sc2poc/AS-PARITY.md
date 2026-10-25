@@ -34,7 +34,7 @@ The goal is a port that plays like Alien Swarm in every way, starting with its f
 | Deaths and failure | Weak | No death camera or banner; tech death always restarts; no infested death |
 | Prompts and hints | Partial | Missing lessons, hint priority and the lift's "access denied" pop-up |
 | Squad AI | Partial | Breadcrumb follow with hidden teleports instead of AS's formation |
-| Marine chatter | None | AS has 124 chatter types |
+| Marine chatter | Partial (Phase 4) | Barks over the marine on AS's triggers, voiced in each marine's own voice (38 lines a marine, Gemini TTS, `tools/barks.py`), not AS's 124 recorded lines |
 | Lighting and fog | Partial | Orange light in the wrong room; outdoor zones missing in the north block and all of Cargo Elevator |
 | Deima Surface Bridge | Close (traced) | Built 2026-10-24, not yet run in the client; the dropship is a stand-in, its guns scripted |
 | Rydberg Reactor | Close (traced) | Built 2026-10-24, not yet run in the client; the exit doors open after a fixed 32 s, not AS's animation |
