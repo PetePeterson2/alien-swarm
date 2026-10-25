@@ -143,7 +143,7 @@ void AS_LevelEnd () {
 void AS_ScreenQuiet () {
     int p;
     AS_HintsHideAll();
-    as_lineN=0;as_lineUntil=0.0;
+    as_lineN=0;as_lineUntil=0.0;as_lineBusy=0.0;as_lineTalk=0.0;
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_HudSubtitle(p,"");}}
 }
 void AS_MissionWon () {

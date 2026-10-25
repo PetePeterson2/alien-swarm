@@ -422,6 +422,40 @@ def mission_galaxy(n):
     return '\n'.join(out)
 
 
+VOICE = ROOT / 'assets' / 'vo'
+
+
+def voice_clips():
+    """{line key: seconds} for every campaign line whose clip in assets/vo was voiced from its current text."""
+    manifest = VOICE / 'manifest.json'
+    have = json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {}
+    clips, stale = {}, []
+    for name, *_ in LEVELS:
+        L.use(name)
+        for key, text in getattr(L, 'LINES', {}).items():
+            entry = have.get(key)
+            if entry and entry['text'] == text and (VOICE / (key + '.ogg')).exists():
+                clips[key] = entry['seconds']
+            else:
+                stale.append(key)
+    if stale:
+        print('not voiced (subtitle only until py tools/voice.py): %s' % ', '.join(stale), file=sys.stderr)
+    return clips
+
+
+def voice_files(files):
+    """The commander's clips into the map, each a CSound ASVo_<key> in the Voice category (the dialogue slider)."""
+    root = ET.Element('Catalog')
+    for key in sorted(voice_clips()):
+        files['Base.SC2Assets/Derelict/Vo/%s.ogg' % key] = (VOICE / (key + '.ogg')).read_bytes()
+        s = ET.SubElement(root, 'CSound', id='ASVo_' + key)
+        ET.SubElement(s, 'AssetArray', File='Derelict\\Vo\\%s.ogg' % key)
+        ET.SubElement(s, 'Category', value='Voice')
+        ET.SubElement(s, 'Volume', value='0.000000,0.000000')
+    ET.indent(root, space='    ')
+    files['Base.SC2Data/GameData/SoundData.xml'] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+
 BARKS = ROOT / 'assets' / 'barks'
 
 
@@ -520,8 +554,15 @@ def mission_common():
         L.use(name)
         for key, text in getattr(L, 'LINES', {}).items():
             out.append('    if(key=="%s") {return "%s";}' % (key, text.replace('"', "'")))
+    # The length of each line's radio clip (assets/vo, tools/voice.py): 0 for a line not voiced yet.
+    clips = voice_clips()
+    out += ['    return "";', '}', 'fixed AS_LineVoice (string key) {']
+    out += ['    if(key=="%s") {return %.2f;}' % (key, secs) for key, secs in sorted(clips.items())]
+    out += ['    return 0.0;', '}', 'void AS_VoiceProbe () {']
+    out += ['    SoundLengthQuery(SoundLink("ASVo_%s",-1));' % key for key in sorted(clips)]
+    out += ['    AS_Log("voice: %d commander clips queried");' % len(clips)]
     # asw_info_message texts (tools/<level>.py INFO {key: (title, body)}), as "title|body".
-    out += ['    return "";', '}', 'string AS_InfoText (string key) {']
+    out += ['}', 'string AS_InfoText (string key) {']
     for name, *_ in LEVELS:
         L.use(name)
         for key, (title, body) in getattr(L, 'INFO', {}).items():
@@ -785,6 +826,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     frames = [(x0 + p[0], y0 + p[1], size) for (x0, y0, size), p in zip(frames, places)]
     files.update(ui)
     catalog.build(files, [], set(), kit_models=sorted(models), runtime_props=props, mesh_units=sorted(pieces))
+    voice_files(files)
     bark_files(files)
     files['Objects'] = objects(at(*L.SPAWN))
     files['MapScript.galaxy'] = script(levels, missions, *TABLES, qa, demo, auto, start, bank, frames).encode()

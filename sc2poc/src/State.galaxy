@@ -9,6 +9,7 @@ const int AS_H = @H@;
 const fixed AS_DT = 0.0625;
 const int AS_PLAYERS = 4;
 const int AS_HOSTILE = 15;
+const int AS_CATALOG_MODEL = 54;       // c_gameCatalogModel (TriggerLibs/GameData/GameData2, not in NativeLib)
 const int AS_MAXALIEN = 96;
 
 // Build switches (build.py rewrites these lines).

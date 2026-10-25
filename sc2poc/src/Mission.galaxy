@@ -863,10 +863,12 @@ string[8] as_lineKey;
 fixed[8] as_lineAt;
 int as_lineN;
 fixed as_lineUntil;
+fixed as_lineBusy;          // he is speaking until then: the next line waits
+fixed as_lineTalk;          // his clip ends then: his face stops talking
 
 void AS_BayInit () {
     as_bayStage=0;as_bayDropship=0.0;as_bayExitAt=0.0;as_bayComputer=0;as_bayHoldStop=0.0;as_bayDoorForce=0.0;
-    as_lineN=0;as_lineUntil=0.0;as_weldWatch="";
+    as_lineN=0;as_lineUntil=0.0;as_lineBusy=0.0;as_lineTalk=0.0;as_weldWatch="";AS_CommanderHush();
     // The Bloodhound at the clamps on the dock's east side.
     as_bayShip=libNtve_gf_CreateActorAtPoint("ASR_Hercules",Point(as_oxF+55.0,as_oyF+8.5));
     ActorSend(as_bayShip,libNtve_gf_SetPosition(as_oxF+55.0,as_oyF+8.5,AS_GroundZ(as_oxF+55.0,as_oyF+8.5)));
@@ -876,7 +878,7 @@ void AS_BayInit () {
 void AS_BayClear () {
     if(as_bayShip!=null) {ActorSend(as_bayShip,"Destroy");as_bayShip=null;}
     if(as_baySentrySpot!=null) {UnitRemove(as_baySentrySpot);as_baySentrySpot=null;}
-    as_lineN=0;as_lineUntil=0.0;as_weldWatch="";
+    as_lineN=0;as_lineUntil=0.0;as_lineBusy=0.0;as_lineTalk=0.0;as_weldWatch="";AS_CommanderHush();
     AS_SnowClear();
 }
 // The level's things on the deck at the start: drones asleep, barrels, pickups.
@@ -1017,16 +1019,31 @@ void AS_CommanderLater (string key, fixed delay) {
     if(as_lineN>=8) {return;}
     as_lineKey[as_lineN]=key;as_lineAt[as_lineN]=as_now+delay;as_lineN+=1;
 }
+// A line he has a voice clip for (tools/voice.py) is spoken over the radio, his face talking on the comm screen,
+// and its subtitle stays up for the clip; a line not voiced yet is the subtitle and his still face, under the stock blip.
+// A line due while he is still speaking waits for him to finish.
+// Mission over or restarted: he stops mid-word and his line leaves the screen.
+void AS_CommanderHush () {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_HudSubtitle(p,"");}}
+}
 void AS_CommanderPulse () {
-    int k;int p;string key;
+    int k;int p;string key;fixed secs;
     if(as_lineUntil>0.0 && as_now>as_lineUntil) {as_lineUntil=0.0;for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_HudSubtitle(p,"");}}}
+    if(as_lineTalk>0.0 && as_now>as_lineTalk) {as_lineTalk=0.0;for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_HudTalk(p,false);}}}
+    if(as_now<as_lineBusy) {return;}
     for(k=0;k<as_lineN;k+=1) {
         if(as_lineKey[k]=="" || as_now<as_lineAt[k]) {continue;}
         key=as_lineKey[k];as_lineKey[k]="";
-        for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_HudSubtitle(p,"<c val=\"F0FFFF\">Commander:</c>  "+AS_LineText(key));}}
-        AS_AllSound("AbathurA_Transmission");
-        as_lineUntil=as_now+9.0;
-        AS_Log("commander: "+key);
+        secs=AS_LineVoice(key);
+        for(p=1;p<=AS_PLAYERS;p+=1) {
+            if(!AS_Person(p)) {continue;}
+            AS_HudSubtitle(p,"<c val=\"F0FFFF\">Commander:</c>  "+AS_LineText(key));
+            if(secs>0.0) {AS_HudCommander(p,"ASVo_"+key);}
+        }
+        if(secs>0.0) {as_lineUntil=as_now+secs+1.5;as_lineBusy=as_now+secs+0.6;as_lineTalk=as_now+secs;}
+        else {AS_AllSound("AbathurA_Transmission");as_lineUntil=as_now+9.0;as_lineBusy=0.0;}
+        AS_Log("commander: "+key+" ("+FixedToString(secs,2)+" s voiced)");
         return;
     }
 }
@@ -1087,8 +1104,8 @@ void AS_GenObjective (string key, string name, bool shown, fixed mx, fixed my) {
 }
 void AS_GenInit () {
     int k;
-    as_genShip="";as_genShipNext=0.0;as_genFlashEnd=0.0;as_lineN=0;as_lineUntil=0.0;as_weldWatch="";
     as_objCount=as_genObjN;as_extName=as_genExtName;as_needTech=as_genTech;
+    as_genShip="";as_genShipNext=0.0;as_genFlashEnd=0.0;as_lineN=0;as_lineUntil=0.0;as_lineBusy=0.0;as_lineTalk=0.0;as_weldWatch="";AS_CommanderHush();
     for(k=0;k<as_objCount;k+=1) {if(as_objShown[k]) {as_objState[k]=1;}}
     AS_MissionPopulate();
     AS_HiveEquip();

@@ -1,0 +1,122 @@
+{
+ "co_m1_ob1": {
+  "filter": 2,
+  "seconds": 9.66,
+  "text": "Bloodhound has docked. Sweep the landing bay and get through the security gate to the inner perimeter. You'll need your tech to bypass the door locks.",
+  "voice": "take:co_m1_ob1.wav"
+ },
+ "co_m1_ob2": {
+  "filter": 2,
+  "seconds": 9.64,
+  "text": "Good work, we have the flight data. The lift to the lower level is past flight control. Get your squad to the exit.",
+  "voice": "take:co_m1_ob2.wav"
+ },
+ "co_m1_ob3": {
+  "filter": 2,
+  "seconds": 3.88,
+  "text": "That's the cargo lift ahead. Get everyone aboard.",
+  "voice": "take:co_m1_ob3.wav"
+ },
+ "co_m1_ob7": {
+  "filter": 2,
+  "seconds": 7.31,
+  "text": "The cargo elevator at the end of this section is your way down to the colony. Move.",
+  "voice": "take:co_m1_ob7.wav"
+ },
+ "co_m1_ob8": {
+  "filter": 2,
+  "seconds": 5.59,
+  "text": "You're down. Get to the exit, the colony is through there.",
+  "voice": "take:co_m1_ob8.wav"
+ },
+ "co_m2_getaccross": {
+  "filter": 2,
+  "seconds": 4.52,
+  "text": "She can't hold there long. Get across, now!",
+  "voice": "take:co_m2_getaccross.wav"
+ },
+ "co_m2_ob1b": {
+  "filter": 2,
+  "seconds": 6.56,
+  "text": "Gate's open. Take the catwalks north to the pump station, and watch the drop.",
+  "voice": "take:co_m2_ob1b.wav"
+ },
+ "co_m2_onback": {
+  "filter": 2,
+  "seconds": 8.06,
+  "text": "The last span is down. She's bringing herself in over the gap: you'll cross on her back.",
+  "voice": "take:co_m2_onback.wav"
+ },
+ "co_m2_pipeline": {
+  "filter": 2,
+  "seconds": 8.51,
+  "text": "The miners wired the main pipe with charges before they were overrun. Get to the detonator and finish the job.",
+  "voice": "take:co_m2_pipeline.wav"
+ },
+ "co_m2_powerout": {
+  "filter": 2,
+  "seconds": 5.2,
+  "text": "Power's gone on the bridge ahead. It'll be dark out there.",
+  "voice": "take:co_m2_powerout.wav"
+ },
+ "co_m2_start": {
+  "filter": 2,
+  "seconds": 11.74,
+  "text": "This is Deima. The swarm is using the colony's main pipeline as a highway between the hives. Find that pipe and shut it down.",
+  "voice": "take:co_m2_start.wav"
+ },
+ "co_m2_stayinlight": {
+  "filter": 2,
+  "seconds": 6.86,
+  "text": "Bloodhound will run alongside and light the way. Stay inside her lamps.",
+  "voice": "take:co_m2_stayinlight.wav"
+ },
+ "co_m3_ob1": {
+  "filter": 2,
+  "seconds": 9.1,
+  "text": "This is the Rydberg plant. Get to the reactor core and bring the power back up: the colony's running on batteries.",
+  "voice": "take:co_m3_ob1.wav"
+ },
+ "co_m3_ob2": {
+  "filter": 2,
+  "seconds": 8.63,
+  "text": "Reactor's online, power is coming back across the colony. Don't stop now, keep moving.",
+  "voice": "take:co_m3_ob2.wav"
+ },
+ "co_m3_ob3": {
+  "filter": 2,
+  "seconds": 19.17,
+  "text": "Squad, listen. We've lost the colony. Command is drawing up a plan to nuke the site from orbit. Get through the north doors and head for the residential sector.",
+  "voice": "take:co_m3_ob3.wav"
+ },
+ "co_m5_almost": {
+  "filter": 2,
+  "seconds": 4.54,
+  "text": "Nearly there. A few eggs left, keep looking.",
+  "voice": "take:co_m5_almost.wav"
+ },
+ "co_m5_elevator": {
+  "filter": 2,
+  "seconds": 4.88,
+  "text": "That's the lot. Get to the elevators and call one down.",
+  "voice": "take:co_m5_elevator.wav"
+ },
+ "co_m5_more_bio": {
+  "filter": 2,
+  "seconds": 6.73,
+  "text": "More biomass in the mall. Bullets won't touch it: use the flamer.",
+  "voice": "take:co_m5_more_bio.wav"
+ },
+ "co_m5_ob1": {
+  "filter": 2,
+  "seconds": 12.02,
+  "text": "This is the SynTek residential block, eggs and biomass right through it. Burn the growth, smash every egg, then get to the elevators.",
+  "voice": "take:co_m5_ob1.wav"
+ },
+ "co_m5_parasite": {
+  "filter": 2,
+  "seconds": 5.17,
+  "text": "Careful round those eggs: whatever hatches goes straight for a marine.",
+  "voice": "take:co_m5_parasite.wav"
+ }
+}

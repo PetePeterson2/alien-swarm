@@ -216,7 +216,6 @@ void AS_SoundProbe () {
 }
 // QA builds also log whether the stock models borrowed from the Swarm campaign mod are loaded:
 // a missing one draws nothing in game and logs no error of its own.
-const int AS_CATALOG_MODEL = 54;       // c_gameCatalogModel (TriggerLibs/GameData/GameData2, not in NativeLib)
 void AS_ModelProbe () {
     string[6] ids;int k;string s;int n;
     ids[0]="HotSRaptor";ids[1]="HotSRaptorDeath";ids[2]="PrimalZergling";ids[3]="ASMarineRifle";ids[4]="ASMarineCase";ids[5]="ASFxLaserModel";
@@ -238,6 +237,8 @@ void AS_ModelProbe () {
     if(!CatalogEntryIsValid(AS_CATALOG_MODEL,"ASFxSmokeModel")) {s=s+" ASFxSmokeModel";}else {n+=1;}
     if(s=="") {AS_Log("models: all "+IntToString(n)+" marine, gun and effect models ok");}
     else {AS_Log("models MISSING:"+s);}
+    AS_CommanderModel();
+    AS_VoiceProbe();
 }
 void AS_Init () {
     int p;int q;trigger t;

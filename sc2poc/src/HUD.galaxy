@@ -51,6 +51,13 @@ int[5] as_cRelMark;
 int[5] as_cRelWin;
 int[5] as_dSub;             // the commander's subtitles
 int[5] as_cSub;
+int[5] as_cSubFrame;        // his comm screen: frame, dark glass, the portrait control
+int[5] as_cSubGlass;
+int[5] as_cSubFace;
+int[5] as_subFace;          // that control's portrait id (0 none)
+string as_coModel;          // the portrait model he wears (AS_CommanderModel)
+sound[5] as_coSound;        // the clip he is saying to each player
+bool as_autoShotCo;         // QA: the first line he speaks is dumped for tools/uishots.py
 int[5] as_dToast;           // achievement toasts
 int[5] as_cToastHead;
 int[5] as_cToastName;
@@ -1174,16 +1181,64 @@ bool AS_Scanned (fixed x, fixed y) {
     }
     return false;
 }
-// The commander's lines, bottom centre.
+// The commander's portrait: the battlecruiser captain's, a uniformed officer every multiplayer install has
+// (the campaign characters' portraits, Horner's among them, are in the Story campaigns this map does not load:
+// their data is there but they draw nothing). The marine's if even that is missing.
+string AS_CommanderModel () {
+    if(as_coModel!="") {return as_coModel;}
+    as_coModel="BattlecruiserPortrait";
+    if(!CatalogEntryIsValid(AS_CATALOG_MODEL,as_coModel)) {as_coModel="MarinePortrait";}
+    AS_Log("commander portrait: "+as_coModel);
+    return as_coModel;
+}
+// The commander's lines, bottom centre: the comm screen and the box beside it centred as one (1510 wide, so
+// it fits a 4:3 screen's 1600). His face is up whenever a line is.
 void AS_HudSubtitle (int p, string s) {
+    int d;int x;int c;
     if(as_dCenter[p]==0) {return;}
     if(as_dSub[p]==0) {
-        as_dSub[p]=DialogCreate(1300,110,c_anchorBottom,0,AS_HUD_USE_B+AS_HUD_USE_H+100,false);DialogSetImageVisible(as_dSub[p],false);
-        AS_Art(as_dSub[p],0,0,1300,110,"msgbox",AS_Full());
-        as_cSub[p]=AS_Lbl(as_dSub[p],24,0,1252,110,"ASSubtitle","");
+        x=AS_HUD_FACE+AS_HUD_FACE_GAP;
+        d=DialogCreate(AS_HUD_SUB_W+x,AS_HUD_FACE,c_anchorBottom,0,AS_HUD_SUB_B,false);DialogSetImageVisible(d,false);as_dSub[p]=d;
+        AS_Art(d,x,AS_HUD_FACE-AS_HUD_SUB_H,AS_HUD_SUB_W,AS_HUD_SUB_H,"msgbox",AS_Full());
+        as_cSub[p]=AS_Lbl(d,x+24,AS_HUD_FACE-AS_HUD_SUB_H,AS_HUD_SUB_W-48,AS_HUD_SUB_H,"ASSubtitle","");
+        as_cSubFrame[p]=AS_Art(d,0,0,AS_HUD_FACE,AS_HUD_FACE,"frame",AS_Full());
+        as_cSubGlass[p]=AS_Art(d,6,6,AS_HUD_FACE-12,AS_HUD_FACE-12,"black75",AS_Rgb(20,40,48));
+        // The portrait control is not listed for the UI dump (it has no image); the glass under it is.
+        // A dialog portrait left on its default render type draws a black square in this map, so it renders
+        // LDR, as Blizzard's LibWeav and working arcade maps set theirs, with no static-noise transition or
+        // border of its own (the frame and glass are the border). Its model goes on after its size.
+        c=DialogControlCreate(d,c_triggerControlTypePortrait);
+        DialogControlSetSize(c,PlayerGroupAll(),AS_HUD_FACE-16,AS_HUD_FACE-16);
+        DialogControlSetPosition(c,PlayerGroupAll(),c_anchorTopLeft,8,8);
+        libNtve_gf_SetDialogItemRenderType(c,c_triggerRenderTypeLDR,PlayerGroupAll());
+        libNtve_gf_SetDialogItemAcceptMouse(c,false,PlayerGroupAll());
+        as_cSubFace[p]=c;
+        as_subFace[p]=PortraitGetTriggerControl(c);
+        PortraitSetBorderVisible(as_subFace[p],false);PortraitUseTransition(as_subFace[p],false);
+        libNtve_gf_SetDialogItemModel(c,AS_CommanderModel(),PlayerGroupAll());
     }
     AS_Text(as_cSub[p],p,s);
+    if(s=="") {AS_HudTalk(p,false);if(as_coSound[p]!=null) {SoundStop(as_coSound[p],true);as_coSound[p]=null;}}
     DialogSetVisible(as_dSub[p],AS_Me(p),s!="");
+}
+// His mouth: the portrait's Talk animation looped while the clip plays, back to standing after.
+void AS_HudTalk (int p, bool on) {
+    if(as_dSub[p]==0) {return;}
+    if(as_subFace[p]!=c_invalidPortraitId) {
+        if(on) {libNtve_gf_PortraitSetAnim(as_subFace[p],"Talk","ASTalk",c_animFlagPlayForever,0.15);}
+        else {libNtve_gf_ClearPortraitAnimation(as_subFace[p],"ASTalk");}
+    }
+    else if(on) {libNtve_gf_SetDialogItemAnimation(as_cSubFace[p],"Talk",AS_Me(p));}
+    else {libNtve_gf_SetDialogItemAnimation(as_cSubFace[p],"Stand",AS_Me(p));}
+}
+// He says the line: the radio clip plays and his face talks on the comm screen until it is done (AS_CommanderPulse).
+void AS_HudCommander (int p, string vo) {
+    SoundPlay(SoundLink(vo,-1),AS_Me(p),100.0,0.0);as_coSound[p]=SoundLastPlayed();
+    AS_HudTalk(p,true);
+    if(as_auto && p==1 && !as_autoShotCo) {as_autoShotCo=true;AS_UiDump("commander",1);}
+    // QA: the clip's length as the client read it (0: the asset did not load), queried at start (AS_VoiceProbe),
+    // and the model the portrait control holds.
+    if(as_auto && p==1) {AS_Log("commander talking: "+vo+" "+FixedToString(SoundLengthSync(SoundLink(vo,-1)),2)+" s, portrait "+IntToString(as_subFace[p])+" "+DialogControlGetPropertyAsString(as_cSubFace[p],c_triggerControlPropertyModel,p));}
 }
 // An achievement earned: a toast at the top right for a few seconds.
 void AS_HudToast (int p, string head, string name, string desc) {

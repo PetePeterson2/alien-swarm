@@ -47,6 +47,11 @@ MM, MM_R, MM_B, MM_BORDER, BLIP, BLIP_OBJ, BLIP_ALIENS = 224, 28, 55, 10, 12, 18
 # Overlay messages and notices (CASWHudOverlayMessages at YRES(80)), announcements across the middle.
 MSG_W, MSG_H, MSG_Y = 900, 52, 200
 
+# The commander's lines over the use panel: the subtitle box, and while he speaks his face on a comm screen
+# at its left, standing taller than it (the SC2 campaign's transmission portrait). FACE is the screen's side;
+# the two are centred together.
+SUB_W, SUB_H, SUB_B, FACE, FACE_GAP = 1300, 110, 340, 200, 10
+
 # Fonts, in style heights (DefaultSmall 8, Default 10, DefaultLarge 15, DefaultExtraLarge 20 of 480).
 F_SMALL, F_DEFAULT, F_LARGE, F_XL = 18, 22, 30, 48
 
