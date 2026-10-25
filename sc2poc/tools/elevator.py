@@ -1,24 +1,37 @@
-"""The freight elevator's art: scrolling shaft panels, gates, bridges, the platform,
-the black drop round it, and the security door; textures drawn here, meshes written
-with tools/shipkit.py's M3 writer.
+"""The freight elevator's art: the shaft's wall segments, gates, bridges, the platform, the drop round it, and the
+security door; textures drawn here, meshes written with tools/shipkit.py's M3 writer.
 
-The shaft is the trick of the mission (src/Mission.galaxy): the platform is fixed
-floor and these panels slide upward past it. Every panel hangs BELOW its unit's
-origin (z from -DROP to -DROP + PANEL_H), so a panel unit at height h shows from
-h - DROP up to h - DROP + PANEL_H; whatever is under the deck is hidden by the
-terrain, so panels rise out of the floor line and scroll up out of the camera.
-Panels are authored facing south (face normal -Y, the way SC2 lays -Y along a
-unit's facing), origin at the top middle of the face, and are two-sided so the
-lobby and junction see the shaft's back.
+The shaft is the trick of the mission, as it is in Alien Swarm (src/Mission.galaxy): the platform is fixed floor
+and the walls move. AS's walls (FreightElevatorWalls, a func_tracktrain) run 2655 units at 25 a second up and SOUTH
+past the platform, along an incline (dz 1992 against dy -1752): the tube runs down to the north under the deck, so
+from the top-down camera the walls loom toward it rather than scroll. Here the walls are SEG_N segments of SEG along
+that incline, model actors the script slides along TRAVEL; whatever is under the deck is hidden by the terrain, so a
+segment comes up out of the floor at the north edge of the drop, climbs past the camera and drops back to the bottom
+of the train out of sight. A segment carries what AS's walls carry where the camera sees them (measured from the
+walls' brushes and models/props/elevator_shaft/shaft01a/b in asi-jac1-landingbay_02, read for layout only): a fat
+flanged pipe along the top of each wall with yellow conduits under it (and hanging cables on the east), X-braced
+trusses between, and a caged lamp with an orange-red glow (200,47,2) on each wall, one a segment.
+
+Segment meshes are authored in the shaft's own frame: origin on the walls' top edge at the shaft's middle, u along
+TRAVEL, t from the top edge into the tube (INTO), x across. Two of the slots are special: the one standing at the
+platform when the ride begins has the entrance doorway in its west wall, and the one that arrives there after the
+ride's five segments has the exit doorway in its east wall.
 """
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from tools.shipkit import ShipModel, _noise, _grime, _hazard, _img, NO_SHADOW_CAST
+from tools.shipkit import ShipModel, _noise, _grime, _hazard, _img, NO_SHADOW_CAST, UNLIT, ADD
 
-PANEL_H = 6.0          # height of one shaft panel
-DROP = 6.0             # how far a panel hangs below its unit's origin
-GATE_H = 3.5           # the lift gates' opening height
+TRAVEL = (-0.6604, 0.7509)     # (dy, dz) of the walls' travel, per cell: up and south
+INTO = (-0.7509, -0.6604)      # (dy, dz) from the walls' top edge into the tube: down and south
+RIDE = 33.19                   # 2655 units in 80-unit cells
+SEG = RIDE / 5                 # a wall segment: the ride is five, so the exit doorway lands where the entrance stood
+SEG_N = 7                      # the train: from deep under the deck (out of sight in the haze) to past the camera
+TUBE = 8.4                     # the walls' depth from the top pipe to the tube's floor (672 units)
+DOOR_U = 2.6                   # where the doorway segment starts along the travel when it stands at the platform
+DOOR_H = 2.3                   # the doorways' height (AS's heavy doors, 184 units)
+LAMP_U, LAMP_T = 3.08, 4.25    # each wall's caged lamp in its segment (AS: every 6.43 along, 4.1-4.4 deep)
+PIPE_T, PIPE_R, PIPE_IN = 0.55, 0.5, 0.62   # the top pipe: depth, radius, how far in from its wall
 
 
 def _font(size):
@@ -36,96 +49,141 @@ def _stencil(img, text, xy, size, fill, anchor='mm'):
     return img
 
 
+def train(in_slot):
+    """(where along the travel slot 0 starts when the ride begins, the slot that brings the exit to the platform):
+    slot in_slot stands at the platform with the entrance, and the ride is five segments."""
+    return DOOR_U - in_slot * SEG, (in_slot - 5) % SEG_N
+
+
+def shaft_point(x, u, t):
+    """A point of the shaft's frame in a segment's local coordinates (x across, y north, z up)."""
+    return (x, u * TRAVEL[0] + t * INTO[0], u * TRAVEL[1] + t * INTO[1])
+
+
 # ------------------------------------------------------------- textures
-def tex_shaft(seed, lights=False, w=512, h=768):
-    """One shaft panel, 4 units wide by 6 tall: guide rails at the edges, two heavy girders,
-    rivets, grime; the lit variant carries a run of amber caged lamps on its girder."""
-    base = np.array((64, 66, 62), float)
-    n = _noise(0, 60, seed, 4, (h, w)); f = _noise(0, 7, seed + 3, 2, (h, w))
-    a = base[None, None] * (0.78 + 0.3 * n[..., None] + 0.08 * f[..., None])
-    emis = np.zeros((h, w, 3))
-    # Vertical guide rails, the lift's rollers run in them.
-    for x0 in (0, w - 34):
-        a[:, x0:x0 + 34] = np.array((48, 50, 50)) * (0.85 + 0.25 * n[:, x0:x0 + 34, None])
-        a[:, x0 + 8:x0 + 26] *= 1.35
-        a[:, x0 + 15:x0 + 19] *= 0.5
-    # Plate seams every half panel, horizontal.
-    for y in (0, h // 2):
-        a[y:y + 4] *= 0.35
-    # Girders: an I-beam across the top third and one across the bottom.
-    for gy in (int(h * 0.18), int(h * 0.70)):
-        a[gy - 26:gy + 26] = np.array((70, 64, 52)) * (0.8 + 0.3 * n[gy - 26:gy + 26, :, None])
-        a[gy - 26:gy - 20] *= 1.4; a[gy + 20:gy + 26] *= 0.45; a[gy - 6:gy + 6] *= 0.75
-        for x in range(40, w - 40, 28):
-            a[gy - 16:gy - 11, x:x + 6] = (150, 140, 120); a[gy + 11:gy + 16, x:x + 6] = (150, 140, 120)
-        if lights:
-            for x in range(70, w - 60, 124):
-                a[gy - 14:gy + 14, x - 4:x + 34] = (30, 28, 24)
-                # Caged lamps with AS's orange-red glow (its shaft sprites are 200,47,2).
-                a[gy - 10:gy + 10, x:x + 30] = (255, 150, 70)
-                emis[gy - 10:gy + 10, x:x + 30] = (255, 95, 25)
-                for k in range(3):
-                    a[gy - 12:gy + 12, x + 4 + k * 10:x + 6 + k * 10] = (40, 36, 30)
-    # Alien Swarm's shaft wall: a big horizontal pipe with red flanged joints across the plain panels.
-    if not lights:
-        py0, py1 = int(h * 0.38), int(h * 0.50)
-        rows = np.linspace(-1, 1, py1 - py0)[:, None]
-        shade = (0.55 + 0.6 * np.sqrt(np.clip(1 - rows ** 2, 0, 1)) - 0.25 * np.clip(rows, 0, 1))
-        a[py0:py1] = np.array((58, 60, 62))[None, None] * shade[..., None] * (0.9 + 0.2 * n[py0:py1, :, None])
-        for fx in range(40, w, 170):
-            a[py0 - 8:py1 + 8, fx:fx + 26] = np.array((150, 36, 26)) * (0.6 + 0.6 * np.sqrt(np.clip(1 - np.linspace(-1, 1, py1 - py0 + 16) ** 2, 0, 1)))[:, None, None]
-            for by in (py0 - 4, py1 + 1):
-                a[by:by + 3, fx + 4:fx + 22:6] = (210, 190, 170)
-    # Hazard band low down, where the platform's edge runs past.
-    _hazard(a, int(h * 0.88), int(h * 0.94), seed)
-    # Wet streaks running down from the girders.
-    streak = _noise(0, 4, seed + 9, 1, (1, w)).repeat(h, 0)
+def tex_shaftwall(w=1024, h=1024):
+    """One segment of a shaft wall, SEG along (u, across) by TUBE deep (t, down): AS's concrete between two truss
+    chords, one X of bracing a segment (the segments' X's meet in its diamond lattice), the shadow under the top
+    pipe, the lower pipe run near the tube's floor, panel seams and wet streaks."""
+    su, st = w / SEG, h / TUBE
+    n = _noise(0, 70, 211, 4, (h, w)); f = _noise(0, 9, 213, 2, (h, w))
+    a = np.array((104, 100, 92), float)[None, None] * (0.72 + 0.34 * n[..., None] + 0.08 * f[..., None])
+    for x in (0, w // 2):
+        a[:, max(0, x - 3):x + 3] *= 0.45
+    a[int(4.2 * st) - 2:int(4.2 * st) + 2] *= 0.5
+    # Under the top pipe: shadowed, and the pipe's brackets.
+    rows = np.arange(h)[:, None] / st
+    a *= (0.55 + 0.45 * np.clip((rows - 0.2) / 1.1, 0, 1))[..., None]
+    for x in range(int(0.4 * su), w, int(SEG / 3 * su)):
+        a[int(0.2 * st):int(1.15 * st), x:x + 14] = (52, 52, 54)
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    steel = np.zeros((h, w), np.float32)
+    # The bracing: corner to corner of the band between the chords.
+    t0, t1 = 1.65 * st, 7.0 * st
+    for sgn in (1, -1):
+        ty = t0 + (t1 - t0) * (xx / w) if sgn > 0 else t1 - (t1 - t0) * (xx / w)
+        steel = np.maximum(steel, np.clip(1 - np.abs(yy - ty) / 11, 0, 1))
+    for tc in (t0, t1):
+        steel = np.maximum(steel, (np.abs(yy - tc) < 12).astype(np.float32))
+    edge = np.clip(steel - np.roll(steel, 3, axis=0), 0, 1)
+    beam = np.array((84, 86, 90))[None, None] * (0.8 + 0.3 * n[..., None])
+    a = a * (1 - steel[..., None]) + beam * steel[..., None]
+    a *= (1 - 0.45 * edge)[..., None]
+    for tc in (t0, t1):
+        for x in range(10, w, 26):
+            a[int(tc) - 5:int(tc) - 1, x:x + 4] = (150, 146, 136)
+    # Yellow conduits clipped along under the top pipe (their own geometry runs in front; this is their shadow line).
+    a[int(1.33 * st):int(1.38 * st)] *= 0.6
+    # The lower pipe run by the tube's floor, with red flanges.
+    p0, p1 = int(7.35 * st), int(8.15 * st)
+    prow = np.linspace(-1, 1, p1 - p0)[:, None]
+    a[p0:p1] = np.array((66, 60, 56))[None, None] * (0.45 + 0.65 * np.sqrt(np.clip(1 - prow ** 2, 0, 1)))[..., None]
+    for x in range(int(0.5 * su), w, int(SEG / 1 * su)):
+        a[p0 - 8:p1 + 8, x:x + 18] = (150, 36, 26)
+    _hazard(a, int(8.2 * st), h, 211)
+    streak = _noise(0, 4, 219, 1, (1, w)).repeat(h, 0)
     a *= (1 - 0.25 * np.clip(streak - 0.4, 0, 1) * np.linspace(0.3, 1, h)[:, None])[..., None]
-    a = _grime(a, seed + 11, 0.4)
-    return _img(a), (_img(emis) if emis.max() > 0 else None)
+    return _img(_grime(a, 223, 0.35)), None
 
 
-def tex_sign(seed=83, w=512, h=768):
-    """A signed panel: downward chevrons and a stencilled warning, bundled cables down one side.
-    Big shapes scrolling past read as speed better than repeated girders."""
-    img, _ = tex_shaft(seed)
-    a = np.asarray(img).astype(float)
-    emis = np.zeros((h, w, 3))
-    # Cable bundle down the left of the guide rail.
-    for k, col in enumerate([(30, 30, 28), (70, 20, 16), (24, 40, 60), (36, 36, 30)]):
-        x0 = 44 + k * 9
-        a[:, x0:x0 + 7] = np.array(col) * (0.8 + 0.4 * _noise(0, 30, seed + k, 2, (h, 7))[..., None])
-        a[:, x0 + 2:x0 + 3] *= 1.6
-    # A sign board with chevrons pointing down and amber edge lights.
-    y0, y1, x0, x1 = int(h * 0.30), int(h * 0.62), 110, w - 60
-    a[y0:y1, x0:x1] = (24, 24, 22)
-    a[y0:y0 + 6, x0:x1] = (255, 170, 60); emis[y0:y0 + 6, x0:x1] = (255, 140, 40)
-    a[y1 - 6:y1, x0:x1] = (255, 170, 60); emis[y1 - 6:y1, x0:x1] = (255, 140, 40)
+def tex_pipe(w=256, h=128):
+    """The shaft's fat pipes: dark gunmetal gone brown with rust, a weld seam along the top (u along, v round)."""
+    n = _noise(0, 40, 231, 4, (h, w)); r = _noise(0, 12, 233, 3, (h, w))
+    a = np.array((80, 72, 66), float)[None, None] * (0.75 + 0.3 * n[..., None])
+    rust = np.clip(r - 0.55, 0, 1)[..., None] * 2.2
+    a = a * (1 - rust) + np.array((120, 62, 34))[None, None] * rust
+    a[h // 4 - 2:h // 4 + 2] *= 0.5
+    return _img(_grime(a, 235, 0.3)), None
+
+
+def tex_solid(rgb, seed, size=64, grime=0.25):
+    n = _noise(0, 20, seed, 3, (size, size))
+    a = np.array(rgb, float)[None, None] * (0.8 + 0.3 * n[..., None])
+    return _img(_grime(a, seed + 1, grime)), None
+
+
+def tex_glow(rgb, size=128, core=0.25):
+    """A lamp's glow, added over the scene (AS's light_glow03 sprites): a hot core and a soft halo."""
+    yy, xx = np.mgrid[0:size, 0:size] / (size - 1) * 2 - 1
+    r = np.hypot(xx, yy)
+    g = np.clip(1 - r, 0, 1) ** 2.2 * 0.75 + np.clip(1 - r / core, 0, 1) ** 1.5 * 0.9
+    c = np.array(rgb, float)
+    return _img(np.clip(g[..., None] * c[None, None] + np.clip(1 - r / core, 0, 1)[..., None] ** 2 * 120, 0, 255)), None
+
+
+def tex_screen(rgb, w=128, h=96):
+    """The lift console's screen (panel02's skins 1 and 2): red while the squad is not all aboard, green when it is."""
+    a = np.zeros((h, w, 3)) + np.array(rgb, float) * 0.25
+    yy, xx = np.mgrid[0:h, 0:w]
+    a[(yy % 6) < 2] *= 0.6
+    a[10:h - 10, 12:w - 12] += np.array(rgb, float) * 0.55
     img = _img(a)
-    d = ImageDraw.Draw(img)
-    cx = (x0 + x1) // 2
-    for k in range(3):
-        top = y0 + 30 + k * 40
-        d.polygon([(cx - 90, top), (cx - 60, top), (cx, top + 34), (cx + 60, top), (cx + 90, top), (cx, top + 64)], fill=(190, 140, 30))
-    d.text((cx, y1 - 60), 'CAUTION', font=_font(48), fill=(220, 210, 190), anchor='mm')
-    d.text((cx, y1 - 22), 'MOVING PLATFORM', font=_font(28), fill=(220, 210, 190), anchor='mm')
-    return img, _img(emis)
+    _stencil(img, 'LIFT', (w // 2, h // 2), 34, (255, 255, 255))
+    return img, img
 
 
-def tex_lintel(w=512, h=768):
-    """The door piece: the lower 3.5 units are the opening; above it a hazard lintel and the lift's sign."""
-    img, _ = tex_shaft(91)
-    a = np.asarray(img).astype(float)
-    top = int(h * (1 - GATE_H / PANEL_H))
-    a[top - 70:top] = np.array((40, 40, 36))
-    _hazard(a, top - 60, top - 10, 3)
-    emis = np.zeros((h, w, 3))
-    a[top - 190:top - 90, 90:w - 90] = (16, 18, 18)
-    img = _img(a)
-    _stencil(img, 'CARGO LIFT 01', (w // 2, top - 140), 44, (255, 180, 60))
-    e = Image.fromarray(emis.astype(np.uint8))
-    _stencil(e, 'CARGO LIFT 01', (w // 2, top - 140), 44, (255, 150, 40))
-    return img, e
+def tex_ceil(w=256, h=256):
+    n = _noise(0, 40, 241, 3, (h, w))
+    a = np.array((46, 46, 48), float)[None, None] * (0.75 + 0.35 * n[..., None])
+    for k in range(0, w, 64):
+        a[:, k:k + 3] *= 0.5; a[k:k + 3] *= 0.5
+    return _img(a), None
+
+
+def tex_deck(w=1024, h=896):
+    """AS's lift platform (asi-jac1-landingbay_02's floor brushes there): galvanised grating plates parted by
+    worn yellow trim into a south band, a middle band whose side plates carry hazard stripes, and a north band
+    of three plates, the middle one running into the console's notch. 8 by 7 cells, row 0 at the north (y 116)."""
+    yy, xx = np.mgrid[0:h, 0:w]
+    n = _noise(0, 80, 41, 4, (h, w))
+    a = np.array((92, 94, 90), float)[None, None] * (0.72 + 0.32 * n[..., None])
+    diamond = (((xx + yy) // 6) % 8 == 0) | (((xx - yy) // 6) % 8 == 0)
+    a[diamond] *= 1.22
+    holes = ((xx % 12) < 5) & ((yy % 12) < 5)
+    a[holes] *= 0.72
+    P = 128
+    px = lambda x: int(round((x - 42) * P))
+    py = lambda y: int(round((116 - y) * P))
+    yel = np.array((176, 140, 40), float)
+    def hline(y, x0, x1, wdt=12):
+        a[py(y) - wdt // 2:py(y) + wdt // 2, px(x0):px(x1)] = yel * (0.65 + 0.4 * n[py(y) - wdt // 2:py(y) + wdt // 2, px(x0):px(x1), None])
+    def vline(x, y0, y1, wdt=12):
+        a[py(y1):py(y0), px(x) - wdt // 2:px(x) + wdt // 2] = yel * (0.65 + 0.4 * n[py(y1):py(y0), px(x) - wdt // 2:px(x) + wdt // 2, None])
+    # The middle band's side plates: hazard stripes.
+    for x0, x1 in ((42, 43.8), (48.2, 50)):
+        sub = a[py(112.7):py(111.3), px(x0):px(x1)]
+        sy, sx = np.mgrid[0:sub.shape[0], 0:sub.shape[1]]
+        stripe = ((sx + sy) // 26) % 2 == 0
+        sub[:] = np.where(stripe[..., None], yel, np.array((30, 30, 28), float)) * (0.6 + 0.45 * n[py(112.7):py(111.3), px(x0):px(x1), None])
+    for y in (109.06, 111.3, 112.7, 114.94):
+        hline(y, 42, 50)
+    vline(42.06, 109, 115); vline(49.94, 109, 115)
+    vline(43.8, 111.3, 112.7); vline(48.2, 111.3, 112.7)
+    vline(45.06, 112.7, 116); vline(46.94, 112.7, 116)
+    hline(115.94, 45, 47)
+    img = _img(_grime(a, 43, 0.35))
+    a = np.asarray(img).astype(float) * (1 - 0.35 * np.clip(_noise(0, 30, 47, 3, (h, w)) - 0.5, 0, 1))[..., None]
+    return _img(a), None
 
 
 def tex_gate(seed=7, w=256, h=448):
@@ -139,32 +197,6 @@ def tex_gate(seed=7, w=256, h=448):
     emis = np.zeros((h, w, 3))
     a[30:54, w // 2 - 12:w // 2 + 12] = (255, 70, 40); emis[30:54, w // 2 - 12:w // 2 + 12] = (255, 50, 20)
     return _img(_grime(a, seed + 2, 0.35)), _img(emis)
-
-
-def tex_deck(w=1024, h=1024):
-    """The platform: diamond plate, a hazard border, painted arrows and the lift number."""
-    yy, xx = np.mgrid[0:h, 0:w]
-    n = _noise(0, 80, 41, 4, (h, w))
-    a = np.array((84, 86, 80), float)[None, None] * (0.75 + 0.3 * n[..., None])
-    diamond = (((xx + yy) // 6) % 8 == 0) | (((xx - yy) // 6) % 8 == 0)
-    a[diamond] *= 1.22
-    for k in range(0, w, w // 3):
-        a[:, k:k + 4] *= 0.4; a[k:k + 4] *= 0.4
-    border = 40
-    for y0, y1, x0, x1 in [(0, border, 0, w), (h - border, h, 0, w), (0, h, 0, border), (0, h, w - border, w)]:
-        sub = a[y0:y1, x0:x1]
-        ys, xs = np.mgrid[y0:y1, x0:x1]
-        stripe = ((xs + ys) // 22) % 2 == 0
-        sub[:] = np.where(stripe[..., None], np.array((170, 130, 30), float), np.array((26, 26, 24), float)) * (0.6 + 0.5 * n[y0:y1, x0:x1, None])
-    img = _img(_grime(a, 43, 0.3))
-    d = ImageDraw.Draw(img)
-    # Lift number and load marking, worn.
-    d.text((w // 2, h // 2), '01', font=_font(300), fill=(150, 120, 40), anchor='mm')
-    d.text((w // 2, h // 2 + 200), 'MAX LOAD 40 T', font=_font(54), fill=(150, 120, 40), anchor='mm')
-    for cx in (w // 2 - 330, w // 2 + 330):
-        d.polygon([(cx - 50, h // 2 + 40), (cx + 50, h // 2 + 40), (cx, h // 2 - 60)], fill=(150, 120, 40))
-    a = np.asarray(img).astype(float) * (1 - 0.35 * np.clip(_noise(0, 30, 47, 3, (h, w)) - 0.5, 0, 1))[..., None]
-    return _img(a), None
 
 
 def tex_bridge(w=256, h=512):
@@ -251,13 +283,6 @@ def tex_seam(w=64, h=256):
     return _img(a * 0.4), _img(a)
 
 
-def textures():
-    t = {'asdoor': tex_asdoor(), 'doorseam': tex_seam(), 'shaft_a': tex_shaft(81), 'shaft_b': tex_shaft(82, lights=True), 'shaft_c': tex_sign(), 'lintel': tex_lintel(), 'gate': tex_gate(),
-         'lift_deck': tex_deck(), 'bridge': tex_bridge(), 'door': tex_door(), 'wall_window': tex_window(),
-         'void': tex_void(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None)}
-    return t
-
-
 def tex_open(size=512):
     """Under the night sky (Landing Bay's dock): the drop off a catwalk's edge, as AS's opening shows it.
     Deep blue haze in its exterior fog colour (39,53,86), steel lattice towers and girders far below in
@@ -290,18 +315,64 @@ def tex_open(size=512):
     return _img(np.zeros((8, 8, 3))), _img(np.clip(a, 0, 255))
 
 
+
+
 def tex_void(w=256, h=256):
     """The drop between platform and walls. AS's shaft is not black but full of dark brown haze (its
-    fog_elevator is 43,37,32 at 0.9): an unlit floor of nothing, glowing faintly in the fog colour,
-    with the shaft's cables and girders far below as darker streaks."""
-    n = _noise(0, 40, 91, 3, (h, w))
-    haze = np.array((43, 37, 32), float)[None, None] * (0.55 + 0.45 * n[..., None])
-    rng = np.random.default_rng(93)
-    for x in rng.integers(0, w, 9):
-        haze[:, x:x + 2] *= 0.55
-    for y in rng.integers(0, h, 4):
-        haze[y:y + 5] *= 0.6
+    fog_elevator is 43,37,32 at 0.9): an unlit floor of nothing glowing in the fog colour, brightest to the north
+    where the tube runs on down into the fog (row 0 is the drop's north edge), drifting as fog does."""
+    n = _noise(0, 60, 91, 3, (h, w))
+    grad = 0.18 + 0.32 * np.linspace(1, 0, h)[:, None] ** 1.8
+    haze = np.array((43, 37, 32), float)[None, None] * ((0.6 + 0.5 * n) * grad)[..., None]
     return _img(np.zeros((h, w, 3))), _img(haze)
+
+
+def tex_veil(size=256):
+    """A veil of the shaft's haze, added over what lies below it: faint, uneven."""
+    n = _noise(size, 64, 97, 3)
+    return _img(np.array((43, 37, 32), float)[None, None] * (0.15 + 0.22 * n)[..., None]), None
+
+
+def tex_frame(w=64, h=256):
+    """The doorways' frames: yellow and black hazard bands (AS's heavy door surrounds)."""
+    a = np.zeros((h, w, 3)) + 60
+    _hazard(a, 0, h, 17)
+    a[:, :4] *= 0.4; a[:, -4:] *= 0.4
+    return _img(_grime(a, 19, 0.3)), None
+
+
+def tex_rail(w=64, h=64):
+    """The platform's railing: AS's orange-red paint, chipped."""
+    n = _noise(0, 10, 251, 3, (h, w))
+    a = np.array((176, 64, 26), float)[None, None] * (0.75 + 0.35 * n[..., None])
+    a[np.clip(n - 0.62, 0, 1) > 0.05] = (90, 84, 78)
+    return _img(a), None
+
+
+def tex_cage(w=64, h=64):
+    """A caged lamp: a hot orange bulb behind bars, the bracket round it."""
+    yy, xx = np.mgrid[0:h, 0:w] / (h - 1) * 2 - 1
+    r = np.hypot(xx, yy)
+    a = np.zeros((h, w, 3)) + 40
+    bulb = np.clip(1 - r / 0.7, 0, 1)
+    a += bulb[..., None] * np.array((255, 150, 60))
+    bars = (np.abs(((xx + 1) * 3.5) % 1 - 0.5) > 0.38) & (r < 0.85)
+    a[bars] = (30, 28, 26)
+    e = a * (r < 0.75)[..., None]
+    e[bars] = 0
+    return _img(a), _img(e * 0.9)
+
+
+def textures():
+    t = {'asdoor': tex_asdoor(), 'doorseam': tex_seam(), 'gate': tex_gate(),
+         'lift_deck': tex_deck(), 'bridge': tex_bridge(), 'door': tex_door(), 'wall_window': tex_window(),
+         'void': tex_void(), 'voidveil': tex_veil(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None),
+         'shaftwall': tex_shaftwall(), 'shaftpipe': tex_pipe(), 'liftceil': tex_ceil(), 'liftframe': tex_frame(),
+         'flange': tex_solid((150, 40, 28), 261), 'conduit': tex_solid((190, 150, 40), 263, 32, 0.15),
+         'cable': tex_solid((26, 26, 26), 265, 32, 0.1), 'liftrail': tex_rail(), 'liftconsole': tex_solid((58, 62, 66), 267),
+         'lampcage': tex_cage(), 'lampglow': tex_glow((200, 47, 2)), 'glowamber': tex_glow((249, 192, 0), core=0.3), 'glowred': tex_glow((249, 0, 0), core=0.3),
+         'screen_r': tex_screen((230, 40, 30)), 'screen_g': tex_screen((60, 220, 70))}
+    return t
 
 
 # ------------------------------------------------------------- meshes
@@ -315,13 +386,155 @@ def _box(m, key, x0, y0, z0, x1, y1, z1, uvs=1.0):
     m.quad(key, (x0, y1, z0), (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), u)          # west
 
 
-def _panel(name, tex, width, z0=-DROP, z1=-DROP + PANEL_H, v0=1.0, v1=0.0):
-    """A face from x -w/2..w/2, normal -Y, z0..z1; texture v0 at the bottom, v1 at the top."""
+def _face(m, key, pts, uv, toward):
+    """A polygon, wound so its face looks along ``toward``."""
+    p = np.asarray(pts, float)
+    if np.dot(np.cross(p[1] - p[0], p[-1] - p[0]), toward) < 0:
+        pts, uv = list(pts)[::-1], list(uv)[::-1]
+    m.poly(key, pts, uv)
+
+
+def _clip(poly, axis, sign, c):
+    """Sutherland-Hodgman: the part of a convex (y, z) polygon where sign * (p[axis] - c) >= 0."""
+    out = []
+    for i, p in enumerate(poly):
+        q = poly[i - 1]
+        dp, dq = sign * (p[axis] - c), sign * (q[axis] - c)
+        if (dp >= 0) != (dq >= 0):
+            k = dq / (dq - dp)
+            out.append((q[0] + (p[0] - q[0]) * k, q[1] + (p[1] - q[1]) * k))
+        if dp >= 0:
+            out.append(p)
+    return out
+
+
+def doorway():
+    """The doorway's hole in a wall segment's own (y, z): AS's doorways are cells 110-114 by 2.3 high, and the
+    doorway segment starts DOOR_U along the travel when it stands at the platform."""
+    y0, z0 = shaft_point(0, DOOR_U, 0)[1:]
+    return 110 - 119.35 - y0, 114 - 119.35 - y0, DOOR_H - z0, -z0
+
+
+def _wall(m, x, cut):
+    """One wall of a segment at x (local), the doorway cut out of it if ``cut``."""
+    corners = [shaft_point(x, u, t)[1:] for u, t in ((0, 0), (SEG, 0), (SEG, TUBE), (0, TUBE))]
+    pieces = [corners]
+    if cut:
+        dy0, dy1, dz1, _ = doorway()
+        mid = _clip(_clip(corners, 0, 1, dy0), 0, -1, dy1)
+        pieces = [_clip(corners, 0, -1, dy0), _clip(corners, 0, 1, dy1), _clip(mid, 1, 1, dz1)]
+    for poly in pieces:
+        if len(poly) < 3:
+            continue
+        pts = [(x, y, z) for y, z in poly]
+        uv = [((TRAVEL[0] * y + TRAVEL[1] * z) / SEG, (INTO[0] * y + INTO[1] * z) / TUBE) for y, z in poly]
+        _face(m, ('shaftwall', True, 0), pts, uv, (-np.sign(x), 0, 0))
+
+
+def _tube(m, key, x, t, r, u0, u1, sides=8, caps=False):
+    """A pipe of radius r along the travel, its axis at (x, t), from u0 to u1."""
+    ring = [2 * np.pi * k / sides for k in range(sides + 1)]
+    for k in range(sides):
+        a0, a1, am = ring[k], ring[k + 1], (ring[k] + ring[k + 1]) / 2
+        p = lambda a, u: shaft_point(x + r * np.cos(a), u, t + r * np.sin(a))
+        out = (np.cos(am), np.sin(am) * INTO[0], np.sin(am) * INTO[1])
+        _face(m, key, [p(a0, u0), p(a0, u1), p(a1, u1), p(a1, u0)],
+              [(0, k / sides), ((u1 - u0) / 2, k / sides), ((u1 - u0) / 2, (k + 1) / sides), (0, (k + 1) / sides)], out)
+    if caps:
+        for u, s in ((u0, -1), (u1, 1)):
+            pts = [shaft_point(x + r * np.cos(a), u, t + r * np.sin(a)) for a in ring[:-1]]
+            _face(m, key, pts, [(0.5 + 0.5 * np.cos(a), 0.5 + 0.5 * np.sin(a)) for a in ring[:-1]], (0, s * TRAVEL[0], s * TRAVEL[1]))
+
+
+def _sbox(m, key, x0, x1, u0, u1, t0, t1):
+    """A box in the shaft's frame (x, u, t ranges)."""
+    c = np.array(shaft_point((x0 + x1) / 2, (u0 + u1) / 2, (t0 + t1) / 2))
+    P = lambda x, u, t: shaft_point(x, u, t)
+    faces = [
+        [P(x0, u0, t0), P(x0, u1, t0), P(x0, u1, t1), P(x0, u0, t1)], [P(x1, u0, t0), P(x1, u1, t0), P(x1, u1, t1), P(x1, u0, t1)],
+        [P(x0, u0, t0), P(x1, u0, t0), P(x1, u0, t1), P(x0, u0, t1)], [P(x0, u1, t0), P(x1, u1, t0), P(x1, u1, t1), P(x0, u1, t1)],
+        [P(x0, u0, t0), P(x1, u0, t0), P(x1, u1, t0), P(x0, u1, t0)], [P(x0, u0, t1), P(x1, u0, t1), P(x1, u1, t1), P(x0, u1, t1)]]
+    for f in faces:
+        _face(m, key, f, [(0, 0), (1, 0), (1, 1), (0, 1)], np.mean(f, 0) - c)
+
+
+def _glow(m, key, centre, size):
+    """A glow sprite facing the camera (pitch 60: normal 0, -0.5, 0.866)."""
+    c = np.array(centre, float); X = np.array((size, 0, 0)); V = np.array((0, 0.866, 0.5)) * size
+    m.quad(key, tuple(c - X - V), tuple(c + X - V), tuple(c + X + V), tuple(c - X + V), [(0, 1), (1, 1), (1, 0), (0, 0)])
+
+
+def _lamp(m, x, u, t, glow=True):
+    """A caged lamp on the wall at x (local), its glow sprite in front of it."""
+    s = -np.sign(x)
+    _sbox(m, ('lampcage', False, 0), x, x + s * 0.28, u - 0.2, u + 0.2, t - 0.2, t + 0.2)
+    if glow:
+        _glow(m, ('lampglow', True, UNLIT, ADD), np.array(shaft_point(x + s * 0.35, u, t)), 0.85)
+
+
+HALF = 6.0          # the walls stand HALF either side of the shaft's middle (x 40 and 52 in CARGO ELEVATOR's cells)
+
+
+def segment(name, door=None):
+    """A wall segment: both walls, the ceiling, the top pipes with a flange each, conduits, the east wall's hanging
+    cables, a caged lamp on each wall. ``door`` 'in' cuts the entrance in the west wall, 'out' the exit in the east,
+    each with its frame and the amber cage lamp AS hangs by it."""
     m = ShipModel(name, (0, 0, 0))
-    hw = width / 2
-    u1 = width / 4.0
-    m.quad((tex, True, 0), (-hw, 0, z0), (hw, 0, z0), (hw, 0, z1), (-hw, 0, z1), [(0, v0), (u1, v0), (u1, v1), (0, v1)])
+    for x in (-HALF, HALF):
+        _wall(m, x, (door == 'in' and x < 0) or (door == 'out' and x > 0))
+        s = -np.sign(x)
+        px = x + s * PIPE_IN
+        _tube(m, ('shaftpipe', False, 0), px, PIPE_T, PIPE_R, 0, SEG)
+        _tube(m, ('flange', False, 0), px, PIPE_T, PIPE_R * 1.28, SEG * 0.55, SEG * 0.55 + 0.32, caps=True)
+        for k, ct in enumerate((1.48, 1.62, 1.76) if x > 0 else (1.6,)):
+            _tube(m, ('conduit', False, 0), x + s * (0.1 + 0.04 * k), ct, 0.055, 0, SEG, sides=4)
+        _lamp(m, x, LAMP_U, LAMP_T)
+    # The east wall's festoon: cables slung between brackets, three a segment.
+    ex = HALF - 0.2
+    for k in range(3):
+        u0 = SEG * k / 3
+        pts = [(u0 + SEG / 3 * i / 8, 1.95 + 0.35 * (1 - (2 * i / 8 - 1) ** 2)) for i in range(9)]
+        for (ua, ta), (ub, tb) in zip(pts, pts[1:]):
+            _face(m, ('cable', True, NO_SHADOW_CAST), [shaft_point(ex, ua, ta - 0.03), shaft_point(ex, ub, tb - 0.03),
+                                                      shaft_point(ex, ub, tb + 0.03), shaft_point(ex, ua, ta + 0.03)],
+                  [(0, 0), (1, 0), (1, 1), (0, 1)], (-1, 0, 0))
+        _sbox(m, ('liftconsole', False, 0), HALF - 0.25, HALF, u0 - 0.06, u0 + 0.06, 1.85, 2.05)
+    # The ceiling, seen only from inside the tube.
+    _face(m, ('liftceil', False, 0), [shaft_point(-HALF, 0, 0), shaft_point(HALF, 0, 0), shaft_point(HALF, SEG, 0), shaft_point(-HALF, SEG, 0)],
+          [(0, 0), (3, 0), (3, 1.6), (0, 1.6)], (0, INTO[0], INTO[1]))
+    if door:
+        x = -HALF if door == 'in' else HALF
+        s = -np.sign(x)
+        dy0, dy1, dz1, dz0 = doorway()
+        key = ('liftframe', False, 0)
+        xi = x + s * 0.03
+        for y in (dy0, dy1):
+            _face(m, key, [(xi, y - 0.25, dz0 - 1.0), (xi, y + 0.25, dz0 - 1.0), (xi, y + 0.25, dz1 + 0.25), (xi, y - 0.25, dz1 + 0.25)],
+                  [(0, 1), (1, 1), (1, 0), (0, 0)], (s, 0, 0))
+        _face(m, key, [(xi, dy0 - 0.25, dz1), (xi, dy1 + 0.25, dz1), (xi, dy1 + 0.25, dz1 + 0.3), (xi, dy0 - 0.25, dz1 + 0.3)],
+              [(0, 4), (0, 0), (1, 0), (1, 4)], (s, 0, 0))
+        # The amber lamps: light_spin_ele_top's on the west wall over the entrance (AS's walls u 4.87), the bottom
+        # beacon on its arm off the east wall by the exit (u 4.97 when the walls stop).
+        if door == 'in':
+            _lamp(m, x, 4.87 - DOOR_U, 2.82, glow=False)
+        else:
+            _sbox(m, ('lampcage', False, 0), 4.3 - 0.18, 4.3 + 0.18, 4.97 - DOOR_U - 0.18, 4.97 - DOOR_U + 0.18, 2.68 - 0.18, 2.68 + 0.18)
+            _sbox(m, ('liftconsole', False, 0), 4.3 + 0.18, HALF, 4.97 - DOOR_U - 0.06, 4.97 - DOOR_U + 0.06, 2.68 - 0.06, 2.68 + 0.06)
     return m
+
+
+def shaft_models():
+    """{name: ShipModel} of the shaft's model actors (src/Mission.galaxy slides them): the plain segment, the
+    entrance's and the exit's, a gate leaf, and the amber and red glow sprites the script lays on its beacons."""
+    out = {'ESeg': segment('ESeg'), 'ESegIn': segment('ESegIn', 'in'), 'ESegOut': segment('ESegOut', 'out')}
+    # A gate leaf: two wide along the wall (y), the doorway's height, two-sided, origin at its foot's middle.
+    m = out['EGateLeaf'] = ShipModel('EGateLeaf', (0, 0, 0))
+    key = ('asdoor', True, 0)
+    m.quad(key, (0, -1, 0), (0, 1, 0), (0, 1, DOOR_H), (0, -1, DOOR_H), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    for name, tex, size in (('EGlowAmber', 'glowamber', 1.3), ('EGlowRed', 'glowred', 1.1)):
+        m = out[name] = ShipModel(name, (0, 0, 0))
+        _glow(m, (tex, True, UNLIT, ADD), (0, 0, 0), size)
+    return out
 
 
 def door_meshes():
@@ -340,21 +553,23 @@ def door_meshes():
     return out
 
 
-def meshes(lift, bridge_in, bridge_out, void, door):
-    """{name: ShipModel}: shaft panels (4 and 2 wide, plain and lit), the door lintel, gate leaves,
-    bridges, the platform with its rails, the void, and a security door leaf."""
+def _railrun(m, key, pts):
+    """A railing along a polyline on the deck: posts at the corners and every cell or so, two bars."""
+    for (xa, ya), (xb, yb) in zip(pts, pts[1:]):
+        n = max(1, int(round(np.hypot(xb - xa, yb - ya))))
+        for i in range(n + 1):
+            x, y = xa + (xb - xa) * i / n, ya + (yb - ya) * i / n
+            _box(m, key, x - 0.05, y - 0.05, 0, x + 0.05, y + 0.05, 1.0)
+        for z in (0.5, 1.0):
+            _box(m, key, min(xa, xb) - 0.04, min(ya, yb) - 0.04, z - 0.07, max(xa, xb) + 0.04, max(ya, yb) + 0.04, z)
+
+
+def meshes(lift, notch, bridge_in, bridge_out, void, console, deck=None, depth=0.0):
+    """{name: ShipModel} of the lift's units: the platform (deck, the north railing round the console's notch, the
+    short rails either side of the doorways, the console), its red and green screens, the bridge, the void, and a
+    security door leaf. ``deck`` (bool[H, W]) and ``depth`` give the drop's shape: its terrain lies depth below the
+    deck except where a corner touches deck (tools/heights.py VOID_DEPTH), and the haze follows it."""
     out = {}
-    for width in (4, 2):
-        out['EShaftA%d' % width] = _panel('EShaftA%d' % width, 'shaft_a', width)
-        out['EShaftB%d' % width] = _panel('EShaftB%d' % width, 'shaft_b', width)
-        out['EShaftC%d' % width] = _panel('EShaftC%d' % width, 'shaft_c', width)
-    # Door piece: only the lintel above the opening.
-    top = -DROP + GATE_H
-    out['ELintel'] = _panel('ELintel', 'lintel', 4, top, -DROP + PANEL_H, 1 - GATE_H / PANEL_H, 0.0)
-    # Gate leaf: 2 wide, the opening's height, a hand's width thick.
-    m = out['EGate'] = ShipModel('EGate', (0, 0, 0))
-    m.quad(('gate', True, 0), (-1, 0, -DROP), (1, 0, -DROP), (1, 0, top), (-1, 0, top), [(0, 1), (1, 1), (1, 0), (0, 0)])
-    m.quad(('gate', True, 0), (-1, 0.12, -DROP), (1, 0.12, -DROP), (1, 0.12, top), (-1, 0.12, top), [(0, 1), (1, 1), (1, 0), (0, 0)])
     # Bridges: grating plates over the drop, centred on their unit, long along x (turned by the script).
     for name, (x0, y0, x1, y1) in (('EBridge', bridge_in),):
         m = out[name] = ShipModel(name, (0, 0, 0))
@@ -362,38 +577,52 @@ def meshes(lift, bridge_in, bridge_out, void, door):
         m.quad(('bridge', False, 0), (-hx, -hy, 0.03), (hx, -hy, 0.03), (hx, hy, 0.03), (-hx, hy, 0.03), [(0, 1), (1, 1), (1, 0), (0, 0)])
         _box(m, ('rail', False, 0), -hx, -hy, 0.0, hx, -hy + 0.12, 0.25)
         _box(m, ('rail', False, 0), -hx, hy - 0.12, 0.0, hx, hy, 0.25)
-    # The platform: the deck plate, a kick rail and posted handrails, gaps where the bridges meet it.
     x0, y0, x1, y1 = lift
+    nx0, ny0, nx1, ny1 = notch
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     m = out['EPlatform'] = ShipModel('EPlatform', (cx, cy, 0))
-    m.quad(('lift_deck', False, 0), (x0, y0, 0.03), (x1, y0, 0.03), (x1, y1, 0.03), (x0, y1, 0.03), [(0, 1), (1, 1), (1, 0), (0, 0)])
-    gaps = [(bridge_in[1], bridge_in[3]), (bridge_out[1], bridge_out[3])]
-    rail = ('rail', False, NO_SHADOW_CAST)
-    for side in 'NSWE':
-        if side in 'NS':
-            yv = y1 - 0.08 if side == 'N' else y0 + 0.08
-            segs = [(x0, x1)]
-        else:
-            yv = None
-            segs = [(y0, gaps[0][0]), (gaps[0][1], y1)]
-        for a0, a1 in segs:
-            for t in np.arange(a0, a1 + 0.01, 2.0):
-                if side in 'NS':
-                    _box(m, rail, t - 0.06, yv - 0.06, 0, t + 0.06, yv + 0.06, 1.0)
-                else:
-                    xv = x0 + 0.08 if side == 'W' else x1 - 0.08
-                    _box(m, rail, xv - 0.06, t - 0.06, 0, xv + 0.06, t + 0.06, 1.0)
-            for z in (0.55, 1.0):
-                if side in 'NS':
-                    _box(m, rail, a0, yv - 0.05, z - 0.07, a1, yv + 0.05, z)
-                else:
-                    xv = x0 + 0.08 if side == 'W' else x1 - 0.08
-                    _box(m, rail, xv - 0.05, a0, z - 0.07, xv + 0.05, a1, z)
-    # The void: black over the drop, a ring round the platform (the bridges are drawn over it).
+    # The deck texture spans the platform and the notch: x0..x1 across, y0..ny1 down from its top row.
+    uv = lambda x, y: ((x - x0) / (x1 - x0), (ny1 - y) / (ny1 - y0))
+    for rx0, ry0, rx1, ry1 in ((x0, y0, x1, y1), (nx0, ny0, nx1, ny1)):
+        c = [(rx0, ry0), (rx1, ry0), (rx1, ry1), (rx0, ry1)]
+        m.quad(('lift_deck', False, 0), *[(x, y, 0.03) for x, y in c], [uv(x, y) for x, y in c])
+    rail = ('liftrail', False, NO_SHADOW_CAST)
+    e = 0.08
+    _railrun(m, rail, [(x0 + e, y1 - e), (nx0 + e, y1 - e), (nx0 + e, ny1 - e), (nx1 - e, ny1 - e), (nx1 - e, y1 - e), (x1 - e, y1 - e)])
+    for xv in (x0 + e, x1 - e):
+        _railrun(m, rail, [(xv, y1 - e), (xv, bridge_in[3])])
+        _railrun(m, rail, [(xv, bridge_in[1]), (xv, y0 + e)])
+    # The console in the notch (lift_buttonpanel): a pedestal, its screen on the slope facing the deck.
+    kx, ky = console
+    _box(m, ('liftconsole', False, 0), kx - 0.55, ky - 0.3, 0, kx + 0.55, ky + 0.25, 0.9)
+    for name, tex in (('EScreenR', 'screen_r'), ('EScreenG', 'screen_g')):
+        s = out[name] = ShipModel(name, (kx, ky, 0))
+        s.quad((tex, False, NO_SHADOW_CAST), (kx - 0.45, ky - 0.3, 0.92), (kx + 0.45, ky - 0.3, 0.92), (kx + 0.45, ky + 0.15, 1.2), (kx - 0.45, ky + 0.15, 1.2),
+               [(0, 1), (1, 1), (1, 0), (0, 0)])
+    # The void: the haze lying on the drop's floor, cell by cell down its sides from the deck's edge (the bridges
+    # are drawn over it), and two veils of it added over the drop deeper down, so what is below fades into it as
+    # AS's fog_elevator has it.
     vx0, vy0, vx1, vy1 = void
     m = out['EVoid'] = ShipModel('EVoid', (cx, cy, 0))
-    for rx0, ry0, rx1, ry1 in [(vx0, vy0, vx1, y0), (vx0, y1, vx1, vy1), (vx0, y0, x0, y1), (x1, y0, vx1, y1)]:
-        m.quad(('void', False, NO_SHADOW_CAST), (rx0, ry0, 0.02), (rx1, ry0, 0.02), (rx1, ry1, 0.02), (rx0, ry1, 0.02), [(0, 1), (1, 1), (1, 0), (0, 0)])
+    def solid(x, y):
+        inside = vx0 <= x < vx1 and vy0 <= y < vy1
+        on_lift = (x0 <= x < x1 and y0 <= y < y1) or (nx0 <= x < nx1 and ny0 <= y < ny1)
+        if deck is None:
+            return not inside or on_lift
+        return on_lift or (not inside and 0 <= y < deck.shape[0] and 0 <= x < deck.shape[1] and deck[y, x])
+    def vz(x, y):
+        return 0.02 if any(solid(xx, yy) for xx in (x - 1, x) for yy in (y - 1, y)) else -depth + 0.12
+    for y in range(vy0, vy1):
+        for x in range(vx0, vx1):
+            if solid(x, y):
+                continue
+            c = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)]
+            m.quad(('void', False, NO_SHADOW_CAST), *[(px, py, vz(px, py)) for px, py in c],
+                   [((px - vx0) / (vx1 - vx0), (vy1 - py) / (vy1 - vy0)) for px, py in c])
+    if depth > 0:
+        for k, z in enumerate((-0.35 * depth, -0.65 * depth)):
+            c = [(vx0, vy0), (vx1, vy0), (vx1, vy1), (vx0, vy1)]
+            m.quad(('voidveil', True, UNLIT, ADD), *[(px, py, z) for px, py in c], [(k * 0.37 + (px - vx0) / 6, (vy1 - py) / 6) for px, py in c])
     # Security door leaf: 2 wide, wall height, 0.3 thick, origin at its middle on the floor.
     m = out['EDoor'] = ShipModel('EDoor', (0, 0, 0))
     key = ('door', False, 0)

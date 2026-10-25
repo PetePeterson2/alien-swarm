@@ -327,10 +327,6 @@ def mission_galaxy(n):
         x, y = at(x, y)
         out.append('    as_routeX[%d]=%.2f;as_routeY[%d]=%.2f;as_routeWait[%d]=%d;' % (i, x, i, y, i, wait))
     out.append('    as_routeN=%d;as_routeAt=0;' % len(L.ROUTE))
-    for i, (x, y) in enumerate(L.WINDOWS):
-        x, y = at(x, y)
-        out.append('    as_winX[%d]=%d.0;as_winY[%d]=%d.0;' % (i, x, i, y))
-    out.append('    as_winCount=%d;' % len(L.WINDOWS))
     # A scripted mission's own (src/Mission.galaxy SCRIPTED MISSIONS): where it extracts, whether it needs a tech,
     # its objectives by key with the spot each marker shows, and its buttons.
     if hasattr(L, 'OBJECTIVES'):
@@ -388,17 +384,27 @@ def mission_galaxy(n):
     out.append('    as_outX0=%d.0;as_outY0=%d.0;as_outX1=%d.0;as_outY1=%d.0;' % (rect(L.OUTDOORS) if hasattr(L, 'OUTDOORS') else (0, 0, 0, 0)))
     if L.LIFT is not None:
         out.append('    as_liftX0=%d.0;as_liftY0=%d.0;as_liftX1=%d.0;as_liftY1=%d.0;' % rect(L.LIFT))
-        out.append('    as_doorX0=%d;as_doorY0=%d;as_doorX1=%d;as_doorY1=%d;' % rect(L.DOOR))
         out.append('    as_liftPanel=Point(%.2f,%.2f);' % at(*L.LIFT_PANEL))
         bridge_in, bridge_out = rect(L.BRIDGE_IN), rect(L.BRIDGE_OUT)
         for k in range(4):
             out.append('    as_brIn[%d]=%d;as_brOut[%d]=%d;' % (k, bridge_in[k], k, bridge_out[k]))
-        for i, (x, y, w, face, side) in enumerate(L.shaft_columns()):
-            x, y = at(x, y)
-            out.append('    as_colX[%d]=%.2f;as_colY[%d]=%.2f;as_colW[%d]=%d.0;as_colFace[%d]=%.1f;as_colSide[%d]="%s";' % (i, x, i, y, i, w, i, face, i, side))
-        out.append('    as_colCount=%d;' % len(L.shaft_columns()))
+        # The shaft (tools/elevator.py): where its walls' top edge meets the deck, its segment train and beacons.
+        sh = L.SHAFT
+        x, y = at(sh['x'], sh['y'])
+        low, out_slot = elevator.train(sh['in_slot'])
+        out.append('    as_shX=%.2f;as_shY=%.2f;as_shLow=%.4f;as_shIn=%d;as_shOut=%d;as_shV=%.4f;as_shBx=%.2f;as_shBt=%.2f;'
+                   % (x, y, low, sh['in_slot'], out_slot, sh['speed'], at(sh['beacon_x'], 0)[0], sh['beacon_t']))
+        assert abs(elevator.RIDE - 33.19) < 1e-6, 'src/Mission.galaxy AS_RIDE_LEN is tools/elevator.py RIDE'
+        out.append('    as_shSeg=%.4f;as_shN=%d;as_shHalf=%.2f;as_shLampU=%.2f;as_shLampT=%.2f;as_shDoorU=%.2f;'
+                   % (elevator.SEG, elevator.SEG_N, elevator.HALF, elevator.LAMP_U, elevator.LAMP_T, elevator.DOOR_U))
+        for k, u in enumerate(sh['beacons']):
+            out.append('    as_shBu[%d]=%.2f;' % (k, u))
+        for k, u in enumerate(sh['beacon_s']):
+            out.append('    as_shBs[%d]=%.3f;' % (k, u))
+        nx0, ny0, nx1, ny1 = rect(L.LIFT_NOTCH)
+        out.append('    as_liftNotchY1=%d.0;as_hasLift=true;' % ny1)
     else:
-        out.append('    as_colCount=0;')
+        out.append('    as_hasLift=false;')
     out.append('}')
     # What lies on the deck at the start: drones asleep, explosive barrels, pickups.
     out.append('void AS_LevelThings%d () {' % n)
@@ -629,7 +635,7 @@ def compose(qa, demo=False, auto=False, start=-1):
         paint.update(L.paint_names())
         signs.update(L.sign_names())
         if L.LIFT is not None:
-            pieces.update(elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR))
+            pieces.update(elevator.meshes(L.LIFT, L.LIFT_NOTCH, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.CONSOLE, floor, L.VOID_DEPTH))
         pieces.update(elevator.door_meshes())
         pieces.update(colony.meshes())
         report.append('%s %dx%d at %d,%d, lifted %+.2f, %d slope cells'
@@ -672,6 +678,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     models.update(L.paint_pieces(sorted(paint)))
     models.update(L.sign_pieces(sorted(signs)))
     models.update(L.shaft_pieces())
+    models.update(elevator.shaft_models())
     textures = shipkit.hull_textures()
     textures.update(elevator.textures())
     textures.update(colony.textures())

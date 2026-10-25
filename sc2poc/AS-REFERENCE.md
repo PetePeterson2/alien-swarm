@@ -88,6 +88,11 @@ Notes from playing the Steam game's first two missions (`asi-jac1-landingbay_01`
 - **Life:** dust in the air and motes lit by the laser, steam from grates and pipes, flickering and sparking lamps and consoles, turning fan shadows, smoke after blasts.
 - **The AI squad** only fights what a player can see (or what is at its elbow), as AS's marines back the player up.
 
+**Fifth round: the lift from its own data (2026-10-24).**
+- **Sources.** The cargo lift was measured from `asi-jac1-landingbay_02` itself: the walls' brushes and path, the shaft models' layout (`models/props/elevator_shaft/shaft01a`, `shaft01b`) and the lift's entities and relays. The rules came from the SDK's `asw_use_area.cpp`.
+- **What replaced the round-one framing and floods.** AS keeps its normal camera on the ride. The walls are an inclined tube. The north gap shows the tube's ceiling and the walls running down into the haze. The light is a red beacon handed down the west wall, plus the caged lamps riding with the walls. The amber lights are the start's (over the entrance) and the end's (by the exit).
+- **What is built.** See AS-PARITY.md, Phase 6.
+
 ## Deima Surface Bridge and Rydberg Reactor (2026-10-24)
 
 Not played: taken from the installed maps (`asi-jac2-deima`, `asi-jac3-rydberg`) through `tools/asextract.py` and `tools/astrace.py`, and from their materials in the VPKs (looked at for palette and pattern only; nothing of Valve's is shipped). Captures of the other missions are still to do.

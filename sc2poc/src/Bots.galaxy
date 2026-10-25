@@ -32,7 +32,7 @@ string AS_Where (int p) {
     return FixedToString(PointGetX(q),1)+","+FixedToString(PointGetY(q),1);
 }
 void AS_LogStatus () {
-    int p;string s="status aliens="+IntToString(as_alive2)+" living="+IntToString(AS_Living())+" ride="+IntToString(as_ride)+" scroll="+FixedToString(as_scroll,1)+" hack="+FixedToString(as_hack,2)+" offscreen="+IntToString(as_botOffscreen);
+    int p;string s="status aliens="+IntToString(as_alive2)+" living="+IntToString(AS_Living())+" ride="+IntToString(as_ride)+" scroll="+FixedToString(as_scroll,1)+" offscreen="+IntToString(as_botOffscreen);
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(AS_Person(p)) {s=s+" p"+IntToString(p)+"@"+AS_Where(p)+"/hp"+IntToString(FixedToInt(as_hp[p]))+"/k"+IntToString(as_kills[p])+"/d"+IntToString(as_deaths[p]);}
     }
@@ -241,13 +241,12 @@ bool AS_FieldBusy (int p) {return false;}
 
 // ---- the autopilot's jobs on Landing Bay ---------------------------------------------
 bool AS_AutoBusy () {return as_extraHeld[1];}
-// Cargo Elevator's security door is overridden by holding its console (src/Mission.galaxy, within 1.7): the
-// autopilot stands there until it is done, rather than leaving it to whichever bot happens to stand close enough.
+// A door panel's hack: the autopilot stands at it until the door is open, rather than leaving it to whichever bot
+// happens to stand close enough.
 bool AS_AutoGateDone () {
     int d;
     if(as_level>=AS_LV_SCRIPT) {d=AS_AutoGateDoor();return d<0 || !as_drLocked[d];}
-    if(as_level!=AS_LV_BAY) {return as_hackDone;}
-    return as_bayStage>=1 || as_hackDone;
+    return as_bayStage>=1;
 }
 // The door panel the waypoint is for: Landing Bay's east gate panel; on a scripted mission the panel nearest the
 // waypoint (within ten).

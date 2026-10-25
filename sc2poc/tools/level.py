@@ -144,6 +144,9 @@ ROUTE = [
 LEVEL = 'deck'
 VOID = None
 LIFT = None
+LIFT_NOTCH = None
+SHAFT = None
+VOID_DEPTH = 0.0
 WINDOWS = []
 # Hull cells whose faces show the window panel for the look alone (WINDOWS are the gallery's, which give way).
 VIEWPORTS = [(10, 22), (11, 22), (24, 22), (25, 22), (76, 30), (77, 30), (84, 30), (85, 30)]
@@ -160,12 +163,11 @@ def use(name):
     for key in [k for k in globals() if k.isupper() and not k.startswith(('KIT_', '_')) and k not in _DECK]:
         del globals()[key]
     globals().update(_DECK)
-    globals().pop('shaft_columns', None)
     if name != 'deck':
         import importlib
         mod = importlib.import_module('tools.' + name)
         for key, value in vars(mod).items():
-            if key.isupper() or key == 'shaft_columns':
+            if key.isupper():
                 globals()[key] = value
     LEVEL = name
 
@@ -178,6 +180,10 @@ def in_void(x, y):
     if not (x0 <= x < x1 and y0 <= y < y1):
         return False
     lx0, ly0, lx1, ly1 = LIFT
+    if LIFT_NOTCH is not None:
+        nx0, ny0, nx1, ny1 = LIFT_NOTCH
+        if nx0 <= x < nx1 and ny0 <= y < ny1:
+            return False
     return not (lx0 <= x < lx1 and ly0 <= y < ly1)
 
 

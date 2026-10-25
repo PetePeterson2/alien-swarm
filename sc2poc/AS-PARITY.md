@@ -109,7 +109,7 @@ The real route:
   - 17 s: Insane parasites.
   - 13.8, 37.3, 60.4 and 79.8 s: path events.
   - 106.2 s: the end. A big shake, the exit lights chase, the exit spawners fire, the ramp opens at +1 s and the escape objective arrives at +4 s.
-- **The walls travel up and south** (dz +1,992, dy −1,756), an inclined shaft running toward the camera. The port's walls move straight.
+- **The walls travel up and south** (dz +1,992, dy −1,756), an inclined shaft running toward the camera. The port's do the same (Phase 6).
 - **Ride spawns are only drones:**
   - A timer every 2 to 3.5 s picks one of 8 groups of infinite jumper spawners.
   - Nine crawler templates spawn every 1.5 to 2 s; each climbs at 80 u/s and then drops a drone.
@@ -284,7 +284,7 @@ The port has none of this.
   - AS's hints have a priority bump during combat and are pinned to the world.
   - These lessons are missing: Heal Other, Destroy Door, Watch Scanner, Extinguish, Get and Give Ammo, Rotate Sentry, Activate Panel, and Killed By Infestation.
 - **Fail advice:** AS scores 16 categories with a three-round cooldown. The port picks one of 9 lines at random.
-- **Info messages:** Cargo Elevator's lift "access denied" pop-up is missing.
+- **Info messages:** Cargo Elevator's lift "access denied" message is in (`msg_lift_deny`), as a titled message rather than AS's picture pop-up.
 - **Sounds:** the scanner's warning and idle pings are missing.
 - **Other UI:** AS has a radial emote menu and a vote UI.
 - **Progression:** AS gives no XP offline.
@@ -372,6 +372,37 @@ These are the open items in `AS-COMBAT.md`'s "Still proposed", plus the weapons 
 5. Lighting: the orange pit, cold interiors, warm outdoor floods, the red glow sprites and the two missing outdoor zones.
 
 ### Phase 6: Cargo Elevator rebuild
+
+Status, 2026-10-24: steps 1 to 7 are built and pass the build's checks, not yet played in the client. `tools/cargo.py` is traced from `asi-jac1-landingbay_02` and runs as a data-driven level (`AS_LV_SCRIPT`). Still to do:
+- the falling pipe;
+- the exit drawn outdoors.
+
+**The lift, redone after AS's own (2026-10-24, the `cargo-elevator` session):**
+- **The platform** is AS's: 8 by 6 cells with the console's notch in its north edge, the floor's trim and hazard plates where AS's are, the orange-red railing along the north edge round the notch, and crates at the south edge.
+- **The start** is AS's: "Activate Panel" on the console (`trigger_lift_button`) starts the lift only if everyone alive, up to four, is aboard. Otherwise it shows `msg_lift_deny` ("All unregistered personnel must be on the lift before it can be activated") and can be pressed again. The press completes the first objective. The console's screen is red until the squad is aboard, then green. The autopilot presses it once everyone is on.
+- **The shaft** (`tools/elevator.py`) is AS's inclined tube. The walls travel up and south at 25 u/s for 2,655 units (106 s), starting and stopping dead. A train of seven wall segments rides that incline, each carrying what AS's walls show:
+  - a flanged pipe along each top edge, and yellow conduits;
+  - the east wall's slung cables and X-braced trusses;
+  - a caged lamp with its orange-red glow on each wall, each with a light that rides with it.
+
+  The entrance doorway rides up and away in the west wall. The exit doorway comes round in the east wall and stops where the entrance stood.
+- **The drop** round the platform lies 6 units below the deck (`VOID_DEPTH`), so the walls and the shaft's ceiling are seen running down into the brown haze north of the platform, as in AS.
+- **The beats** follow `relay_lift_but_succeed`:
+
+  | Time | What happens |
+  |---|---|
+  | 0 s | The ramp and doors shut. |
+  | 1 s | The motor starts. |
+  | 2 s | Shake, the dust coming down, motor sparks. |
+  | 3 s | The walls move. The amber light over the entrance goes out and the red takes over. Rail sparks start, thinning out until 16.5 s. |
+  | 4 s | Music. |
+  | At the end | The red goes out, with a big shake. The amber beacon turns by the exit, the exit lamps chase green, and the exit ramp can be walked 2 s later. |
+
+  The red beacon is handed down the west wall at the 13, 35, 57 and 75% path events. The ride is lit by the `ASLiftRide` preset.
+- **The crawlers** go along the ceiling with the walls, as AS's `path_drone_climb` does, and drop at `ElevatorSpawn_crawl_1` and `_2`.
+- **There is no wide framing** on the ride: AS keeps its normal camera.
+- `tools/preview_lift.py` renders the ride from the game camera.
+- **Seen in the client** (2026-10-25, `-Auto` run d7ef552de590, Normal): p1 pressed the console with all four aboard, and the red beacon was handed over at 0.02, 4.32, 11.66, 18.89 and 24.94 cells. The ride:13, ride:57 and ride:75 events fired at those handovers. The lift arrived after 106.3 s with the exit segment at 2.60 (the entrance's place), and the exit opened. The squad lost no one on the ride, and Cargo Elevator was complete in 181.6 s with no script errors from the lift. In run a8346278852d, with the crawlers logged, six drones climbed along the ceiling and dropped onto the deck, three from each `ElevatorSpawn_crawl` spawner. Each spawner keeps one alive at a time (AS's MaxLiveAliens 1), so most of the timer's calls find it busy, as in AS.
 
 1. Replace `tools/cargo.py` with the traced map: the nine real rooms, real heights and a 7×6.6-cell lift.
 2. Rebuild the route and set pieces in AS's order: the double door, the orange catwalk hall, the security door, the fire shaft, the glass gallery with its window spawners, the burrow rooms, the pipe puzzle, the yard cache and the lift.

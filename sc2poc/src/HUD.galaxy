@@ -1052,11 +1052,9 @@ void AS_UsePanel (int p, bool show, string key, string s, fixed f) {
 }
 void AS_Progress (int p, bool show, fixed f, string s) {AS_UsePanel(p,show,"",s,f);}
 void AS_MissionHud (int p) {
-    // Progress: the override, the countdown aboard, the transit car, the depth on the way down.
-    if(as_level==AS_LV_CARGO && as_stage==AS_ST_DOOR && as_hack>0.0) {AS_Progress(p,true,as_hack,as_hackLabel+"  "+IntToString(FixedToInt(as_hack*100.0))+"%");}
-    else if(as_stage==AS_ST_BOARD && as_boardAt>0.0) {AS_Progress(p,true,(as_now-as_boardAt)/5.0,"Lift starting");}
-    else if(as_stage==AS_ST_ESCAPE && as_holdAt>0.0 && as_now<as_holdAt+AS_HOLD) {AS_Progress(p,true,(as_now-as_holdAt)/AS_HOLD,"Transit car inbound  "+AS_Clock(as_holdAt+AS_HOLD-as_now));}
-    else if(as_stage==AS_ST_RIDE) {AS_Progress(p,true,as_scroll/AS_RIDE_LEN,"Descending  -  depth "+IntToString(FixedToInt(as_scroll*4.0))+" m");}
+    // Progress: the countdown aboard, the depth on the way down.
+    if(as_stage==AS_ST_BOARD && as_boardAt>0.0) {AS_Progress(p,true,(as_now-as_boardAt)/5.0,"Lift starting");}
+    else if(as_ride>=1 && as_ride<4) {AS_Progress(p,true,as_scroll/AS_RIDE_LEN,"Descending  -  depth "+IntToString(FixedToInt(as_scroll*4.0))+" m");}
     else {
         AS_UseDescribe(p);
         if(as_useLine!="") {AS_UsePanel(p,true,as_useKey,as_useLine,as_useBar);}
