@@ -403,6 +403,38 @@ Status, 2026-10-24: steps 1 to 7 are built and pass the build's checks, not yet 
 - **There is no wide framing** on the ride: AS keeps its normal camera.
 - `tools/preview_lift.py` renders the ride from the game camera.
 - **Seen in the client** (2026-10-25, `-Auto` run d7ef552de590, Normal): p1 pressed the console with all four aboard, and the red beacon was handed over at 0.02, 4.32, 11.66, 18.89 and 24.94 cells. The ride:13, ride:57 and ride:75 events fired at those handovers. The lift arrived after 106.3 s with the exit segment at 2.60 (the entrance's place), and the exit opened. The squad lost no one on the ride, and Cargo Elevator was complete in 181.6 s with no script errors from the lift. In run a8346278852d, with the crawlers logged, six drones climbed along the ceiling and dropped onto the deck, three from each `ElevatorSpawn_crawl` spawner. Each spawner keeps one alive at a time (AS's MaxLiveAliens 1), so most of the timer's calls find it busy, as in AS.
+- **Seen in the client** (2026-10-25, the user's report, then a filmed ride at the 10.5 camera): the shaft walls had gone see-through and aliens showed through them. Two fixes were made (7bdd5f5). The lift's models never fade (`OccludingOpacity 1`), and aliens are no longer drawn as silhouettes through walls (`Occlusion Hide`). The walkways' floor showed as grey slabs running out to the walls, so the drop over them is now plain black, and the haze lies only deep down. Frames at 10, 68 and 132 m show both walls solid and red-lit, with black drops either side of the platform.
+
+**Checked against the map, entity by entity (2026-10-25).** Every output of `relay_lift_but_succeed`, the walls' five `path_track`s, `elevator_walls_end` and `relay_block_elevator_exit` was read from `asi-jac1-landingbay_02.bsp`. The SDK (`asw_env_slomo.cpp`, `asw_gamerules.cpp`) was read for the slow motion.
+
+| AS | When | Port |
+|---|---|---|
+| `relay_block_elevator_entrance`: the ramp closes, the big doors shut, the clip goes on | 0 s | Same |
+| `ElevatorButtonSound` (bigelevatoractivate) | 0 s | The console's click |
+| `ElevatorStartSound` (elevator_large_start1) | 1 s | A stock lift sound |
+| `shake_elevator_start` (amplitude 4, 1 s), `part_lift_start_dust`, a motor spark | 2 s | Same: shake 0.2 for 1 s, the dust |
+| `lift_motor_sparks` | 2.5 to 5 s | Same |
+| `FreightElevatorWalls` start at 25 u/s over 2,655 u; `light_spin_ele_top` (amber 249,192,0) off; `light_spin_ele_0` (red 249,0,0) on; the move loop | 3 s | Same; the loop is a stock rumble |
+| `lift_rail_sparks`, thinning at 4, 6 and 9 s | 3 to 16.5 s | Same |
+| `ElevatorMusic` (asw_song.elevatorMusic) | 4 s | A stock battle loop |
+| `timer_elevator_spawn` (2 to 3.5 s), `timer_elevator_crawlers_1` (1.5 to 2 s) | 15 s | Same |
+| `ElevatorSlomo`: env_slomo, duration 16, which is `StartStim(16)`: the whole game at 0.35 for 16 game seconds | 16 s | **Fixed today.** It was a 0.9 s dip to Slower; now it is a 16 s adrenaline stim (`as_slowMo`) |
+| `ins_para_spawn` (Insane only) | 17 s | Same |
+| `ElevatorCamera` (point_camera) on | 15 s | Nothing: it feeds a monitor texture, and the player's view is unchanged |
+| path 13/35/57/75%: the red beacon handed down `light_spin_ele_1`..`4`; Insane parasites at 13% and 57% (+5 s); the crawler timer off at 75% | path events | Same (logged in run d7ef552de590) |
+| `elevator_walls_end`: red off, `light_spin_ele_bottom` (amber) on, loop off, stop sound, `shake_elevator_stop` (amplitude 12, 2 s), exit lamps chasing 0.3 s apart for good, `ExitSpawner` on, `ins_para_spawn4` at 0.5 s, the groups and spawn timer off at 5 s | arrival | Same. **Fixed today:** the stop shake is three times the start's (0.6) |
+| `relay_block_elevator_exit`: the ramp opens; its clip goes 2 s later | arrival +1 s, walkable +3 s | **Fixed today:** it was walkable at +2 s; now the doors part from +1.3 s and it opens at +3 s |
+| `commander_choreo_m1_ob3` (scene `co_m1_ob6`) | arrival +5 s | Not ported: AS has no caption for co_m1_ob6 in any language, so there is no text to show |
+| `fog_elevator` (43,37,32, density 0.9) in the shaft | the ride | The haze mesh in the drop and the drifting haze over the deck, with the `ASLiftRide` light preset. SC2's own fog in this colour, during the ride only, is being tried in the client |
+
+**Seen in the client, after those fixes** (2026-10-25, an `-Auto --start 1` build of the working tree):
+- Pressed at t=69.1 with four aboard.
+- The slow motion came at t=85.1, exactly 16 s later. The blue adrenaline tint came on as the first drones landed. From the log's clock against the wall clock, script time ran 1:1 until then. The next 22.8 s of it took 54 real seconds, so the 16 s stim ran at about 0.34, AS's 0.35.
+- Six crawlers dropped.
+- The lift arrived after 106.3 s of travel at t=178.3, and the exit opened at t=181.3 (3.0 s).
+- Cargo Elevator was complete in 187.3 s, with no script error log.
+
+Still not AS's: the sounds and music are stock SC2 stand-ins, since Valve's files can't be shipped. The commander's lines at the lift (`co_m1_ob7`, `co_m1_ob8`) are written for the port; AS has no captions for them.
 
 1. Replace `tools/cargo.py` with the traced map: the nine real rooms, real heights and a 7×6.6-cell lift.
 2. Rebuild the route and set pieces in AS's order: the double door, the orange catwalk hall, the security door, the fire shaft, the glass gallery with its window spawners, the burrow rooms, the pipe puzzle, the yard cache and the lift.

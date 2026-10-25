@@ -257,8 +257,8 @@ ONS = [
     # The console (trigger_lift_button): pressing it is the objective; the lift starts if the squad is aboard.
     ('pressed:lift', 'complete', 'elevator', 0.0), ('pressed:lift', 'liftbutton', '', 0.0),
     # The ride (relay_lift_but_succeed, from the press that starts it): the elevator's music, fifteen seconds in the
-    # swarm starts dropping onto the platform and climbing down the walls, a breath of slow motion as the first land,
-    # and on Insane the parasites.
+    # swarm starts dropping onto the platform and climbing down the walls, a second later 16 s of slow motion
+    # (ElevatorSlomo, an adrenaline stim for everyone), and on Insane the parasites.
     ('ride:go', 'musicloop', 'Ambience_CharDistantBattle', 4.0),
     ('ride:go', 'enable', 'timer_elevator_spawn', 15.0), ('ride:go', 'enable', 'timer_elevator_crawlers_1', 15.0),
     ('ride:go', 'slomo', '', 16.0), ('ride:go', 'spawn', 'ins_para_spawn', 17.0),

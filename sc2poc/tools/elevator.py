@@ -366,7 +366,7 @@ def tex_cage(w=64, h=64):
 def textures():
     t = {'asdoor': tex_asdoor(), 'doorseam': tex_seam(), 'gate': tex_gate(),
          'lift_deck': tex_deck(), 'bridge': tex_bridge(), 'door': tex_door(), 'wall_window': tex_window(),
-         'void': tex_void(), 'voidveil': tex_veil(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None),
+         'void': tex_void(), 'voidtop': (Image.new('RGB', (16, 16), (0, 0, 0)), None), 'voidveil': tex_veil(), 'rail': (Image.new('RGB', (16, 16), (150, 118, 34)), None),
          'shaftwall': tex_shaftwall(), 'shaftpipe': tex_pipe(), 'liftceil': tex_ceil(), 'liftframe': tex_frame(),
          'flange': tex_solid((150, 40, 28), 261), 'conduit': tex_solid((190, 150, 40), 263, 32, 0.15),
          'cable': tex_solid((26, 26, 26), 265, 32, 0.1), 'liftrail': tex_rail(), 'liftconsole': tex_solid((58, 62, 66), 267),
@@ -574,7 +574,8 @@ def meshes(lift, notch, bridge_in, bridge_out, void, console, deck=None, depth=0
     for name, (x0, y0, x1, y1) in (('EBridge', bridge_in),):
         m = out[name] = ShipModel(name, (0, 0, 0))
         hx, hy = (x1 - x0) / 2, (y1 - y0) / 2
-        m.quad(('bridge', False, 0), (-hx, -hy, 0.03), (hx, -hy, 0.03), (hx, hy, 0.03), (-hx, hy, 0.03), [(0, 1), (1, 1), (1, 0), (0, 0)])
+        # Over the drop's haze, which lies on the floor under the bridges (the EVoid mesh below).
+        m.quad(('bridge', False, 0), (-hx, -hy, 0.07), (hx, -hy, 0.07), (hx, hy, 0.07), (-hx, hy, 0.07), [(0, 1), (1, 1), (1, 0), (0, 0)])
         _box(m, ('rail', False, 0), -hx, -hy, 0.0, hx, -hy + 0.12, 0.25)
         _box(m, ('rail', False, 0), -hx, hy - 0.12, 0.0, hx, hy, 0.25)
     x0, y0, x1, y1 = lift
@@ -604,20 +605,27 @@ def meshes(lift, notch, bridge_in, bridge_out, void, console, deck=None, depth=0
     # AS's fog_elevator has it.
     vx0, vy0, vx1, vy1 = void
     m = out['EVoid'] = ShipModel('EVoid', (cx, cy, 0))
+    def on_lift(x, y):
+        return (x0 <= x < x1 and y0 <= y < y1) or (nx0 <= x < nx1 and ny0 <= y < ny1)
     def solid(x, y):
-        inside = vx0 <= x < vx1 and vy0 <= y < vy1
-        on_lift = (x0 <= x < x1 and y0 <= y < y1) or (nx0 <= x < nx1 and ny0 <= y < ny1)
+        # Deck as the terrain has it: the bridges' cells are walkable floor at the deck's height, so the terrain
+        # under them runs flat across the drop to the walls. The void's cover lies over them too, so in the ride
+        # the gaps either side of the platform read as the drop and not as a floor the walls slide through.
         if deck is None:
-            return not inside or on_lift
-        return on_lift or (not inside and 0 <= y < deck.shape[0] and 0 <= x < deck.shape[1] and deck[y, x])
+            return not (vx0 <= x < vx1 and vy0 <= y < vy1) or on_lift(x, y)
+        return on_lift(x, y) or (0 <= y < deck.shape[0] and 0 <= x < deck.shape[1] and deck[y, x])
     def vz(x, y):
         return 0.02 if any(solid(xx, yy) for xx in (x - 1, x) for yy in (y - 1, y)) else -depth + 0.12
     for y in range(vy0, vy1):
         for x in range(vx0, vx1):
-            if solid(x, y):
+            if on_lift(x, y):
                 continue
             c = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)]
-            m.quad(('void', False, NO_SHADOW_CAST), *[(px, py, vz(px, py)) for px, py in c],
+            zs = [vz(px, py) for px, py in c]
+            # Where the terrain rises to the deck (the bridges' floor and the slopes off it) the haze would glow
+            # as a flat floor at the deck's height: there the drop is plain black, the haze only lies deep down.
+            key = ('void', False, NO_SHADOW_CAST) if max(zs) < 0 else ('voidtop', False, UNLIT)
+            m.quad(key, *[(px, py, z) for (px, py), z in zip(c, zs)],
                    [((px - vx0) / (vx1 - vx0), (vy1 - py) / (vy1 - vy0)) for px, py in c])
     if depth > 0:
         for k, z in enumerate((-0.35 * depth, -0.65 * depth)):

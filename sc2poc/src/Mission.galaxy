@@ -437,20 +437,14 @@ void AS_LiftSparks (fixed t) {
     }
 }
 
-// AS's env_slomo: the moment the first wave lands on the deck, time slows for a breath, then snaps back.
+// AS's env_slomo (ElevatorSlomo, duration 16): an adrenaline stim for everyone (asw_env_slomo.cpp calls StartStim),
+// so the whole game runs at asw_stim_time_scale 0.35 for 16 game seconds as the swarm first comes for the platform.
 bool as_slomoDone;
-fixed as_slomoEnd;
-int as_slomoSpeed;
 void AS_Slomo () {
     if(as_slomoDone) {return;}
-    as_slomoDone=true;as_slomoSpeed=GameGetSpeedValue();
-    GameSetSpeedValue(c_gameSpeedSlower);as_slomoEnd=as_now+0.9;
-    AS_Log("slomo: speed "+IntToString(as_slomoSpeed)+" -> "+IntToString(GameGetSpeedValue()));
-}
-void AS_SlomoEnd () {
-    if(as_slomoEnd<=0.0) {return;}
-    as_slomoEnd=0.0;GameSetSpeedValue(as_slomoSpeed);
-    AS_Log("slomo over: speed "+IntToString(GameGetSpeedValue()));
+    as_slomoDone=true;
+    as_slowMo=MaxF(as_slowMo,as_now+16.0);AS_HudSlowMo(true);
+    AS_Log("slomo: adrenaline for 16 s");
 }
 // The shaft's brown haze (AS's landingbay_lift_fog_volume) drifting over the deck while it runs.
 void AS_LiftHaze () {
@@ -542,17 +536,17 @@ void AS_RideMove () {
         if(as_tick%32==0) {AS_ShakeAll(0.03,2.1);}
         if(as_now>=as_steamNext) {as_steamNext=as_now+RandomFixed(2.0,4.5);AS_LiftSteam();}
         if(as_tick%20==0) {AS_LiftHaze();}
-        if(as_slomoEnd>0.0 && as_now>=as_slomoEnd) {AS_SlomoEnd();}
         AS_RidePass();
         if(as_scroll>=AS_RIDE_LEN-0.0001) {AS_RideArrive();}
     }
     else if(as_ride==3) {
         t=as_now-as_rideAt;
-        // At the bottom: the exit's doors part, its ramp runs out over the drop and can be walked at 2 s.
-        for(k=0;k<2;k+=1) {AS_LeafSet(as_gateOut[k],1,k,AS_Clamp((t-0.3)/1.4,0.0,1.0),as_segU[as_shOut]);}
-        q=Point((IntToFixed(as_brOut[0])+IntToFixed(as_brOut[2]))*0.5+2.2*(1.0-AS_Clamp((t-0.8)/1.0,0.0,1.0)),(IntToFixed(as_brOut[1])+IntToFixed(as_brOut[3]))*0.5);
-        if(t>=0.8) {libNtve_gf_ShowHideUnit(as_bridgeOut,true);UnitSetPosition(as_bridgeOut,q,true);}
-        if(t>=2.0) {
+        // At the bottom (relay_block_elevator_exit, a second after the walls stop): the exit's doors part, its ramp
+        // runs out over the drop, and its clip goes 2 s after that, so it can be walked at 3 s.
+        for(k=0;k<2;k+=1) {AS_LeafSet(as_gateOut[k],1,k,AS_Clamp((t-1.3)/1.4,0.0,1.0),as_segU[as_shOut]);}
+        q=Point((IntToFixed(as_brOut[0])+IntToFixed(as_brOut[2]))*0.5+2.2*(1.0-AS_Clamp((t-1.8)/1.0,0.0,1.0)),(IntToFixed(as_brOut[1])+IntToFixed(as_brOut[3]))*0.5);
+        if(t>=1.8) {libNtve_gf_ShowHideUnit(as_bridgeOut,true);UnitSetPosition(as_bridgeOut,q,true);}
+        if(t>=3.0) {
             as_ride=4;
             AS_SetCell(as_brOut[0],as_brOut[1],as_brOut[2],as_brOut[3],false);
             for(k=2;k<4;k+=1) {if(as_brBlock[k]!=null) {UnitRemove(as_brBlock[k]);as_brBlock[k]=null;}}
@@ -576,7 +570,8 @@ void AS_RideArrive () {
     as_ride=3;as_rideAt=as_now;as_rideStep=4;AS_Fire("ride:end");
     AS_Log("lift arrived after "+FixedToString(as_rideClock,1)+" s, exit segment "+IntToString(as_segKind[as_shOut])+" at "+FixedToString(as_segU[as_shOut],2));
     AS_ShaftSet(AS_RIDE_LEN);
-    AS_ShakeAll(0.4,2.0);
+    // shake_elevator_stop: three times shake_elevator_start's amplitude (12 against 4), for 2 s.
+    AS_ShakeAll(0.6,2.0);
     AS_AllSound("Event_Space02_CameraQuake");
     // The red goes out; the bottom's amber beacon comes on by the exit, and the level's own light comes back.
     AS_LiftLighting(false);
@@ -773,7 +768,7 @@ void AS_MissionInit () {
     as_scroll=0.0;as_ride=0;as_rideStep=0;as_rideGo=0.0;as_rideAt=0.0;as_boardAt=0.0;as_denyAt=0.0;as_rideWave=0;as_rideClock=0.0;
     as_ridePct[0]=0;as_ridePct[1]=13;as_ridePct[2]=35;as_ridePct[3]=57;as_ridePct[4]=75;
     for(k=0;k<3;k+=1) {as_railSpark[k]=0.0;}
-    as_slomoDone=false;AS_SlomoEnd();
+    as_slomoDone=false;
     as_lowerLevel=false;
     as_crumbHead= -1;as_crumbN=0;
     for(k=0;k<5;k+=1) {as_objState[k]=0;}
@@ -799,7 +794,7 @@ void AS_MissionClear () {
     int c;int k;
     AS_UnitGone(as_beacon);AS_UnitGone(as_beaconLight);as_beacon=null;as_beaconLight=null;
     AS_LiftClear();
-    as_camWide=0.0;as_camBiasY=0.0;AS_SlomoEnd();
+    as_camWide=0.0;as_camBiasY=0.0;
     as_zoneCount=0;
     AS_DoorsClear();AS_SpawnersClear();AS_TriggersClear();AS_UseClear();AS_BayClear();AS_GenClear();
 }
