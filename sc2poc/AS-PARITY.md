@@ -425,7 +425,7 @@ Status, 2026-10-24: steps 1 to 7 are built and pass the build's checks, not yet 
 | `elevator_walls_end`: red off, `light_spin_ele_bottom` (amber) on, loop off, stop sound, `shake_elevator_stop` (amplitude 12, 2 s), exit lamps chasing 0.3 s apart for good, `ExitSpawner` on, `ins_para_spawn4` at 0.5 s, the groups and spawn timer off at 5 s | arrival | Same. **Fixed today:** the stop shake is three times the start's (0.6) |
 | `relay_block_elevator_exit`: the ramp opens; its clip goes 2 s later | arrival +1 s, walkable +3 s | **Fixed today:** it was walkable at +2 s; now the doors part from +1.3 s and it opens at +3 s |
 | `commander_choreo_m1_ob3` (scene `co_m1_ob6`) | arrival +5 s | Not ported: AS has no caption for co_m1_ob6 in any language, so there is no text to show |
-| `fog_elevator` (43,37,32, density 0.9) in the shaft | the ride | The haze mesh in the drop and the drifting haze over the deck, with the `ASLiftRide` light preset. SC2's own fog in this colour, during the ride only, is being tried in the client |
+| `fog_elevator` (43,37,32, density 0.9) in the shaft | the ride | The haze mesh in the drop and the drifting haze over the deck, with the `ASLiftRide` light preset. SC2's own fog was tried in this colour during the ride (densities 0.3 and 0.6, 2026-10-25) and dropped. It is height fog, so it greyed the whole picture, deck and marines included, and the red light went with it; blood and acid decals drew as black shapes. AS's fog is by distance (256 to 4,000 units), so at the camera's 412 the deck is barely touched and only the far shaft browns, which is what the haze in the drop gives |
 
 **Seen in the client, after those fixes** (2026-10-25, an `-Auto --start 1` build of the working tree):
 - Pressed at t=69.1 with four aboard.
