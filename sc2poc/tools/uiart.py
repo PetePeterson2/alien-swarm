@@ -145,6 +145,16 @@ def pip(on, n=16):
     return finish(im, n, n)
 
 
+def hurt_mark(n=64):
+    """The damage indicator's mark (src/HUD.galaxy AS_HurtDirPulse): a soft red blot set out from the screen's middle
+    toward where a hit came from, as AS's asw_hud_damageindicator shows it."""
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+    r = np.hypot(xx - (n - 1) / 2, yy - (n - 1) / 2) / (n / 2)
+    a = np.clip(1 - r, 0, 1) ** 1.4
+    rgb = np.dstack([np.full_like(a, 255), 70 + 120 * a ** 3, 50 + 90 * a ** 3])
+    return Image.fromarray(np.dstack([rgb, 255 * a]).astype(np.uint8), 'RGBA')
+
+
 def padlock(n=64):
     im, d = draw_big(n, n)
     d.arc(S([(18, 8), (46, 36)]), 180, 360, fill=WHITE, width=5 * SS)
@@ -329,6 +339,7 @@ def textures():
     t['icon_mail'] = icon_mail()
     for key, style in MARINE_LOOKS.items():
         t['face_m_' + key] = marine_portrait(style)
+    t['hurtmark'] = hurt_mark()
     t['pip1'] = pip(True)
     t['pip0'] = pip(False)
     t['padlock'] = padlock()

@@ -554,12 +554,18 @@ def _posed(model, seq_name, t):
     pos = raw[:, 0:12].copy().view('<f4').astype(float)
     nrm = raw[:, 20:23].astype(float) / 255 * 2 - 1
     uv = raw[:, 24:28].copy().view('<i2').astype(float) / 2048
-    bone = np.asarray(model.boneLookup)[raw[:, 16]]
+    # Up to four (bone, weight) pairs a vertex (tools/marine.py blends across joints; the ripper uses one).
+    bones = np.asarray(model.boneLookup)[raw[:, 16:20]]
+    weights = raw[:, 12:16].astype(float) / 255
+    skin = np.asarray(skin)
     out_p = np.zeros_like(pos); out_n = np.zeros_like(nrm)
-    for b in np.unique(bone):
-        sel = bone == b
-        out_p[sel] = pos[sel] @ skin[b][:3, :3].T + skin[b][:3, 3]
-        out_n[sel] = nrm[sel] @ skin[b][:3, :3].T
+    for k in range(4):
+        w = weights[:, k:k + 1]
+        if not w.any():
+            continue
+        mat = skin[bones[:, k]]
+        out_p += w * (np.einsum('nij,nj->ni', mat[:, :3, :3], pos) + mat[:, :3, 3])
+        out_n += w * np.einsum('nij,nj->ni', mat[:, :3, :3], nrm)
     return out_p @ TURN, (out_n / np.linalg.norm(out_n, axis=1, keepdims=True)) @ TURN, uv
 
 

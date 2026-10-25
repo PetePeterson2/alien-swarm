@@ -11,8 +11,11 @@
 // at all locks it shut; the welder adds seal with its primary fire and cuts it
 // with its secondary, at 0.6 s a second, or the best Engineering aura of a marine
 // within 300 units (0.8 + 0.5 a point: Crash 1.3, Vegas 2.3). A normal door has
-// 1800 health (2400 reinforced); a drone's swipe does 30, cut by up to 60% as the
-// seal grows. Below a third of its health a door is dented shut; at none it falls.
+// 1800 health (2400 reinforced); a drone's swipe does twice its claws (30), cut by up to
+// 60% as the seal grows; marines' rounds count too, buckshot at 0.42, and blasts twice
+// over (asw_door.cpp 1163-1205). Below 66% it is dented, below 33% dented shut
+// (1270-1290); at none it falls, crushing what is under it for 1000 (on Hard and up
+// marines too: 1926-1990, asw_marine.cpp 1092).
 // =====================================================================
 
 const int AS_DOORS = 24;
@@ -28,6 +31,8 @@ int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed, 4 gap (
 bool[24] as_drLocked;
 fixed[24] as_drSeal;
 fixed[24] as_drHp;
+fixed[24] as_drFromX;              // where the last blow came from: a door falls away from it
+fixed[24] as_drFromY;
 fixed[24] as_drOpen;               // 0 shut .. 1 open
 bool[24] as_drBroken;
 fixed[24] as_drHold;               // stays open until then
@@ -251,18 +256,52 @@ void AS_DoorTagPulse (int i) {
     }
     else {TextTagSetText(as_drTag[i],StringToText(s));}
 }
-// A drone's swipe at a shut door: 30, less as the weld grows.
+// A drone's swipe at a shut door: twice its claws, less as the weld grows.
 void AS_DoorHit (int i, fixed dmg, fixed fromX, fixed fromY) {
-    fixed before=as_drHp[i];
     if(as_drKind[i]==AS_DOOR_GLASS && !as_drBroken[i]) {AS_DoorShatter(i);return;}
     if(as_drBroken[i] || as_drOpen[i]>0.45 || as_drKind[i]>=3) {return;}
-    dmg*=1.0-(as_drSeal[i]/AS_SEAL_FULL)*0.6;
-    as_drHp[i]-=dmg;
     AS_Sound("Ultralisk_AttackImpact",AS_DoorCX(i),AS_DoorCY(i),75.0,0.25);
     if(RandomInt(0,2)==0) {AS_Fx("ASFxSpark",AS_DoorCX(i)+RandomFixed(-0.5,0.5),AS_DoorCY(i)+RandomFixed(-0.5,0.5),RandomFixed(0.6,1.8),RandomFixed(0.0,360.0));}
+    AS_DoorHarm(i,dmg,fromX,fromY);
+}
+// Harm to a door from anything: the weld takes up to 60% of it; the dents show at 66% and 33%.
+void AS_DoorHarm (int i, fixed dmg, fixed fromX, fixed fromY) {
+    fixed before=as_drHp[i];
+    if(as_drBroken[i] || as_drKind[i]>=3 || dmg<=0.0) {return;}
+    dmg*=1.0-(as_drSeal[i]/AS_SEAL_FULL)*0.6;
+    as_drHp[i]-=dmg;as_drFromX[i]=fromX;as_drFromY[i]=fromY;
+    if(as_drLeaf[i]!=null) {
+        if(before>=AS_DOOR_HP*0.66 && as_drHp[i]<AS_DOOR_HP*0.66) {ActorSend(libNtve_gf_MainActorofUnit(as_drLeaf[i]),"SetTintColor 175,165,150");AS_Sound("Doodad_SecurityGateDiagonalImpact",AS_DoorCX(i),AS_DoorCY(i),60.0,0.0);}
+        if(before>=AS_DOOR_HP/3.0 && as_drHp[i]<AS_DOOR_HP/3.0) {ActorSend(libNtve_gf_MainActorofUnit(as_drLeaf[i]),"SetTintColor 120,110,100");AS_Sound("Doodad_SecurityGateDiagonalImpact",AS_DoorCX(i),AS_DoorCY(i),80.0,0.0);}
+    }
     // The door's health falls below 40%: the lesson to destroy it ourselves would come up in AS; ours warns.
     if(before>=AS_DOOR_HP*0.4 && as_drHp[i]<AS_DOOR_HP*0.4) {AS_DoorWarn(i);}
     if(as_drHp[i]<=0.0) {AS_DoorBreak(i);}
+}
+// The shut door a point lies in, -1 none.
+int AS_DoorAtPoint (fixed x, fixed y) {
+    int i;
+    for(i=0;i<as_drN;i+=1) {
+        if(!as_drShut[i] || as_drBroken[i] || as_drKind[i]>=3) {continue;}
+        if(x>=IntToFixed(as_drX0[i])-0.3 && x<=IntToFixed(as_drX1[i])+0.3 && y>=IntToFixed(as_drY0[i])-0.3 && y<=IntToFixed(as_drY1[i])+0.3) {return i;}
+    }
+    return -1;
+}
+// A marine's round into a shut door: buckshot does 0.42 of it (asw_door.cpp 1163-1205); a kick does nothing.
+void AS_ShotDoor (int p, fixed x, fixed y, fixed dmg) {
+    int i=AS_DoorAtPoint(x,y);int w=as_slot[p];
+    if(i<0) {return;}
+    if(w==AS_IT_SHOTGUN || w==AS_IT_VINDICATOR) {dmg*=0.42;}
+    AS_DoorHarm(i,dmg,PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])));
+}
+// A blast reaching a shut door does it twice the harm (asw_gamerules.cpp 121, 4482).
+void AS_DoorBlast (fixed x, fixed y, fixed radius, fixed dmg) {
+    int i;fixed d;
+    for(i=0;i<as_drN;i+=1) {
+        if(!as_drShut[i] || as_drBroken[i] || as_drKind[i]>=3) {continue;}
+        d=DistanceBetweenPoints(Point(x,y),Point(AS_DoorCX(i),AS_DoorCY(i)))-AS_DoorWidth(i)*0.5;
+        if(d<radius) {AS_DoorHarm(i,2.0*dmg*(1.0-0.5*MaxF(0.0,d)/radius),x,y);}
+    }
 }
 void AS_DoorWarn (int i) {
     int p;
@@ -282,9 +321,28 @@ void AS_DoorBreak (int i) {
     if(as_drLeaf[i]!=null) {UnitRemove(as_drLeaf[i]);as_drLeaf[i]=null;}
     if(as_drSeam[i]!=null) {UnitRemove(as_drSeam[i]);as_drSeam[i]=null;}
     AS_DoorShut(i,false);as_drOpen[i]=1.0;
+    AS_DoorCrush(i);
     AS_Log("door broken: "+as_drName[i]);
     AS_AllMsg("<c val=\"FF6050\">Door breached!</c>");
     AS_MissionDoorBroken(as_drName[i]);
+}
+// The door falls away from the blow that broke it, through a hull 120 units wide over 80: 1000 to every alien
+// under it, and to marines on Hard and up (asw_door.cpp 1926-1990, asw_marine.cpp 1092).
+void AS_DoorCrush (int i) {
+    fixed cx=AS_DoorCX(i);fixed cy=AS_DoorCY(i);fixed hw=AS_DoorWidth(i)*0.5;fixed dir=1.0;int j;fixed ax;fixed ay;point q;
+    if(as_drAcross[i]) {if(as_drFromY[i]>cy) {dir= -1.0;}}else {if(as_drFromX[i]>cx) {dir= -1.0;}}
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]==null || AS_IsThing(as_aKind[j])) {continue;}
+        ax=as_aX[j]-cx;ay=as_aY[j]-cy;
+        if(as_drAcross[i] && AbsF(ax)<hw && ay*dir>=0.0 && ay*dir<1.75) {AS_HurtAlien(j,1000.0,0,0,cx,cy);}
+        else if(!as_drAcross[i] && AbsF(ay)<hw && ax*dir>=0.0 && ax*dir<1.75) {AS_HurtAlien(j,1000.0,0,0,cx,cy);}
+    }
+    if(as_skill<3) {return;}
+    for(j=1;j<=AS_PLAYERS;j+=1) {
+        if(!AS_Person(j) || !as_alive[j]) {continue;}
+        q=UnitGetPosition(as_m[j]);ax=PointGetX(q)-cx;ay=PointGetY(q)-cy;
+        if((as_drAcross[i] && AbsF(ax)<hw && ay*dir>=0.0 && ay*dir<1.75) || (!as_drAcross[i] && AbsF(ay)<hw && ax*dir>=0.0 && ax*dir<1.75)) {AS_HurtMarine(j,1000.0,cx,cy,0.0);}
+    }
 }
 // A window gives way: the pane gone, glass and sparks blown out, the crash, a shudder; open for good.
 void AS_DoorShatter (int i) {

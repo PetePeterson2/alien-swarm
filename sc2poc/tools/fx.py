@@ -93,6 +93,10 @@ def beam(tris, half, drop):
     quad(tris, (0, 0, -half), (0, -1, -drop - half), (0, -1, -drop + half), (0, 0, half), ((0, 0), (1, 0), (1, 1), (0, 1)))
 
 
+RET_SEGS = 24                      # the clip ring's segments (src/Marine.galaxy AS_ReticlePulse)
+RET_WINDOWS = (6, 9, 12)           # fast-reload window arcs, in hundredths of the ring
+
+
 def sprite(tris, r=0.5):
     quad(tris, (-r, 0, r), (r, 0, r), (r, 0, -r), (-r, 0, -r))
     quad(tris, (0, -r, r), (0, r, r), (0, r, -r), (0, -r, -r))
@@ -191,6 +195,18 @@ def build():
     save('scorch.dds', 255 * (1 - soot[..., None] * (1 - np.array((0.16, 0.14, 0.13)))[None, None]))
     # The camera's anchor (src/Marine.galaxy as_camAnchor): black added to the picture draws nothing.
     save('anchor.dds', np.zeros((8, 8, 3)))
+    # Alien Swarm's clip ring round the crosshair (asw_hud_crosshair.cpp): RET_SEGS segments clockwise from the
+    # top, as many lit as the clip's share left (and, tinted, the reload's progress); the rest faint.
+    clock = np.mod(90.0 + np.degrees(ang), 360.0)       # v runs down the texture: this is clockwise from the top
+    k = np.floor(clock / (360.0 / RET_SEGS)); gap = np.abs(np.mod(clock, 360.0 / RET_SEGS) - 180.0 / RET_SEGS) < 180.0 / RET_SEGS - 2.2
+    band = np.clip(1 - np.abs(r - 0.84) / 0.09, 0, 1) ** 0.7 * gap
+    for n in range(RET_SEGS + 1):
+        g = band * np.where(k < n, 1.0, 0.2)
+        save('ret%02d.dds' % n, np.dstack([255 * g, 255 * g, 255 * g]))
+    # The fast-reload window: a brighter, wider arc from the top clockwise over its share of the ring.
+    for w in RET_WINDOWS:
+        g = np.clip(1 - np.abs(r - 0.84) / 0.15, 0, 1) ** 0.6 * (clock <= 360.0 * w / 100.0)
+        save('retwin%d.dds' % w, np.dstack([120 * g, 255 * g, 150 * g]))
     models = {}
     t = []; streak(t, 0.035); models['Tracer'] = (t, 'tracer.dds')
     # The laser runs along the unit's facing (a model's -Y), from the muzzle down to the deck at its far end
@@ -209,6 +225,10 @@ def build():
         t = []; quad(t, (-1, 1, .034), (1, 1, .034), (1, -1, .034), (-1, -1, .034)); models['SplatGlow%d' % k] = (t, 'splatglow%d.dds' % k, ADD)
     t = []; quad(t, (-1, 1, .028), (1, 1, .028), (1, -1, .028), (-1, -1, .028)); models['Scorch'] = (t, 'scorch.dds', MULTIPLY)
     t = []; quad(t, (-.01, .01, 0), (.01, .01, 0), (.01, -.01, 0), (-.01, -.01, 0)); models['Anchor'] = (t, 'anchor.dds')
+    for n in range(RET_SEGS + 1):
+        t = []; quad(t, (-.32, .32, .05), (.32, .32, .05), (.32, -.32, .05), (-.32, -.32, .05)); models['Ret%02d' % n] = (t, 'ret%02d.dds' % n)
+    for w in RET_WINDOWS:
+        t = []; quad(t, (-.32, .32, .055), (.32, .32, .055), (.32, -.32, .055), (-.32, -.32, .055)); models['RetWin%d' % w] = (t, 'retwin%d.dds' % w)
     for name, spec in models.items():
         tris, tex = spec[0], spec[1]
         blend = spec[2] if len(spec) > 2 else ADD

@@ -9,3 +9,6 @@ sc2poc/dist/meshes/
 
 # Alien Swarm reference captures (local only: the clips are large)
 sc2poc/dist/asref/*.webp
+
+# Local secrets (API keys)
+.env

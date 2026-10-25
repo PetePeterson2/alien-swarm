@@ -85,7 +85,9 @@ void AS_GunShow (int p) {
     a=libNtve_gf_MainActorofUnit(as_m[p]);
     ActorSend(a,"ModelSwap ASMarine"+as_gunName[g]);
     ActorSend(a,"SetTintColor "+AS_SuitTint(p));
-    as_walking[p]=false;
+    // The swap can land after the next step's AnimPlay and drop it, leaving the legs still while the script thinks
+    // they run: start the walk now and once more when the new model is surely in.
+    as_walking[p]=false;as_walkAgain[p]=as_now+0.3;
     AS_Log("p"+IntToString(p)+" shows the "+as_gunName[g]+" (muzzle "+FixedToString(as_gunFwd[g],2)+" ahead)");
 }
 // A gun carries the laser sight; a chainsaw or a case in hand has none.
@@ -192,7 +194,7 @@ void AS_MarineSpawn (int p) {
         UnitCreate(1,"ASFxLaser",c_unitCreateIgnorePlacement,0,q,as_aim[p]);as_laser[p]=UnitLastCreated();
         UnitCreate(1,"ASFxLaserDot",c_unitCreateIgnorePlacement,0,q,0.0);as_laserDot[p]=UnitLastCreated();
         UnitCreate(1,"ASFxLaserDot",c_unitCreateIgnorePlacement,0,q,0.0);as_laserFlare[p]=UnitLastCreated();
-        UnitSetScale(as_laserFlare[p],45.0,45.0,45.0);
+        UnitSetScale(as_laserFlare[p],45.0,45.0,45.0);as_laserA[p]=1.0;as_laserDotA[p]=1.0;
         UnitSetHeight(as_torch[p],1.25,0.0);UnitSetHeight(as_glow[p],1.9,0.0);UnitSetHeight(as_muzzle[p],0.75,0.0);UnitSetHeight(as_laser[p],AS_GUN_Z,0.0);
         UnitSetHeight(as_laserDot[p],0.035,0.0);
         UnitSetScale(as_glow[p],45.0,45.0,45.0);
@@ -228,6 +230,8 @@ void AS_CameraMode (int p, int mode, fixed blend) {
     unit u=AS_ViewUnit(p);
     as_view[p]=mode;
     if(as_bot[p] && !(as_auto && p==1)) {return;}
+    // The death camera has the view: it hands it back when its hold is up (src/Moments.galaxy).
+    if(as_dcUntil[p]>0.0) {return;}
     // The top-down camera follows its anchor (the marine plus the lean); watching a squadmate, it does not lean (as AS).
     if(mode==0 && u==as_m[p] && as_camAnchor[p]!=null) {
         AS_LeanUpdate(p);
@@ -293,6 +297,7 @@ void AS_LeanUpdate (int p) {
 fixed[5] as_tpDist;
 void AS_Camera (int p) {
     fixed d;fixed yaw;point here;
+    if(as_dcUntil[p]>0.0) {return;}
     if(as_view[p]==0 && as_camUnit[p]==as_camAnchor[p] && as_camAnchor[p]!=null) {
         UnitSetPosition(as_camAnchor[p],PointWithOffset(UnitGetPosition(as_m[p]),as_leanX[p],as_leanY[p]+as_camBiasY),true);
         return;
@@ -321,14 +326,21 @@ void AS_KeyMove (int p, int k, bool down) {
 // Where the gun points: the cursor in the top-down view (kept as an offset from
 // the marine, because the camera follows the marine and a still mouse sends no
 // events), the camera's heading in the third-person view.
+// The marine turns toward the cursor at AS's 600 degrees a second, 300 while firing (asw_marine turn rate), and
+// every round, the laser and the melee leave along the way it faces now, not the cursor.
 void AS_AimUpdate (int p) {
-    fixed want;
-    if(as_view[p]==1) {as_aim[p]=CameraGetYaw(p);return;}
+    fixed want;fixed rate=600.0;fixed d;
+    if(as_view[p]==1) {as_aim[p]=CameraGetYaw(p);as_aimWant[p]=as_aim[p];return;}
     if(as_scrSeen[p] && !as_bot[p]) {AS_LeanUpdate(p);}
     if(!as_mouseSeen[p]) {return;}
     if(as_mouseDX[p]*as_mouseDX[p]+as_mouseDY[p]*as_mouseDY[p]<0.04) {return;}
     want=ATan2(as_mouseDY[p],as_mouseDX[p]);
-    as_aim[p]=want;
+    as_aimWant[p]=want;
+    if(as_trigger[p] || as_now-as_lastShot[p]<0.2) {rate=300.0;}
+    d=AS_AngleDiff(want,as_aim[p]);
+    if(AbsF(d)<=rate*AS_DT) {as_aim[p]=want;}
+    else if(d>0.0) {as_aim[p]+=rate*AS_DT;}
+    else {as_aim[p]-=rate*AS_DT;}
 }
 void AS_MouseMoved (int p, fixed wx, fixed wy) {
     point here;
@@ -357,6 +369,7 @@ string AS_WalkAnim (int d) {
 }
 void AS_Walk (int p, fixed rate) {
     actor a=libNtve_gf_MainActorofUnit(as_m[p]);fixed off;fixed b1;fixed b2;int d=0;
+    if(as_walkAgain[p]>0.0 && as_now>=as_walkAgain[p]) {as_walkAgain[p]=0.0;as_walking[p]=false;}
     if(rate<0.25) {
         if(as_walking[p]) {as_walking[p]=false;ActorSend(a,"AnimClear ASWalk");}
         return;
@@ -381,13 +394,19 @@ void AS_Walk (int p, fixed rate) {
 // and firing or reloading slows it further.
 fixed AS_MarineSpeed (int p) {
     fixed speed=AS_RUN*(290.0+10.0*IntToFixed(AS_Skill(p,AS_SK_AGILITY)))/290.0*AS_MarineSpeedScale();
-    int w=as_slot[p];
+    int w=as_slot[p];fixed after;
     if(w>=1 && w<=AS_ITEMS) {
         speed*=as_it[w].slowCarry;
-        if(as_now-as_lastShot[p]<0.15 || as_reloadEnd[p]>0.0) {speed*=as_it[w].slowFire;}
+        // The gun's own rule (ShouldMarineMoveSlow): most slow while firing and reloading; the shotguns, rail rifle,
+        // pistols and marksman rifle for a moment after each shot, only the vindicator of those while reloading too.
+        after=as_it[w].slowAfter;
+        if(after<=0.0) {after=MaxF(as_it[w].rate,AS_DT)+0.02;}
+        if(as_now-as_lastShot[p]<after || (as_reloadEnd[p]>0.0 && as_it[w].slowReload)) {speed*=as_it[w].slowFire;}
         else if(w==AS_IT_MINIGUN && as_spin[p]>0.3) {speed*=0.4/0.95;}
     }
     if(as_zoomScope[p]>0.5) {speed*=0.5;}
+    // The walk key: 180 units a second.
+    if(as_walkKey[p]) {speed=MinF(speed,AS_RUN*180.0/290.0);}
     return speed;
 }
 void AS_Move (int p) {
@@ -399,6 +418,8 @@ void AS_Move (int p) {
     if(as_key[p][0]) {f+=1.0;}if(as_key[p][2]) {f-=1.0;}
     if(as_key[p][3]) {s+=1.0;}if(as_key[p][1]) {s-=1.0;}
     if(f!=0.0 && s!=0.0) {f*=0.7071;s*=0.7071;}
+    // Stumbling or knocked down: no running until the marine is back on its feet.
+    if(as_downUntil[p]>as_now) {f=0.0;s=0.0;speed=0.0;}
     if(as_bot[p]) {wx=as_botVX[p]*speed;wy=as_botVY[p]*speed;}
     else if(as_view[p]==0) {wx=s*speed;wy=f*speed;}
     else {
@@ -455,9 +476,11 @@ void AS_Move (int p) {
 // SPACE: a quick roll the way the marine is moving (or aiming), clear of spit and bile.
 void AS_Roll (int p) {
     fixed dx=as_mvX[p];fixed dy=as_mvY[p];fixed d=SquareRoot(dx*dx+dy*dy);
-    if(!as_alive[p] || as_now<as_rollNext[p] || as_using[p]>=0) {return;}
+    if(!as_alive[p] || as_now<as_rollNext[p] || as_using[p]>=0 || as_downUntil[p]>as_now) {return;}
     if(d<0.3) {dx=Cos(as_aim[p]);dy=Sin(as_aim[p]);d=1.0;}
     as_rollX[p]=dx/d;as_rollY[p]=dy/d;as_rollUntil[p]=as_now+0.35;as_rollNext[p]=as_now+1.0;
+    // A roll throws away a reload in progress, unless it was already fast-reloaded.
+    if(as_reloadEnd[p]>0.0 && !as_fastOk[p]) {as_reloadEnd[p]=0.0;as_mag[p][as_slot[p]]=as_reloadMag[p];ActorSend(libNtve_gf_MainActorofUnit(as_m[p]),"AnimClear ASReload");}
     AS_Sound("Marine_Stimpack",PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])),50.0,0.2);
     AS_HintEvent("rolled",p);
 }
@@ -468,14 +491,23 @@ void AS_Face (int p) {
     UnitSetFacing(as_m[p],as_aim[p],AS_DT);
 }
 // Flashlight, personal light, laser sight and muzzle light ride with the marine.
-// The laser sight, as Alien Swarm's: from the muzzle along the aim, down to the deck where the cursor is,
-// stopping short at a bulkhead or the first alien in its way, with a glowing dot where it lands. It turns by
-// unit facing over the step, as the marine does, so the two stay together and both move smoothly.
+// The laser sight, as Alien Swarm's (c_asw_weapon.cpp SimulateLaserPointer): from the muzzle along the line the next
+// round will take (as_shotAim, after aim assist), flat at gun height, to the first bulkhead or alien within the
+// gun's laser range, with a glowing dot where it lands. It shows where the bullets go, not where the cursor is.
+// It fades almost out while firing and is off while reloading, swinging, changing guns or working a panel.
+// A squadmate's is a short faint stub, so the long beam on screen is a player's own. It turns by unit facing over
+// the step, as the marine does, so the two stay together and both move smoothly.
 const fixed AS_LASER_DROP = 0.52;
 fixed[5] as_laserZ;              // the height the laser ends at, eased
+// GetLaserPointerRange: 600 units for most guns, 360 for the shotguns, 280 for the flamer.
+fixed AS_LaserRange (int w) {
+    if(w==AS_IT_SHOTGUN || w==AS_IT_VINDICATOR) {return 4.5;}
+    if(w==AS_IT_FLAMER) {return 3.5;}
+    return 7.5;
+}
 void AS_Attachments (int p) {
     point here=UnitGetPosition(as_m[p]);fixed x=PointGetX(here);fixed y=PointGetY(here);fixed d;fixed c;fixed s;fixed t;fixed off;bool lit;int j;fixed endZ;
-    fixed aim=as_aim[p];
+    fixed aim=as_aim[p];fixed range;fixed a;fixed ad;bool hit;bool stub;
     if(as_lightOn[p]) {
         UnitSetPosition(as_torch[p],Point(x+Cos(aim)*0.3,y+Sin(aim)*0.3),true);UnitSetFacing(as_torch[p],aim,AS_DT);
         UnitSetPosition(as_glow[p],here,true);
@@ -485,21 +517,22 @@ void AS_Attachments (int p) {
     UnitSetPosition(as_muzzle[p],Point(as_muzX+Cos(aim)*0.1,as_muzY+Sin(aim)*0.1),true);
     lit=as_now-as_lastShot[p]<0.07 && as_slot[p]!=AS_IT_RAILGUN && as_slot[p]!=AS_IT_SNIPER && !AS_IsDeployable(as_slot[p]) && as_slot[p]!=AS_IT_HEALGUN && as_slot[p]!=AS_IT_CHAINSAW;
     if(lit!=as_muzzleOn[p]) {as_muzzleOn[p]=lit;libNtve_gf_ShowHideUnit(as_muzzle[p],lit);}
+    // The beam leaves along the assisted line; the marine and its gun keep facing the cursor.
+    aim=as_shotAim[p];
     c=Cos(aim);s=Sin(aim);
-    // Where the beam ends and at what height: on a bulkhead at gun height, on an alien at its body, or down on
-    // the deck under a player's cursor. The end height eases over a few steps, so the beam's slope never snaps.
-    d=AS_RayWall(as_muzX,as_muzY,aim,16.0);endZ=as_muzZ-0.04;
-    // A player's laser comes down to the deck under the cursor; a bot's runs on to what it hits.
-    if(as_view[p]==0 && as_mouseSeen[p] && (!as_bot[p] || (as_auto && p==1))) {
-        t=(x+as_mouseDX[p]-as_muzX)*c+(y+as_mouseDY[p]-as_muzY)*s;
-        if(MaxF(0.35,t)<d) {d=MaxF(0.35,t);endZ=0.03;}
-    }
+    stub=as_bot[p] && !(as_auto && p==1);
+    range=AS_LaserRange(as_slot[p]);
+    if(stub) {range=1.25;}
+    // Where the beam ends and at what height: on a bulkhead at gun height, on an alien at its body, or in the air
+    // at the end of its range. The end height eases over a few steps, so the beam's slope never snaps.
+    d=AS_RayWall(as_muzX,as_muzY,aim,range);endZ=as_muzZ-0.04;
+    hit=d<range-0.05;
     for(j=0;j<AS_MAXALIEN;j+=1) {
         if(as_a[j]==null || as_aKind[j]==AS_BIOMASS) {continue;}
         t=(as_aX[j]-as_muzX)*c+(as_aY[j]-as_muzY)*s;
-        if(t<=0.0 || t>=d) {continue;}
+        if(t<=0.0 || t>=d+as_aRadius[j]*0.5) {continue;}
         off=AbsF((as_aX[j]-as_muzX)*s-(as_aY[j]-as_muzY)*c);
-        if(off<as_aRadius[j]*0.8) {d=MaxF(0.2,t-as_aRadius[j]*0.5);endZ=MinF(as_muzZ-0.04,0.45);}
+        if(off<as_aRadius[j]*0.8) {d=MaxF(0.2,t-as_aRadius[j]*0.5);endZ=MinF(as_muzZ-0.04,0.45);hit=true;}
     }
     as_laserZ[p]+=(endZ-as_laserZ[p])*0.5;
     UnitSetPosition(as_laser[p],Point(as_muzX,as_muzY),true);UnitSetHeight(as_laser[p],as_muzZ,0.0);
@@ -508,7 +541,70 @@ void AS_Attachments (int p) {
     UnitSetScale(as_laser[p],100.0,d*100.0,MaxF(2.0,(as_muzZ-as_laserZ[p])/AS_LASER_DROP*100.0));
     UnitSetPosition(as_laserDot[p],Point(as_muzX+c*d,as_muzY+s*d),true);UnitSetHeight(as_laserDot[p],as_laserZ[p],0.0);
     UnitSetPosition(as_laserFlare[p],Point(as_muzX,as_muzY),true);UnitSetHeight(as_laserFlare[p],as_muzZ,0.0);
+    // How strongly it shows: AS's 0.65 is full here; x0.06 while firing; off while reloading, in a melee swing,
+    // bringing up a new gun or using something; a squadmate's at AS's 0.3 of 0.65. The dot only on what it hits.
+    a=1.0;
+    if(as_reloadEnd[p]>0.0 || as_using[p]>=0 || as_now-as_meleeAt[p]<0.5 || as_now-as_switchAt[p]<0.5) {a=0.0;}
+    else if(as_now-as_lastShot[p]<0.15) {a=0.06;}
+    if(stub) {a*=0.46;}
+    ad=0.0;if(hit) {ad=a;}
+    if(a!=as_laserA[p]) {
+        as_laserA[p]=a;
+        ActorSend(libNtve_gf_MainActorofUnit(as_laser[p]),"SetOpacity "+FixedToString(a,2)+" 0.06");
+        ActorSend(libNtve_gf_MainActorofUnit(as_laserFlare[p]),"SetOpacity "+FixedToString(a,2)+" 0.06");
+    }
+    if(ad!=as_laserDotA[p]) {as_laserDotA[p]=ad;ActorSend(libNtve_gf_MainActorofUnit(as_laserDot[p]),"SetOpacity "+FixedToString(ad,2)+" 0.06");}
+    aim=as_aim[p];
     if(as_lightOn[p]) {libNtve_gf_MakeModelFaceAngle(libNtve_gf_MainActorofUnit(as_torch[p]),aim);}
+}
+
+// Alien Swarm's crosshair (asw_hud_crosshair.cpp): a ring of segments round the cursor, lit for the share of the
+// clip left, red when it runs low; while reloading it fills with the reload's progress instead, and the fast-reload
+// window shows as a green arc on it. Only for a marine's own player, and only on the top-down view.
+void AS_ReticlePulse (int p) {
+    int w=as_slot[p];int n= -1;int ww;fixed f=0.0;string tint="255,255,255";point at;bool reload=false;
+    if(as_alive[p] && as_view[p]==0 && !(as_bot[p] && !(as_auto && p==1)) && as_dcUntil[p]<=0.0 && w>=1 && w<=AS_ITEMS
+       && !AS_IsDeployable(w) && as_using[p]<0) {
+        if(as_reloadEnd[p]>0.0) {
+            reload=true;tint="255,190,70";
+            f=(as_now-as_reloadStart[p])/MaxF(0.1,as_reloadEnd[p]-as_reloadStart[p]);
+        }
+        else if(as_it[w].mag>0) {
+            f=IntToFixed(as_mag[p][w])/IntToFixed(as_it[w].mag);
+            if(f<0.25) {tint="255,70,60";}
+        }
+        else {f=1.0;}
+        n=FixedToInt(AS_Clamp(f,0.0,1.0)*24.0+0.5);
+        if(n==0 && !reload && as_mag[p][w]>0) {n=1;}
+    }
+    if(n<0) {
+        if(as_retN[p]>=0) {as_retN[p]= -1;libNtve_gf_ShowHideUnit(as_ret[p],false);libNtve_gf_ShowHideUnit(as_retWin[p],false);}
+        return;
+    }
+    at=AS_AimPoint(p);
+    if(as_ret[p]==null) {
+        UnitCreate(1,"ASFxRet24",c_unitCreateIgnorePlacement,p,at,270.0);as_ret[p]=UnitLastCreated();
+        UnitCreate(1,"ASFxRetWin9",c_unitCreateIgnorePlacement,p,at,270.0);as_retWin[p]=UnitLastCreated();
+        as_retN[p]= -1;as_retTint[p]="";as_retWinW[p]=9;libNtve_gf_ShowHideUnit(as_retWin[p],false);
+    }
+    if(as_retN[p]<0) {libNtve_gf_ShowHideUnit(as_ret[p],true);}
+    if(n!=as_retN[p]) {
+        as_retN[p]=n;
+        if(n<10) {ActorSend(libNtve_gf_MainActorofUnit(as_ret[p]),"ModelSwap ASFxRet0"+IntToString(n)+"Model");}
+        else {ActorSend(libNtve_gf_MainActorofUnit(as_ret[p]),"ModelSwap ASFxRet"+IntToString(n)+"Model");}
+    }
+    if(tint!=as_retTint[p]) {as_retTint[p]=tint;ActorSend(libNtve_gf_MainActorofUnit(as_ret[p]),"SetTintColor "+tint);}
+    UnitSetPosition(as_ret[p],at,false);
+    ActorSend(libNtve_gf_MainActorofUnit(as_ret[p]),AS_AimMsg(0.0));
+    // The window arc starts at the top and runs clockwise over its share: turned clockwise to where it opens.
+    if(reload && !as_fastTried[p]) {
+        ww=6;if(as_fastTo[p]-as_fastFrom[p]>0.075) {ww=9;}if(as_fastTo[p]-as_fastFrom[p]>0.105) {ww=12;}
+        if(ww!=as_retWinW[p]) {as_retWinW[p]=ww;ActorSend(libNtve_gf_MainActorofUnit(as_retWin[p]),"ModelSwap ASFxRetWin"+IntToString(ww)+"Model");}
+        if(as_retWinRot[p]=="" || as_now-as_reloadStart[p]<AS_DT*1.5) {as_retWinRot[p]=AS_AimMsg(0.0-360.0*as_fastFrom[p]);libNtve_gf_ShowHideUnit(as_retWin[p],true);}
+        UnitSetPosition(as_retWin[p],at,false);
+        ActorSend(libNtve_gf_MainActorofUnit(as_retWin[p]),as_retWinRot[p]);
+    }
+    else if(as_retWinRot[p]!="") {as_retWinRot[p]="";libNtve_gf_ShowHideUnit(as_retWin[p],false);}
 }
 
 // ---- health -----------------------------------------------------------
@@ -522,15 +618,26 @@ int AS_AuraBest (int sk, fixed x, fixed y, fixed r) {
     }
     return best;
 }
-// kind: 0 an alien, 1 a squadmate's fire (byP), 2 the world. Leadership may halve a hit; heavy armour takes a fifth;
-// a single hit bigger than the health left leaves a marine on 1 (asw_marine_death_protection), once.
+// kind: 0 an alien, 1 a squadmate's fire (byP), 2 the world, 3 infestation (no blood). Leadership may halve a hit;
+// heavy armour takes a fifth; a single hit bigger than the health left leaves a marine on 1
+// (asw_marine_death_protection), once. The swarm's blows make the marine stumble (at most every 2 s); a shieldbug's
+// (knock 6 and up) knocks it down instead (at most every 3 s; asw_marine.cpp 358-359, 4521-4581).
 void AS_HurtMarineBy (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock, int kind, int byP) {
     point here;fixed ang;fixed before;int lead;int k;fixed d;
     if(!as_alive[p] || dmg<=0.0) {return;}
+    // The death scene's breath: the squad cannot be hurt for a moment after a marine falls.
+    if(as_now>=as_invulnFrom && as_now<as_invulnUntil) {return;}
     here=UnitGetPosition(as_m[p]);
+    if(kind!=3) {as_hurtAng[p]=ATan2(fromY-PointGetY(here),fromX-PointGetX(here));as_hurtDirAt[p]=as_now;as_hurtDirLen[p]=1.0+MinF(1.0,dmg/100.0);}
+    AS_HintCombat(PointGetX(here),PointGetY(here));
+    AS_FailHurt(p,dmg,kind,byP);
     if(knock>0.0) {
         ang=ATan2(PointGetY(here)-fromY,PointGetX(here)-fromX);
         as_knockX[p]+=Cos(ang)*knock;as_knockY[p]+=Sin(ang)*knock;
+        if(knock>=6.0 && as_now>=as_knockdownNext[p]) {as_downUntil[p]=as_now+1.2;as_knockdownNext[p]=as_now+3.0;ActorSend(libNtve_gf_MainActorofUnit(as_m[p]),"AnimPlay ASDown Death 0 0.0 0.5");}
+    }
+    if(kind==0 && knock<6.0 && as_now>=as_stumbleNext[p] && as_downUntil[p]<=as_now) {
+        as_stumbleNext[p]=as_now+2.0;as_downUntil[p]=as_now+0.25;
     }
     if(kind==1) {
         dmg*=AS_FFScale();
@@ -539,13 +646,19 @@ void AS_HurtMarineBy (int p, fixed dmg, fixed fromX, fixed fromY, fixed knock, i
     lead=AS_AuraBest(AS_SK_LEADERSHIP,PointGetX(here),PointGetY(here),7.5);
     if(lead>0 && RandomFixed(0.0,1.0)<0.06*IntToFixed(lead)) {dmg*=0.5;}
     if(AS_HasItem(p,AS_IT_ARMOR)) {dmg*=0.8;}
+    // Electric armour takes three quarters off the swarm's claws (asw_marine.cpp 1150-1185).
     if(kind==0 && as_elecUntil[p]>as_now) {dmg*=0.25;}
     as_dmgTaken[p]+=dmg;
     if(as_god[p]) {dmg=0.0;}
     before=as_hp[p];
-    if(dmg>=as_hp[p] && as_hp[p]>1.0 && kind!=2) {dmg=as_hp[p]-1.0;}
+    if(dmg>=as_hp[p] && as_hp[p]>1.0 && kind<2) {dmg=as_hp[p]-1.0;}
     as_hp[p]-=dmg;as_hurtFlash[p]=as_now;
     if(kind==0) {AS_DirectorHurt(p,dmg,before);}
+    if(kind==3) {
+        if(as_hp[p]<=0.0) {AS_MarineDie(p);return;}
+        UnitSetPropertyFixed(as_m[p],c_unitPropLife,MaxF(1.0,as_hp[p]));
+        return;
+    }
     AS_Fx("ASFxBlood",PointGetX(here),PointGetY(here),0.5,RandomFixed(0.0,360.0));
     // AS's marine is cut open in a bright red spray of streaks, thrown away from the claw.
     ang=ATan2(PointGetY(here)-fromY,PointGetX(here)-fromX);
@@ -568,10 +681,13 @@ void AS_Heal (int p, fixed amount, int byP) {
     if(byP>=1 && byP<=AS_PLAYERS) {as_healed[byP]+=MinF(amount,as_hpMax[p]-as_hp[p]);}
 }
 // Burn out an infestation: a medic's Infestation Curing keeps less of the time left (100 - 25 a point percent).
-void AS_CureInfestation (int p, int byP) {
+void AS_CureInfestation (int p, int byP) {AS_CureShare(p,byP,1.0);}
+// Part of a cure: the medical gun spreads its cure over its clip, 9/100 of one a shot (asw_weapon_heal_gun_shared.cpp 824-832).
+void AS_CureShare (int p, int byP, fixed share) {
     fixed keep=1.0;
     if(as_infestUntil[p]<=as_now) {return;}
     if(byP>=1 && AS_Class(byP)==AS_CL_MEDIC) {keep=1.0-0.25*IntToFixed(AS_Skill(byP,AS_SK_XENOWOUNDS));}
+    keep=1.0-(1.0-keep)*share;
     as_infestUntil[p]=as_now+(as_infestUntil[p]-as_now)*keep;
     if(keep<0.01 || as_infestUntil[p]-as_now<0.3) {
         as_infestUntil[p]=0.0;AS_Message(p,"<c val=\"8CFFA0\">Infestation cured</c>");
@@ -593,13 +709,23 @@ void AS_MarineCorpse (int p, fixed x, fixed y) {
     ActorSend(a,libNtve_gf_SetRotation(Cos(as_aim[p]),Sin(as_aim[p]),0.0,0.0,0.0,1.0));
 }
 // The marine falls: its guns drop to the deck with its spare clips; nobody comes back this mission.
+// An infested marine does not fall whole: it bursts, and 3 to 5 parasites crawl out of it (asw_marine.cpp Event_Killed).
 void AS_MarineDie (int p) {
-    point here=UnitGetPosition(as_m[p]);int k;int q;
-    as_alive[p]=false;as_hp[p]=0.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;as_slowHeal[p]=0.0;as_infestUntil[p]=0.0;
-    as_deaths[p]+=1;
-    AS_ChatDied(p);
+    point here=UnitGetPosition(as_m[p]);int k;int q;bool infested=as_infestUntil[p]>as_now;
+    as_alive[p]=false;as_hp[p]=0.0;as_trigger[p]=false;as_reloadEnd[p]=0.0;as_slowHeal[p]=0.0;as_infestUntil[p]=0.0;as_infestTick[p]=0.0;
+    as_deaths[p]+=1;as_downUntil[p]=0.0;
+    AS_FailDied(p);AS_ChatDied(p);
     if(as_using[p]>=0) {AS_UseStop(p);}
-    AS_MarineCorpse(p,PointGetX(here),PointGetY(here));
+    AS_HeartSet(p,false);
+    if(infested) {
+        AS_Fx("ASGibSmall",PointGetX(here),PointGetY(here),0.3,as_aim[p]);AS_Fx("ASGibChunks",PointGetX(here),PointGetY(here),0.4,as_aim[p]+90.0);
+        AS_Fx("ASBloodGeyser",PointGetX(here),PointGetY(here),0.3,as_aim[p]);
+        AS_Splat(PointGetX(here),PointGetY(here),RandomFixed(0.0,360.0),1.2);
+        for(k=RandomInt(3,5);k>0;k-=1) {AS_SpawnNear(AS_PARASITE,PointGetX(here)+RandomFixed(-0.4,0.4),PointGetY(here)+RandomFixed(-0.4,0.4),true);}
+        AS_HintEvent("killed_by_infestation",p);AS_FailScore(AS_FA_INFESTED,1.0);
+    }
+    else {AS_MarineCorpse(p,PointGetX(here),PointGetY(here));}
+    AS_DeathScene(p,PointGetX(here),PointGetY(here));
     AS_Sound("Marine_Death",PointGetX(here),PointGetY(here),100.0,0.2);
     for(k=0;k<2;k+=1) {
         if(as_inv[p][k]>0) {AS_DropWeapon(p,k,PointGetX(here)+Cos(as_aim[p]+IntToFixed(k)*120.0)*0.5,PointGetY(here)+Sin(as_aim[p]+IntToFixed(k)*120.0)*0.5);}
@@ -631,20 +757,52 @@ void AS_SpectateNext (int p) {
     as_spectate[p]=AS_NextLiving(p,MaxI(as_spectate[p],p));
     AS_CameraMode(p,0,0.4);
 }
+// A hurt suit, as AS's: the player hears a heartbeat under 60% health, and the suit throws sparks under 65%,
+// more often under 35%. A knocked-down marine gets up when its time is over.
+void AS_HeartSet (int p, bool on) {
+    if(on==as_heartOn[p]) {return;}
+    as_heartOn[p]=on;
+    if(on && AS_Person(p) && (!as_bot[p] || (as_auto && p==1))) {SoundPlay(SoundLink("UI_LowHealthWarning_HeartBeatLoop",-1),AS_Me(p),70.0,0.0);as_heartSnd[p]=SoundLastPlayed();}
+    else if(!on && as_heartSnd[p]!=null) {SoundStop(as_heartSnd[p],true);as_heartSnd[p]=null;}
+}
+void AS_SuitPulse (int p) {
+    point here;fixed f=as_hp[p]/MaxF(1.0,as_hpMax[p]);
+    AS_HeartSet(p,f<0.6);
+    if(as_downUntil[p]>0.0 && as_now>=as_downUntil[p]) {as_downUntil[p]=0.0;ActorSend(libNtve_gf_MainActorofUnit(as_m[p]),"AnimClear ASDown");}
+    // c_asw_marine.cpp 1812-1861: every 0.24 to 0.72 s under 35%, three times slower under 65%.
+    if(f<0.65 && as_now>=as_sparkAt[p]) {
+        if(f<0.35) {as_sparkAt[p]=as_now+RandomFixed(0.24,0.72);}else {as_sparkAt[p]=as_now+RandomFixed(0.72,2.16);}
+        here=UnitGetPosition(as_m[p]);
+        AS_Fx("ASFxSpark",PointGetX(here)+RandomFixed(-0.15,0.15),PointGetY(here)+RandomFixed(-0.15,0.15),RandomFixed(0.6,1.1),RandomFixed(0.0,360.0));
+        AS_Sound("Doodad_SparkBurstShort",PointGetX(here),PointGetY(here),50.0,0.3);
+    }
+}
 void AS_MarinePulse (int p) {
     point here;fixed f;
     if(!as_alive[p]) {
+        AS_HeartSet(p,false);
         // The watched marine fell: on to the next.
         if(as_spectate[p]>0 && !as_alive[as_spectate[p]]) {AS_SpectateNext(p);}
         return;
     }
     if(as_infestUntil[p]>as_now) {
-        // Infestation eats TotalInfestDamage over 20 s unless it is cured; electric armour fights it off.
-        if(as_elecUntil[p]>as_now) {as_infestUntil[p]-=AS_DT*0.4;}
-        AS_HurtMarineBy(p,AS_InfestTotal()/20.0*AS_DT,0.0,0.0,0.0,2,0);
-        if(as_alive[p] && as_now>as_infestUntil[p]-AS_DT) {as_infestUntil[p]=0.0;}
+        // Infestation eats TotalInfestDamage over 20 s unless it is cured, in bites of a twentieth
+        // (asw_marine.cpp 1832-1849, 2977-2989).
+        if(as_infestTick[p]<=0.0) {as_infestTick[p]=as_now;}
+        if(as_now>=as_infestTick[p]) {
+            // The first bite at once, the next after 0.9 s, then one a second; electric armour cuts the time left
+            // to 0.4 at each.
+            if(as_infestTick[p]==as_now) {as_infestTick[p]=as_now+0.9;}else {as_infestTick[p]+=1.0;}
+            if(as_elecUntil[p]>as_now) {as_infestUntil[p]=as_now+(as_infestUntil[p]-as_now)*0.4;}
+            here=UnitGetPosition(as_m[p]);
+            AS_HurtMarineBy(p,AS_InfestTotal()/20.0,PointGetX(here),PointGetY(here),0.0,3,0);
+        }
+        if(as_alive[p] && as_now>as_infestUntil[p]-AS_DT) {as_infestUntil[p]=0.0;as_infestTick[p]=0.0;}
     }
+    else {as_infestTick[p]=0.0;}
     if(!as_alive[p]) {return;}
+    AS_FFPulse(p);
+    AS_SuitPulse(p);
     if(as_slowHeal[p]>0.0 && as_now>=as_slowHealNext[p]) {
         as_slowHealNext[p]=as_now+0.33;f=MinF(4.0,as_slowHeal[p]);as_slowHeal[p]-=f;
         as_hp[p]=MinF(as_hpMax[p],as_hp[p]+f);
@@ -717,6 +875,7 @@ void AS_SwapMarines (int a, int b) {
     u=as_laser[a];as_laser[a]=as_laser[b];as_laser[b]=u;
     u=as_laserDot[a];as_laserDot[a]=as_laserDot[b];as_laserDot[b]=u;
     u=as_laserFlare[a];as_laserFlare[a]=as_laserFlare[b];as_laserFlare[b]=u;
+    f=as_laserA[a];as_laserA[a]=as_laserA[b];as_laserA[b]=f;f=as_laserDotA[a];as_laserDotA[a]=as_laserDotA[b];as_laserDotA[b]=f;
     // The suits follow the slot's colour: both marines show their gun again in their new colour.
     as_gunShown[a]= -1;as_gunShown[b]= -1;
     n=as_prof[a];as_prof[a]=as_prof[b];as_prof[b]=n;

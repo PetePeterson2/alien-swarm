@@ -18,9 +18,16 @@
 //   barrel      (not an alien)      an explosive barrel: shoot it
 // Health and claws scale with the difficulty (State.galaxy); drones, jumpers and
 // parasites also run faster. Shocked aliens crawl at 0.3 for 6 s, frozen ones
-// stop, burning ones take 2.5 a second for 5 s, and under adrenaline the whole
-// swarm moves at a third of its speed.
+// stop, burning ones take 2.5 a second for 5 s, and adrenaline slows the whole game.
+// The behaviours follow Alien Swarm's SDK (AS-PARITY.md Phase 2): senses, sleep out of
+// view, spawner orders and each kind's own rules, with the file and lines cited at each.
+// The ripper, waking on gunfire and the ranger keeping its distance are the port's own,
+// played only with the briefing's EXTRAS switch on.
 // =====================================================================
+
+const fixed AS_SENSE = 7.2;            // asw_alien.cpp: senses a marine through walls within 576 units
+const fixed AS_LOOK = 9.6;             // and sees one in clear sight within 768
+const fixed AS_TOO_FAR = 25.0;         // and loses its quarry past 2000
 
 int AS_AlienSlot () {
     int i;
@@ -30,15 +37,22 @@ int AS_AlienSlot () {
 int AS_SpawnAlien (int kind, fixed x, fixed y, bool awake) {
     int i=AS_AlienSlot();point q=Point(x,y);
     if(i<0) {return -1;}
+    // The ripper is the port's own: a drone in its place unless the extras are on (the developer key still makes one).
+    if(kind==AS_RIPPER && !as_extras && !as_devKind) {kind=AS_DRONE;}
     UnitCreate(1,as_kindUnit[kind],c_unitCreateIgnorePlacement,AS_HOSTILE,q,RandomFixed(0.0,360.0));
     as_a[i]=UnitLastCreated();
     as_aKind[i]=kind;as_aHp[i]=AS_KindHealth(kind);as_aRadius[i]=as_kindRadius[kind];as_aAwake[i]=awake;
     as_aTarget[i]=0;as_aNextOrder[i]=as_now+RandomFixed(0.0,0.3);as_aNextAttack[i]=as_now+0.5;as_aHitAt[i]=0.0;as_aHitDoor[i]= -1;
     as_aBurnUntil[i]=0.0;as_aStunUntil[i]=0.0;as_aFreezeUntil[i]=0.0;as_aLeapUntil[i]=0.0;as_aParent[i]= -1;as_aChildren[i]=0;
+    as_aMoveT1[i]=0.0;as_aJumped[i]=false;as_aTag[i]="";
     as_aSpawnAt[i]=as_now+RandomFixed(1.0,3.0);as_aBornAt[i]=as_now;
     as_aStuckX[i]=x;as_aStuckY[i]=y;as_aStuckAt[i]=as_now;
     as_aX[i]=x;as_aY[i]=y;as_aSpawner[i]= -1;as_aGoal[i]=0;
     as_aFlashUntil[i]=0.0;as_aFlinchUntil[i]=0.0;as_aFlinchNext[i]=0.0;as_aTagDmg[i]=0.0;as_aTagBy[i]=0;as_aTagKind[i]=0;
+    as_aHurtUntil[i]=0.0;as_aHidden[i]=false;as_aBurrowed[i]=false;as_aState[i]=0;as_aStateAt[i]=0.0;as_aThinkAt[i]=as_now+RandomFixed(0.0,1.0);
+    as_aSight[i]=AS_LOOK;as_aSense[i]=AS_SENSE;as_aSeenAt[i]=as_now;as_aViewAt[i]=as_now+RandomFixed(0.0,1.0);as_aSenseAt[i]=as_now+RandomFixed(0.0,0.25);
+    // An egg's first look round comes 5-10 s in (asw_egg.cpp 158).
+    if(kind==AS_EGG) {as_aThinkAt[i]=as_now+RandomFixed(5.0,10.0);}
     UnitSetPropertyFixed(as_a[i],c_unitPropLifeMax,MaxF(1.0,as_aHp[i]));UnitSetPropertyFixed(as_a[i],c_unitPropLife,MaxF(1.0,as_aHp[i]));
     if(!AS_IsThing(kind)) {
         as_alive2+=1;
@@ -60,12 +74,16 @@ void AS_AlienCache () {
 }
 
 // ---- status effects -------------------------------------------------------------
-// The speed an alien moves at now: shocked x0.3, frozen 0, under adrenaline x0.35.
+// The speed an alien moves at now: shocked x0.3, frozen 0, hurt x0.5 for half a second after each hit
+// (asw_alien.cpp 946-949). Adrenaline slows the whole game (src/Mission.galaxy AS_GameSpeed), not the aliens alone.
 void AS_AlienSpeedUpdate (int i) {
     fixed s=AS_KindSpeed(as_aKind[i]);
+    // A buzzer charging bursts at twice its cruise.
+    if(as_aKind[i]==AS_BUZZER && as_aState[i]==1) {s*=2.0;}
     if(as_aFreezeUntil[i]>as_now) {s=0.0;}
     else if(as_aStunUntil[i]>as_now) {s*=0.3;}
-    if(as_slowMo>as_now) {s*=0.35;}
+    if(as_aHurtUntil[i]>as_now) {s*=0.5;}
+    s*=as_timeK;
     UnitSetPropertyFixed(as_a[i],c_unitPropMovementSpeed,s);
 }
 void AS_Stun (int i, fixed secs) {
@@ -75,12 +93,14 @@ void AS_Stun (int i, fixed secs) {
 }
 void AS_Freeze (int i, fixed secs) {
     if(as_a[i]==null || AS_IsThing(as_aKind[i])) {return;}
+    // Any freeze kills a buzzer outright (asw_buzzer.cpp 2702-2712).
+    if(as_aKind[i]==AS_BUZZER) {AS_HurtAlien(i,as_aHp[i]+1.0,3,0,as_aX[i],as_aY[i]);return;}
     as_aFreezeUntil[i]=MaxF(as_aFreezeUntil[i],as_now+secs);as_aBurnUntil[i]=0.0;AS_AlienSpeedUpdate(i);AS_Halt(i);
     ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(60.0,85.0,100.0),1.5,0.0));
     ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"AnimSetPaused Default 1");
 }
 void AS_Ignite (int i, int p, fixed secs) {
-    if(as_a[i]==null || as_aKind[i]==AS_BARREL || as_aKind[i]==AS_EGG) {return;}
+    if(as_a[i]==null || as_aKind[i]==AS_BARREL) {return;}
     as_aBurnUntil[i]=MaxF(as_aBurnUntil[i],as_now+secs);as_aBurnBy[i]=p;as_aFreezeUntil[i]=0.0;
 }
 
@@ -120,20 +140,22 @@ void AS_TagAdd (int i, int p, fixed dmg, int kind) {
     as_aTagBy[i]=p;as_aTagDmg[i]+=dmg;as_aTagKind[i]=MaxI(as_aTagKind[i],kind);
     if(as_aTagAt[i]==0.0) {as_aTagAt[i]=as_now+0.25;}
 }
-// Alien Swarm's flinch (asw_ai_behavior_flinch): a hit may stagger an alien, which
-// stops in its tracks for a moment and is knocked back a little. Bigger rounds stagger
-// more often; the heavy kinds never do, and one stagger cannot follow another at once.
-void AS_Flinch (int i, fixed ang, fixed dmg) {
-    int k=as_aKind[i];fixed chance=MinF(0.7,0.1+dmg*0.012);fixed nx;fixed ny;
-    if(as_a[i]==null || k==AS_SHIELDBUG || k==AS_BOOMER || k==AS_MORTAR || k==AS_HARVESTER || AS_IsThing(k) || k==AS_QUEEN) {return;}
-    if(as_now<as_aFlinchNext[i] || as_aLeapUntil[i]>as_now || as_aFreezeUntil[i]>as_now) {return;}
-    if(k==AS_UBER) {chance*=0.4;}
-    if(RandomFixed(0.0,1.0)>chance) {return;}
-    as_aFlinchUntil[i]=as_now+0.22;as_aFlinchNext[i]=as_now+0.8;
+// Alien Swarm's flinch (asw_alien.cpp 946-949, asw_ai_behavior_flinch): a hit staggers an alien with the gun's
+// FlinchChance times the health it had left, so a fresh alien flinches most; a stagger stops it in its tracks for
+// 0.4 s (three times in ten) or 0.8 s. Blasts and shocks always stagger (chance 1). The heavy kinds never do, and
+// one stagger cannot follow another at once.
+void AS_Flinch (int i, fixed ang, fixed chance) {
+    int k=as_aKind[i];
+    if(as_a[i]==null || k==AS_BOOMER || k==AS_MORTAR || k==AS_HARVESTER || AS_IsThing(k) || k==AS_QUEEN || as_aBurrowed[i]) {return;}
+    if(as_now<as_aFlinchNext[i] || as_aLeapUntil[i]>as_now || as_aFreezeUntil[i]>as_now || as_aMoveT1[i]>0.0) {return;}
+    // The shieldbug only from the side or behind (dot under 0.66), at most every 2 s (asw_shieldbug.cpp 30, 832, 849).
+    if(k==AS_SHIELDBUG && AbsF(AS_AngleDiff(ang+180.0,UnitGetFacing(as_a[i])))<48.7) {return;}
+    if(chance<=0.0 || RandomFixed(0.0,1.0)>chance) {return;}
+    if(RandomInt(1,10)<=3) {as_aFlinchUntil[i]=as_now+0.4;}else {as_aFlinchUntil[i]=as_now+0.8;}
+    as_aFlinchNext[i]=as_aFlinchUntil[i]+RandomFixed(0.3,1.0);
+    if(k==AS_SHIELDBUG) {as_aFlinchNext[i]=as_now+2.0;}
     as_aNextOrder[i]=as_aFlinchUntil[i];
     AS_Halt(i);
-    nx=as_aX[i]+Cos(ang)*0.18;ny=as_aY[i]+Sin(ang)*0.18;
-    if(AS_Free(nx,ny,as_aRadius[i])) {UnitSetPosition(as_a[i],Point(nx,ny),true);as_aX[i]=nx;as_aY[i]=ny;}
 }
 void AS_HitFeedbackPulse (int i) {
     if(as_aFlashUntil[i]>0.0 && as_now>=as_aFlashUntil[i]) {
@@ -158,34 +180,72 @@ int AS_SpawnNear (int kind, fixed x, fixed y, bool awake) {
 // ---- damage -----------------------------------------------------------
 // kind: 0 bullet, 1 fire, 2 blast, 3 shock. (fromX, fromY) is where the harm came from.
 void AS_HurtAlien (int i, fixed dmg, int kind, int p, fixed fromX, fixed fromY) {
-    point q;fixed toward;bool turned=false;
-    if(as_a[i]==null || dmg<=0.0) {return;}
-    q=UnitGetPosition(as_a[i]);
-    // Alien Swarm burns aliens for three times the damage (asw_fire_alien_damage_scale).
-    if(kind==1) {dmg*=3.0;}
-    if(as_aKind[i]==AS_SHIELDBUG && kind!=2) {
-        // The shieldbug's plates turn anything that meets it head on.
+    point q;fixed toward;bool turned=false;int k;int w=as_dmgItem;bool front;
+    if(as_a[i]==null || dmg<=0.0 || as_aBurrowed[i]) {return;}
+    q=UnitGetPosition(as_a[i]);k=as_aKind[i];
+    if(!AS_IsThing(k)) {AS_HintCombat(PointGetX(q),PointGetY(q));}
+    // A sleeper is shot like any other (ai_basenpc.cpp 4561-4577) and wakes for it.
+    if(as_aHidden[i]) {as_aSeenAt[i]=as_now;AS_AlienSleep(i,false);}
+    if(w<=0 && p>=1 && p<=AS_PLAYERS && kind==0) {w=as_slot[p];}
+    // A barrel shrugs off a marine's melee blow and a squad bot's fire (asw_barrel_explosive.cpp 62-85).
+    if(k==AS_BARREL && (as_meleeHit || (p>=1 && p<=AS_PLAYERS && as_bot[p] && !(as_auto && p==1)))) {return;}
+    // Alien Swarm burns aliens for three times the damage (asw_fire_alien_damage_scale); not the buzzer, and not
+    // an egg, whose fire is a flat 5 a second.
+    if(kind==1 && k!=AS_BUZZER && k!=AS_EGG) {dmg*=3.0;}
+    if(k==AS_SHIELDBUG) {
+        // Its shield turns anything but a blast that meets it head on (asw_shieldbug_shared.cpp 27, 95), and while
+        // it defends, fire from in front as well (asw_shieldbug.cpp 809-816). The shotguns do 0.6 and 0.45 (751-767).
         toward=ATan2(fromY-PointGetY(q),fromX-PointGetX(q));
-        if(AbsF(AS_AngleDiff(toward,UnitGetFacing(as_a[i])))<70.0) {
-            dmg*=0.1;turned=true;
+        front=AbsF(AS_AngleDiff(toward,UnitGetFacing(as_a[i])))<70.0;
+        if(front && (kind==0 || kind==3 || (kind==1 && as_aState[i]==2 && AbsF(AS_AngleDiff(toward,UnitGetFacing(as_a[i])))<48.7))) {
+            as_shieldBlocked+=dmg;dmg=0.0;turned=true;AS_FailScore(AS_FA_SHIELDBUG,2.0/80.0);
             if(RandomInt(0,3)==0) {AS_Burst(PointGetX(q)+Cos(toward)*0.8,PointGetY(q)+Sin(toward)*0.8,0.8,0.5,"255,230,160",1);}
+            // Past 600 turned, the lesson to go round it (asw_shieldbug.cpp 684-737).
+            if(as_shieldBlocked>600.0 && p>=1 && p<=AS_PLAYERS) {as_shieldBlocked=0.0;AS_HintEvent("shieldbug_front",p);}
         }
+        if(kind==0 && w==AS_IT_VINDICATOR) {dmg*=0.45;}
+        else if(kind==0 && w==AS_IT_SHOTGUN) {dmg*=0.6;}
+        // It has been hurt: from now on it may stand and defend (asw_shieldbug.cpp 280-308).
+        if(dmg>0.0) {as_aStateAt[i]=as_now;}
     }
-    if(as_aKind[i]==AS_BIOMASS && kind!=1) {dmg*=0.05;}
-    if(as_aKind[i]==AS_BIOMASS && kind==1) {AS_HiveLit(i);}
+    // The uber's armour against buckshot: the Vindicator's x0.45, a shotgun's x0.6 (asw_drone_uber.cpp 82-99).
+    if(k==AS_UBER && kind==0 && p>=1) {
+        if(w==AS_IT_VINDICATOR) {dmg*=0.45;}
+        else if(w==AS_IT_SHOTGUN) {dmg*=0.6;}
+    }
+    // A boomer hit from right beside it takes x8 (asw_boomer.cpp 164-168); a parasite in mid-leap x10 (asw_parasite.cpp 1194).
+    if(k==AS_BOOMER && (fromX-PointGetX(q))*(fromX-PointGetX(q))+(fromY-PointGetY(q))*(fromY-PointGetY(q))<(as_aRadius[i]+0.5)*(as_aRadius[i]+0.5)) {dmg*=8.0;}
+    if((k==AS_PARASITE || k==AS_XENOMITE) && as_aLeapUntil[i]>as_now) {dmg*=10.0;}
+    // Alien goo burns and nothing else hurts it; fire keeps it alight 30 s (asw_alien_goo_shared.cpp 234-268).
+    if(k==AS_BIOMASS && kind!=1) {dmg=0.0;}
+    if(k==AS_BIOMASS && kind==1) {AS_HiveLit(i);as_aBurnUntil[i]=MaxF(as_aBurnUntil[i],as_now+30.0);as_aBurnBy[i]=p;}
+    // Fire or a blast sets an egg burning 30 s (asw_egg.cpp 418-423) and a buzzer alight 30 s (asw_buzzer.cpp 732).
+    if((k==AS_EGG || k==AS_BUZZER) && (kind==1 || kind==2) && as_aBurnUntil[i]<as_now+1.0) {as_aBurnUntil[i]=as_now+30.0;as_aBurnBy[i]=p;}
+    if(dmg<=0.0) {
+        if(turned) {AS_HitFlash(i,4);}
+        if(!as_aAwake[i] && !AS_IsThing(k) && p>=1 && p<=AS_PLAYERS) {as_aAwake[i]=true;as_aTarget[i]=p;}
+        return;
+    }
     as_aHp[i]-=dmg;as_aLastDmg[i]=dmg;
-    if(as_aKind[i]!=AS_BARREL) {
-        if(turned && kind!=1) {AS_HitFlash(i,4);AS_TagAdd(i,p,dmg,4);}
-        else {AS_HitFlash(i,kind);AS_TagAdd(i,p,dmg,kind);}
-    }
+    if(k!=AS_BARREL) {AS_HitFlash(i,kind);AS_TagAdd(i,p,dmg,kind);}
     if(kind!=0) {as_aHitAng[i]=ATan2(PointGetY(q)-fromY,PointGetX(q)-fromX);}
+    // Every hit slows it to half speed for half a second (asw_alien.cpp 946-949), a buzzer for 0.4 s (2597-2600);
+    // shocks have their own slow.
+    if(!AS_IsThing(k) && kind!=3) {
+        if(k==AS_BUZZER) {as_aHurtUntil[i]=as_now+0.4;}else {as_aHurtUntil[i]=as_now+0.5;}
+        AS_AlienSpeedUpdate(i);
+    }
+    // A ranger that is hurt steps back (asw_ai_behavior_retreat.cpp).
+    if(k==AS_RANGER && as_aHp[i]>0.0 && as_aLeapUntil[i]<=as_now) {AS_RangerStepBack(i,fromX,fromY);}
     // Anything that is shot notices who shot it.
-    if(!as_aAwake[i] && !AS_IsThing(as_aKind[i])) {as_aAwake[i]=true;if(p>=1) {as_aTarget[i]=p;}}
-    if(as_aHp[i]<=0.0) {AS_KillAlien(i,p,kind);return;}
+    if(!as_aAwake[i] && !AS_IsThing(k) && p>=1 && p<=AS_PLAYERS) {as_aAwake[i]=true;as_aTarget[i]=p;}
+    if(as_aHp[i]<=0.0 || (k==AS_BIOMASS && as_aHp[i]<10.0)) {AS_KillAlien(i,p,kind);return;}
     UnitSetPropertyFixed(as_a[i],c_unitPropLife,MaxF(1.0,as_aHp[i]));
+    // Blasts and shocks always stagger what they hit.
+    if(kind==2 || kind==3) {AS_Flinch(i,as_aHitAng[i],1.0);}
 }
 void AS_KillAlien (int i, int p, int kind) {
-    point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);int k=as_aKind[i];int j;fixed facing=UnitGetFacing(as_a[i]);
+    point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);int k=as_aKind[i];int j;fixed facing=UnitGetFacing(as_a[i]);int n;fixed d;
     as_aX[i]=x;as_aY[i]=y;
     if(p>=1 && p<=AS_PLAYERS) {as_aTagBy[i]=p;}
     if(k!=AS_BARREL) {AS_DamageTag(i,p>=1 && p<=AS_PLAYERS);}
@@ -196,25 +256,52 @@ void AS_KillAlien (int i, int p, int kind) {
     if(as_aParent[i]>=0 && as_aParent[i]<AS_MAXALIEN) {as_aChildren[as_aParent[i]]=MaxI(0,as_aChildren[as_aParent[i]]-1);}
     if(p>=1 && p<=AS_PLAYERS && !AS_IsThing(k)) {as_kills[p]+=1;AS_KillEvent(p,k,kind);}
     AS_HiveGone(i,k);
-    // A barrel goes up: a blast of its own, and the kills are the shooter's.
+    // A barrel goes up: 200 over 160 units, half at the edge (asw_barrel_explosive.cpp 30, 172-190), and the kills
+    // are the shooter's. One a blast set off waits its turn: a chain goes off 1/6 s apart (asw_barrel_explosive.h 14).
     if(k==AS_BARREL) {
-        j=0;if(p>=1 && p<=AS_PLAYERS) {j=as_kills[p];}
-        AS_Fx("ASFxBigBoom",x,y,0.2,0.0);AS_Explode(p,x,y,3.0,150.0);
-        if(p>=1 && p<=AS_PLAYERS) {as_barrelKills[p]+=as_kills[p]-j;if(as_barrelKills[p]>=5) {AS_AchieveEvent(p,"smoking_barrels");}}
+        if(as_aTag[i]!="") {AS_Fire("broken:"+as_aTag[i]);}
+        if(kind==2) {AS_BarrelQueue(p,x,y);return;}
+        AS_BarrelBlast(p,x,y);
         return;
     }
     AS_Gore(i,k,kind,x,y,facing);
     if(k==AS_DRONE || k==AS_JUMPER || k==AS_UBER || k==AS_PARASITE || k==AS_XENOMITE) {AS_Sound("Broodling_Death",x,y,70.0,0.08);}
     else if(k==AS_RANGER || k==AS_RIPPER) {AS_Sound("Hydralisk_Death",x,y,80.0,0.1);}
     else if(k==AS_EGG) {AS_Sound("Egg_Death",x,y,80.0,0.1);}
-    // A boomer bursts: acid all round, and blobs of it flung out.
-    if(k==AS_BOOMER) {
-        AS_Fx("ASFxBigBoom",x,y,0.2,0.0);
-        AS_AlienSplash(x,y,2.6,AS_KindDamage(AS_BOOMER),"ASFxAcid");
-        for(j=0;j<5;j+=1) {AS_Lob(0,3,x,y,IntToFixed(j)*72.0+RandomFixed(-20.0,20.0),RandomFixed(1.5,3.0),AS_KindDamage(AS_BOOMER)*0.5,1.0);}
+    // A boomer that had begun to swell bursts into 9 x the time it swelled / 3.4 blobs, 1 to 8, flung 150-450 units a
+    // second to burst on their own (asw_ai_behavior_explode.cpp 350-365); killed before it swelled, it only dies.
+    if(k==AS_BOOMER && as_aState[i]==1) {
+        AS_Fx("ASFxBigBoom",x,y,0.2,0.0);AS_Sound("Baneling_Death",x,y,100.0,0.05);
+        n=MaxI(1,MinI(8,FixedToInt(9.0*(as_now-as_aStateAt[i])/3.4)));
+        for(j=0;j<n;j+=1) {AS_Lob(0,14,x,y,RandomFixed(0.0,360.0),RandomFixed(0.45,4.0),55.0,3.0);}
     }
-    if(k==AS_HARVESTER) {for(j=0;j<3;j+=1) {AS_SpawnNear(AS_XENOMITE,x+Cos(IntToFixed(j)*120.0)*0.7,y+Sin(IntToFixed(j)*120.0)*0.7,true);}}
+    // A harvester's brood spills out of it: 4 to 6 defanged parasites thrown 30-70 units (asw_harvester.cpp 594-604).
+    if(k==AS_HARVESTER) {
+        n=4+RandomInt(0,2);
+        for(j=0;j<n;j+=1) {d=RandomFixed(0.0,360.0);AS_SpawnNear(AS_XENOMITE,x+Cos(d)*RandomFixed(0.4,0.9),y+Sin(d)*RandomFixed(0.4,0.9),true);}
+    }
     if(k==AS_BIOMASS) {CreepModify(Point(x,y),2.0,false,true);}
+}
+void AS_BarrelBlast (int p, fixed x, fixed y) {
+    int j=0;
+    if(p>=1 && p<=AS_PLAYERS) {j=as_kills[p];}
+    AS_Fx("ASFxBigBoom",x,y,0.2,0.0);AS_Explode(p,x,y,2.0,200.0);
+    if(p>=1 && p<=AS_PLAYERS) {as_barrelKills[p]+=as_kills[p]-j;if(as_barrelKills[p]>=5) {AS_AchieveEvent(p,"smoking_barrels");}}
+}
+void AS_BarrelQueue (int p, fixed x, fixed y) {
+    int k;
+    as_boomLast=MaxF(as_now,as_boomLast)+1.0/6.0;
+    for(k=0;k<8;k+=1) {
+        if(as_boomAt[k]>0.0) {continue;}
+        as_boomAt[k]=as_boomLast;as_boomX[k]=x;as_boomY[k]=y;as_boomBy[k]=p;return;
+    }
+    AS_BarrelBlast(p,x,y);
+}
+void AS_BarrelPulse () {
+    int k;
+    for(k=0;k<8;k+=1) {
+        if(as_boomAt[k]>0.0 && as_now>=as_boomAt[k]) {as_boomAt[k]=0.0;AS_BarrelBlast(as_boomBy[k],as_boomX[k],as_boomY[k]);}
+    }
 }
 // How an alien dies: burnt, blown apart or cut down, and always a spray of blood
 // along the shot and a splat left on the deck.
@@ -229,7 +316,7 @@ void AS_Gore (int i, int k, int kind, fixed x, fixed y, fixed facing) {
     // The ripper's corpse is its own unit mesh, which AS_Fx's stock-model rotation lays nose to tail (seen in the client).
     if(k==AS_RIPPER) {facing+=180.0;}
     // Blasts, heavy rounds and overkill blow aliens apart; the shieldbug only falls to blasts.
-    gib=kind==2 || (k!=AS_SHIELDBUG && (as_aLastDmg[i]>=40.0 || (kind==0 && as_aLastDmg[i]>=as_kindHp[k]*0.6)));
+    gib=kind==2 || k==AS_BUZZER || (k!=AS_SHIELDBUG && (as_aLastDmg[i]>=40.0 || (kind==0 && as_aLastDmg[i]>=as_kindHp[k]*0.6)));
     if(kind==1) {
         if(k==AS_DRONE || k==AS_JUMPER) {AS_Fx("ASFireDrone",x,y,0.0,facing);}
         else if(k==AS_UBER) {AS_Fx("ASFireUber",x,y,0.0,facing);}
@@ -268,6 +355,7 @@ void AS_AlienSplash (fixed x, fixed y, fixed radius, fixed dmg, string fx) {
     AS_Fx(fx,x,y,0.1,RandomFixed(0.0,360.0));
     AS_Burst(x,y,0.4,radius*0.8,"120,255,60",3);
     AS_Sound("Ravager_Attack_Impact",x,y,90.0,0.05);
+    AS_SentrySplash(x,y,radius,dmg);
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(!AS_Person(p) || !as_alive[p] || as_rollUntil[p]>as_now) {continue;}
         d=DistanceBetweenPoints(UnitGetPosition(as_m[p]),Point(x,y));
@@ -295,13 +383,118 @@ void AS_Halt (int i) {
 void AS_Swing (int i) {
     ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"AnimPlay Attack Attack 0");
 }
-// Swings take longer under adrenaline.
-fixed AS_AlienTime (fixed t) {
-    if(as_slowMo>as_now) {return t/0.35;}
-    return t;
+// A swing's timing. Adrenaline slows the whole game now (src/Moments.galaxy), so script time already stretches.
+fixed AS_AlienTime (fixed t) {return t;}
+// A scripted move, the AI off meanwhile: from (x0, y0) at world height z0 to (x1, y1) at z1 in secs, rising
+// arc over the straight line at its middle. Climbs in over railings and out of walls, and jumps down ledges.
+void AS_AlienMoveStart (int i, fixed x0, fixed y0, fixed z0, fixed x1, fixed y1, fixed z1, fixed arc, fixed secs) {
+    as_aMoveX0[i]=x0;as_aMoveY0[i]=y0;as_aMoveZ0[i]=z0;as_aMoveX1[i]=x1;as_aMoveY1[i]=y1;as_aMoveZ1[i]=z1;
+    as_aMoveArc[i]=arc;as_aMoveT0[i]=as_now;as_aMoveT1[i]=as_now+MaxF(0.1,secs);
+    AS_Halt(i);
+    UnitSetPosition(as_a[i],Point(x0,y0),false);
+    UnitSetHeight(as_a[i],MaxF(0.0,z0-AS_GroundZ(x0,y0)),0.0);
+    if((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0)>0.01) {UnitSetFacing(as_a[i],ATan2(y1-y0,x1-x0),0.0);}
 }
+// One step of it; false once it is over (the alien set down where it was going, its AI back on).
+bool AS_AlienMoveStep (int i) {
+    fixed f;fixed x;fixed y;fixed z;
+    if(as_aMoveT1[i]<=0.0) {return false;}
+    if(as_now>=as_aMoveT1[i]) {
+        as_aMoveT1[i]=0.0;
+        UnitSetPosition(as_a[i],Point(as_aMoveX1[i],as_aMoveY1[i]),false);UnitSetHeight(as_a[i],0.0,0.1);
+        as_aX[i]=as_aMoveX1[i];as_aY[i]=as_aMoveY1[i];
+        as_aStuckX[i]=as_aX[i];as_aStuckY[i]=as_aY[i];as_aStuckAt[i]=as_now;as_aNextOrder[i]=as_now;
+        return false;
+    }
+    f=(as_now-as_aMoveT0[i])/(as_aMoveT1[i]-as_aMoveT0[i]);
+    x=as_aMoveX0[i]+(as_aMoveX1[i]-as_aMoveX0[i])*f;y=as_aMoveY0[i]+(as_aMoveY1[i]-as_aMoveY0[i])*f;
+    z=as_aMoveZ0[i]+(as_aMoveZ1[i]-as_aMoveZ0[i])*f+as_aMoveArc[i]*Sin(180.0*f);
+    UnitSetPosition(as_a[i],Point(x,y),true);
+    UnitSetHeight(as_a[i],MaxF(0.0,z-AS_GroundZ(x,y)),AS_DT);
+    return true;
+}
+// How an alien comes out of its spawner (asw_spawner UnburrowActivity), facing ang: 1 over a railing from the drop
+// behind it (ACT_CLIMB_OFF_RAIL), 2 out of a hole in the wall (act_climb_out_wall), 3 down the wall
+// (ACT_CLIMB_DOWN_WALL), 4 and 5 dropping in from a ledge above, low or high (act_jump_down_*, ACT_JUMP_FROM_OFFSCREEN).
+void AS_AlienEnter (int i, int how, fixed ang) {
+    fixed x=as_aX[i];fixed y=as_aY[i];fixed g=AS_GroundZ(x,y);fixed bx=0.0-Cos(ang);fixed by=0.0-Sin(ang);
+    as_aAwake[i]=true;
+    if(how==1) {AS_AlienMoveStart(i,x+bx*0.9,y+by*0.9,g-1.1,x,y,g,0.5,0.7);}
+    else if(how==2) {AS_AlienMoveStart(i,x+bx*1.0,y+by*1.0,g+0.5,x,y,g,0.15,0.55);AS_Burst(x+bx*0.8,y+by*0.8,0.6,0.5,"90,90,90",2);}
+    else if(how==3) {AS_AlienMoveStart(i,x+bx*0.6,y+by*0.6,g+2.2,x,y,g,0.0,0.8);}
+    else if(how==4) {AS_AlienMoveStart(i,x+bx*1.6,y+by*1.6,g+1.4,x,y,g,0.4,0.55);}
+    else if(how==5) {AS_AlienMoveStart(i,x+bx*2.4,y+by*2.4,g+2.8,x,y,g,0.5,0.75);}
+}
+// ---- senses and sleep -----------------------------------------------------------------------
+// Alien Swarm's senses (asw_alien.cpp 543-548): a marine within 576 units is sensed through walls, one within 768
+// only in clear sight; a long-range spawner's aliens 1152 and 1536 (as_aSense, as_aSight). The quarry it has is
+// kept until it is 2000 away. With the extras on, a marine firing within 16 cells is heard (the port's own).
+int AS_AlienSense (int i, point q) {
+    int p;int t=as_aTarget[i];int best=0;fixed d;fixed bd=AS_TOO_FAR;fixed x=PointGetX(q);fixed y=PointGetY(q);point mq;
+    if(t>=1 && t<=AS_PLAYERS && as_aAwake[i] && AS_Person(t) && as_alive[t]) {
+        if(DistanceBetweenPoints(q,UnitGetPosition(as_m[t]))<AS_TOO_FAR) {return t;}
+    }
+    if(as_now<as_aSenseAt[i]) {return 0;}
+    as_aSenseAt[i]=as_now+0.25;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        mq=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(q,mq);
+        if(d>=bd) {continue;}
+        if(d<as_aSense[i] || (d<as_aSight[i] && AS_LineClear(x,y,PointGetX(mq),PointGetY(mq))) || (as_extras && d<16.0 && as_now-as_lastShot[p]<0.3)) {best=p;bd=d;}
+    }
+    return best;
+}
+// Whether a marine's view takes in (x, y), with AS's 384-unit margin (asw_util_shared.cpp 671-820): the camera at
+// pitch 60 and 405 units back, 75 degrees wide, sees about 450 units either side of a marine, from 200 behind it to
+// 394 ahead (north). A fallen marine's view counts too.
+bool AS_MarineSees (fixed x, fixed y) {
+    int p;point mq;fixed dx;fixed dy;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || as_m[p]==null) {continue;}
+        mq=UnitGetPosition(as_m[p]);dx=x-PointGetX(mq);dy=y-PointGetY(mq);
+        if(AbsF(dx)<10.4 && dy> -7.3 && dy<9.7) {return true;}
+    }
+    return false;
+}
+// AS's sleep (asw_alien.cpp 457-494): an alien with no quarry and no orders that has been out of every marine's
+// view 2 s (looked at each second) sleeps: not drawn, not thinking, but still there to be shot. It wakes the moment
+// it comes into a marine's view, or is hurt.
+void AS_AlienSleep (int i, bool on) {
+    if(as_aHidden[i]==on) {return;}
+    as_aHidden[i]=on;
+    if(on) {AS_Halt(i);ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"SetOpacity 0.0 0.0");}
+    else {ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"SetOpacity 1.0 0.15");as_aNextOrder[i]=as_now;}
+}
+// True while it sleeps on.
+bool AS_SleepPulse (int i) {
+    if(as_now>=as_aViewAt[i]) {
+        as_aViewAt[i]=as_now+1.0;
+        if(as_aHidden[i]) {as_aViewAt[i]=as_now+0.25;}
+        if(AS_MarineSees(as_aX[i],as_aY[i])) {as_aSeenAt[i]=as_now;AS_AlienSleep(i,false);}
+        else if(!as_aHidden[i] && !as_aAwake[i] && as_aGoal[i]==0 && as_now-as_aSeenAt[i]>=2.0 && as_aMoveT1[i]<=0.0) {AS_AlienSleep(i,true);}
+    }
+    return as_aHidden[i];
+}
+// A burrowed start (asw_alien.cpp 269-305, 987-991): under the deck, unseen and unharmed, it digs up 0.5-1 s on,
+// or, when a marine stands on the spot, tries again 1-6 s later.
+void AS_AlienBurrow (int i) {
+    as_aBurrowed[i]=true;as_aThinkAt[i]=as_now+RandomFixed(0.5,1.0);
+    ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"SetOpacity 0.0 0.0");AS_Halt(i);
+}
+void AS_BurrowPulse (int i) {
+    if(as_now<as_aThinkAt[i]) {return;}
+    if(AS_MarineWithin(as_aX[i],as_aY[i],as_aRadius[i]+AS_MARINE_R+0.2)) {as_aThinkAt[i]=as_now+RandomFixed(1.0,6.0);return;}
+    as_aBurrowed[i]=false;as_aThinkAt[i]=as_now+RandomFixed(0.0,1.0);as_aSeenAt[i]=as_now;
+    ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"SetOpacity 1.0 0.4");
+    AS_Fx("ASFxBlood",as_aX[i],as_aY[i],0.0,0.0);AS_Burst(as_aX[i],as_aY[i],0.2,0.7,"120,100,70",3);
+}
+
+// ---- thinking -------------------------------------------------------------------------------
 void AS_AlienThink (int i) {
     int k=as_aKind[i];int p;point q=UnitGetPosition(as_a[i]);point mq;fixed d;fixed ang;fixed x=PointGetX(q);fixed y=PointGetY(q);fixed reach;int door;
+    // Climbing in or jumping down: the move carries it.
+    if(as_aMoveT1[i]>0.0 && AS_AlienMoveStep(i)) {return;}
+    if(as_aBurrowed[i]) {AS_BurrowPulse(i);return;}
     // Frozen solid: nothing at all until it thaws.
     if(as_aFreezeUntil[i]>0.0) {
         if(as_aFreezeUntil[i]>as_now) {return;}
@@ -314,9 +507,9 @@ void AS_AlienThink (int i) {
         else if(RandomInt(0,5)==0) {AS_Arc(x-0.3,y,x+0.3,y+RandomFixed(-0.3,0.3),0.4);}
     }
     if(as_tick%8==i%8) {AS_AlienSpeedUpdate(i);}
-    // Burning things take 2.5 a second (three times that for aliens) until the fire dies.
+    // Burning things take 2.5 a second (three times that for aliens) until the fire dies; an egg a flat 5.
     if(as_aBurnUntil[i]>as_now) {
-        AS_HurtAlien(i,2.5*AS_DT,1,as_aBurnBy[i],x,y);
+        if(k==AS_EGG) {AS_HurtAlien(i,5.0*AS_DT,1,as_aBurnBy[i],x,y);}else {AS_HurtAlien(i,2.5*AS_DT,1,as_aBurnBy[i],x,y);}
         if(as_a[i]==null) {return;}
         if(RandomInt(0,2)==0) {AS_FxUnit("ASFxFlame",x+RandomFixed(-0.3,0.3),y+RandomFixed(-0.3,0.3),0.3,0.0,0.35,0.35,"",3);}
     }
@@ -324,51 +517,62 @@ void AS_AlienThink (int i) {
     // had started lands late, if the marine is still in reach by then.
     if(as_aFlinchUntil[i]>as_now) {return;}
     if(k==AS_EGG) {AS_EggThink(i);return;}
+    if(k==AS_BIOMASS) {AS_GooThink(i);return;}
     if(AS_IsThing(k)) {return;}
+    // Out of every marine's view with nothing to do: asleep.
+    if(AS_SleepPulse(i)) {return;}
     // Sent somewhere by its spawner (src/Objects.galaxy AS_AlienGoal).
     if(as_aGoal[i]>0 && AS_AlienGoal(i,q)) {return;}
-    // Asleep: a wanderer waits until a marine comes near, or is heard firing.
-    p=AS_Nearest(q,1000.0);
-    if(p==0) {if(as_now>=as_aNextOrder[i]) {AS_Halt(i);as_aNextOrder[i]=as_now+1.0;}return;}
-    mq=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(q,mq);
-    if(!as_aAwake[i]) {
-        if(d<9.0 || (d<16.0 && as_now-as_lastShot[p]<0.3)) {as_aAwake[i]=true;}
-        else {
-            // Shuffle about in place now and then.
-            if(as_now>=as_aNextOrder[i]) {
-                as_aNextOrder[i]=as_now+RandomFixed(2.0,5.0);
-                if(RandomInt(0,2)==0) {
-                    ang=RandomFixed(0.0,360.0);
-                    if(AS_Free(x+Cos(ang)*1.5,y+Sin(ang)*1.5,as_aRadius[i])) {AS_Order(i,Point(x+Cos(ang)*1.5,y+Sin(ang)*1.5));}
-                }
+    p=AS_AlienSense(i,q);
+    if(p==0) {
+        if(as_aAwake[i]) {as_aAwake[i]=false;as_aTarget[i]=0;}
+        // A defanged parasite with no quarry a minute after it was born dies (asw_parasite.cpp 1249-1255).
+        if(k==AS_XENOMITE && as_now-as_aBornAt[i]>60.0) {AS_KillAlien(i,0,0);return;}
+        // A boomer that had begun to swell bursts all the same.
+        if(k==AS_BOOMER && as_aState[i]==1 && as_now>=as_aStateAt[i]+3.0) {AS_KillAlien(i,0,2);return;}
+        // Idle: it shuffles about in place now and then (AS's wander, 90-200 units).
+        if(as_now>=as_aNextOrder[i]) {
+            as_aNextOrder[i]=as_now+RandomFixed(2.0,5.0);
+            if(RandomInt(0,2)==0) {
+                ang=RandomFixed(0.0,360.0);d=RandomFixed(1.1,2.5);
+                if(AS_Free(x+Cos(ang)*d,y+Sin(ang)*d,as_aRadius[i])) {AS_Order(i,Point(x+Cos(ang)*d,y+Sin(ang)*d));}
             }
-            return;
         }
+        return;
     }
-    as_aTarget[i]=p;
+    // A new quarry: a drone that has one looks 1768 units and senses it through walls 1200 (asw_drone_advanced.cpp).
+    if(!as_aAwake[i] || as_aTarget[i]!=p) {
+        if(k==AS_DRONE || k==AS_JUMPER || k==AS_UBER) {as_aSight[i]=MaxF(as_aSight[i],22.1);as_aSense[i]=MaxF(as_aSense[i],15.0);}
+    }
+    as_aAwake[i]=true;as_aTarget[i]=p;
+    mq=UnitGetPosition(as_m[p]);d=DistanceBetweenPoints(q,mq);
     reach=as_aRadius[i]+AS_MARINE_R+as_kindReach[k];
     ang=ATan2(PointGetY(mq)-y,PointGetX(mq)-x);
     // A swing that was started lands now, at the door it was bashing or at the marine if still in reach.
     if(as_aHitAt[i]>0.0 && as_now>=as_aHitAt[i]) {
         as_aHitAt[i]=0.0;
-        if(as_aHitDoor[i]>=0) {AS_DoorHit(as_aHitDoor[i],30.0,x,y);as_aHitDoor[i]= -1;}
+        // Drones do twice their claws to a door, the difficulty's share taken off again (asw_door.cpp 1163-1205).
+        if(as_aHitDoor[i]>=0) {AS_DoorHit(as_aHitDoor[i],2.0*as_kindDamage[k],x,y);as_aHitDoor[i]= -1;}
         else if(d<reach+0.45 && as_aStunUntil[i]<=as_now) {
+            // The shieldbug's blow knocks a marine down (500 along it, 300 up: asw_shieldbug.cpp 649-678); the
+            // boomer's claws do 4 to 6.
             if(k==AS_SHIELDBUG) {AS_HurtMarine(p,AS_KindDamage(k),x,y,7.0);}
+            else if(k==AS_BOOMER) {AS_HurtMarine(p,AS_KindDamage(k)*RandomFixed(0.8,1.2),x,y,0.0);}
             else {AS_HurtMarine(p,AS_KindDamage(k),x,y,0.0);}
             AS_Sound("Broodling_AttackImpact",PointGetX(mq),PointGetY(mq),80.0,0.05);
-            // Electric armour bites back.
+            // Electric armour bites back: 20 to the attacker (asw_marine.cpp 1150-1185).
             if(as_elecUntil[p]>as_now && as_a[i]!=null) {AS_Stun(i,6.0);AS_HurtAlien(i,20.0,3,p,PointGetX(mq),PointGetY(mq));}
             if(as_a[i]==null) {return;}
         }
     }
     if(k==AS_PARASITE || k==AS_XENOMITE) {AS_ParasiteThink(i,p,d,ang);return;}
+    if(k==AS_BUZZER) {AS_BuzzerThink(i,p,d,ang);return;}
     if(k==AS_RIPPER && AS_RipperLunge(i,p,d,ang)) {return;}
     if(k==AS_JUMPER && AS_JumperLeap(i,p,d,ang)) {return;}
-    if(k==AS_BOOMER && d<reach) {
-        // A boomer that reaches a marine bursts on it.
-        AS_KillAlien(i,0,2);return;
-    }
-    if(k==AS_RANGER || k==AS_MORTAR || k==AS_HARVESTER) {AS_RangedThink(i,p,d,ang);return;}
+    if(k==AS_BOOMER && AS_BoomerThink(i,p,d,ang)) {return;}
+    if(k==AS_SHIELDBUG && AS_ShieldbugDefend(i,p,d,ang)) {return;}
+    if(k==AS_RANGER) {AS_RangerThink(i,p,d,ang);return;}
+    if(k==AS_MORTAR || k==AS_HARVESTER) {AS_RangedThink(i,p,d,ang);return;}
     // Drones blocked by a shut door with their quarry behind it bash it down (asw_drone_door_distance).
     if((k==AS_DRONE || k==AS_JUMPER || k==AS_UBER) && d>reach) {
         door=AS_DoorInTheWay(i,mq);
@@ -398,21 +602,23 @@ void AS_AlienThink (int i) {
     }
 }
 // Parasites run in, then leap the last few metres; one that lands infests its marine (20 s of damage) unless
-// the marine's electric armour throws it off. Xenomites only bite.
+// the marine's electric armour throws it off. A defanged one (xenomite) bites for 15 acid and is spent
+// (asw_parasite.cpp 624-888): it gibs itself.
 void AS_ParasiteThink (int i, int p, fixed d, fixed ang) {
     point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);fixed nx;fixed ny;
     if(as_aLeapUntil[i]>as_now) {
         nx=x+as_aLeapX[i]*AS_DT;ny=y+as_aLeapY[i]*AS_DT;
         if(AS_Free(nx,ny,0.2)) {UnitSetPosition(as_a[i],Point(nx,ny),true);}
         UnitSetHeight(as_a[i],0.5*Sin(180.0*(1.0-(as_aLeapUntil[i]-as_now)/0.4)),AS_DT);
-        if(DistanceBetweenPoints(Point(nx,ny),UnitGetPosition(as_m[p]))<0.55 && as_rollUntil[p]<=as_now) {
-            if(as_aKind[i]==AS_XENOMITE) {AS_HurtMarine(p,AS_KindDamage(AS_XENOMITE),x,y,0.0);as_aLeapUntil[i]=as_now;return;}
+        // A roll is no escape from a parasite (AS-PARITY.md section 5).
+        if(DistanceBetweenPoints(Point(nx,ny),UnitGetPosition(as_m[p]))<0.55) {
+            if(as_aKind[i]==AS_XENOMITE) {AS_HurtMarine(p,AS_KindDamage(AS_XENOMITE),x,y,0.0);as_aLeapUntil[i]=as_now;AS_KillAlien(i,0,2);return;}
             if(as_elecUntil[p]>as_now) {AS_HurtAlien(i,as_aHp[i]*2.0,3,p,nx,ny);return;}
             // Latched on: the marine is infested and the parasite is spent.
             as_infestUntil[p]=as_now+20.0;
             AS_HurtMarine(p,AS_KindDamage(AS_PARASITE),x,y,0.0);
             AS_Message(p,"<c val=\"90FF60\">INFESTED!</c>  -  heal to survive it");
-            AS_HintEvent("infested",p);AS_Chatter(p,AS_CH_INFESTED);
+            AS_HintEvent("infested",p);AS_FailScore(AS_FA_INFESTEDLOTS,1.0/3.0);AS_Chatter(p,AS_CH_INFESTED);
             UnitRemove(as_a[i]);as_a[i]=null;as_alive2-=1;AS_AlienGone(i);
             if(as_aParent[i]>=0) {as_aChildren[as_aParent[i]]=MaxI(0,as_aChildren[as_aParent[i]]-1);}
         }
@@ -421,31 +627,34 @@ void AS_ParasiteThink (int i, int p, fixed d, fixed ang) {
     UnitSetHeight(as_a[i],0.0,0.1);
     if(d<3.2 && as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now && AS_LineClear(x,y,PointGetX(UnitGetPosition(as_m[p])),PointGetY(UnitGetPosition(as_m[p])))) {
         AS_Halt(i);UnitSetFacing(as_a[i],ang,0.0);AS_Swing(i);
-        as_aLeapUntil[i]=as_now+0.4;as_aLeapX[i]=Cos(ang)*8.5;as_aLeapY[i]=Sin(ang)*8.5;
+        as_aLeapUntil[i]=as_now+0.4;as_aLeapX[i]=Cos(ang)*8.1;as_aLeapY[i]=Sin(ang)*8.1;
         as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[as_aKind[i]]);
         AS_Sound("Broodling_AttackLaunch",x,y,80.0,0.1);
         return;
     }
     if(as_now>=as_aNextOrder[i]) {as_aNextOrder[i]=as_now+0.2;AS_Order(i,UnitGetPosition(as_m[p]));}
 }
-// Drone jumpers leap the last few metres claws first.
+// The jumper (asw_alien_jumper.cpp 293-484): when it faces its quarry (dot 0.5 or more) it guesses where the marine
+// will be dot x 2.5 s on and, if that is 512 to 1024 units off, clear and within 512 up or down, leaps there. The
+// leap does no harm; it lands and runs on, and may leap again 2 to 6 s later.
 bool AS_JumperLeap (int i, int p, fixed d, fixed ang) {
-    point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);fixed nx;fixed ny;point mq=UnitGetPosition(as_m[p]);
-    if(as_aLeapUntil[i]>as_now) {
-        nx=x+as_aLeapX[i]*AS_DT;ny=y+as_aLeapY[i]*AS_DT;
-        if(!AS_Free(nx,ny,as_aRadius[i]) || DistanceBetweenPoints(Point(nx,ny),mq)<as_aRadius[i]+AS_MARINE_R+0.2) {as_aLeapUntil[i]=as_now;}
-        else {UnitSetPosition(as_a[i],Point(nx,ny),true);UnitSetHeight(as_a[i],0.7*Sin(180.0*(1.0-(as_aLeapUntil[i]-as_now)/0.35)),AS_DT);}
-        return true;
-    }
-    UnitSetHeight(as_a[i],0.0,0.1);
-    if(d>1.8 && d<4.0 && as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now && AS_LineClear(x,y,PointGetX(mq),PointGetY(mq))) {
-        AS_Halt(i);UnitSetFacing(as_a[i],ang,0.0);AS_Swing(i);
-        as_aLeapUntil[i]=as_now+0.35;as_aLeapX[i]=Cos(ang)*9.0;as_aLeapY[i]=Sin(ang)*9.0;
-        as_aHitAt[i]=as_now+0.35;as_aHitDoor[i]= -1;as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[AS_JUMPER]*2.0);
-        AS_Sound("Broodling_AttackLaunch",x,y,80.0,0.1);
-        return true;
-    }
-    return false;
+    point q=UnitGetPosition(as_a[i]);fixed x=PointGetX(q);fixed y=PointGetY(q);point mq=UnitGetPosition(as_m[p]);
+    fixed dot;fixed tx;fixed ty;fixed jd;
+    if(as_now<as_aThinkAt[i] || as_aStunUntil[i]>as_now || d<6.4) {return false;}
+    as_aThinkAt[i]=as_now+0.5;
+    dot=Cos(AS_AngleDiff(UnitGetFacing(as_a[i]),ang));
+    if(dot<0.5) {return false;}
+    tx=PointGetX(mq)+as_mvX[p]*dot*2.5;ty=PointGetY(mq)+as_mvY[p]*dot*2.5;
+    // Short of the marine by a few hull widths.
+    jd=SquareRoot((tx-x)*(tx-x)+(ty-y)*(ty-y));
+    if(jd<6.4 || jd>12.8) {return false;}
+    tx-=(tx-x)/jd*(as_aRadius[i]*4.0);ty-=(ty-y)/jd*(as_aRadius[i]*4.0);
+    if(!AS_Free(tx,ty,as_aRadius[i]) || !AS_LineClear(x,y,tx,ty) || AbsF(AS_GroundZ(tx,ty)-AS_GroundZ(x,y))>6.4) {as_aThinkAt[i]=as_now+RandomFixed(1.0,2.0);return false;}
+    AS_Swing(i);
+    AS_AlienMoveStart(i,x,y,AS_GroundZ(x,y),tx,ty,AS_GroundZ(tx,ty),0.6+jd*0.08,jd/9.0);
+    as_aThinkAt[i]=as_now+jd/9.0+IntToFixed(RandomInt(2,6));
+    AS_Sound("Broodling_AttackLaunch",x,y,80.0,0.1);
+    return true;
 }
 // Rippers close at a walk, then lunge the last few metres with both scythes:
 // the slash started on the lunge lands when it arrives (AS_AlienThink's swing).
@@ -467,62 +676,197 @@ bool AS_RipperLunge (int i, int p, fixed d, fixed ang) {
     }
     return false;
 }
-// Rangers spit, mortarbugs lob bile, harvesters breed xenomites: all from a distance.
-void AS_RangedThink (int i, int p, fixed d, fixed ang) {
-    int k=as_aKind[i];point q=UnitGetPosition(as_a[i]);point mq=UnitGetPosition(as_m[p]);fixed x=PointGetX(q);fixed y=PointGetY(q);
-    fixed keep=as_kindReach[k];bool sees=AS_LineClear(x,y,PointGetX(mq),PointGetY(mq));int c;
-    if(sees && d<keep+1.0) {
+// The boomer (asw_boomer.cpp 299-320, asw_ai_behavior_explode.cpp): it walks at its quarry, and within 200 units
+// rolls a 40% chance each second to swell. Swelling, it stands and grows for 3 s and then bursts (AS_KillAlien
+// throws the blobs). Otherwise it claws (140 units, 4 to 6).
+bool AS_BoomerThink (int i, int p, fixed d, fixed ang) {
+    fixed f;
+    if(as_aState[i]==1) {
+        f=MinF(1.0,(as_now-as_aStateAt[i])/3.0);
+        UnitSetScale(as_a[i],100.0+40.0*f,100.0+40.0*f,100.0+40.0*f);
+        if(f>=1.0) {AS_KillAlien(i,0,2);}
+        return true;
+    }
+    if(d<2.5 && as_now>=as_aThinkAt[i]) {
+        as_aThinkAt[i]=as_now+1.0;
+        if(RandomInt(1,10)<=4) {
+            as_aState[i]=1;as_aStateAt[i]=as_now;AS_Halt(i);
+            ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),libNtve_gf_SetTintColor(Color(80.0,100.0,60.0),1.6,3.0));
+            AS_Sound("Baneling_Attack",as_aX[i],as_aY[i],90.0,0.1);
+            return true;
+        }
+    }
+    return false;
+}
+// The shieldbug's defence (asw_shieldbug.cpp 280-308): never before it has been hurt once; with its quarry within
+// 800 units it stands its ground shield first, past 200 only if hurt in the last 8 s. Up close it fights.
+bool AS_ShieldbugDefend (int i, int p, fixed d, fixed ang) {
+    bool on=as_aStateAt[i]>0.0 && d<10.0 && d>2.5 && as_now-as_aStateAt[i]<8.0;
+    if(!on) {as_aState[i]=0;return false;}
+    if(as_aState[i]!=2) {as_aState[i]=2;AS_Halt(i);}
+    UnitSetFacing(as_a[i],ang,0.4);
+    return true;
+}
+// The buzzer (asw_buzzer.cpp): it flies at its quarry, and within 200 units, nose on (dot over 0.75), bursts at
+// twice the speed for 1 s, then 2 s before the next. Its sting does 15 a moment of contact (clamped 1 to 30, once
+// in 1.5 s a marine) and blurs the marine's view 0.6 x (1 + difficulty / 10) s; after a sting it bounces off.
+void AS_BuzzerThink (int i, int p, fixed d, fixed ang) {
+    point q=UnitGetPosition(as_a[i]);point mq=UnitGetPosition(as_m[p]);fixed x=PointGetX(q);fixed y=PointGetY(q);fixed dmg;
+    if(as_aState[i]==1 && as_now>=as_aStateAt[i]) {as_aState[i]=0;as_aStateAt[i]=as_now+2.0;AS_AlienSpeedUpdate(i);}
+    if(as_aState[i]==0 && d<2.5 && as_now>=as_aStateAt[i] && Cos(AS_AngleDiff(UnitGetFacing(as_a[i]),ang))>0.75) {
+        as_aState[i]=1;as_aStateAt[i]=as_now+1.0;AS_AlienSpeedUpdate(i);
+    }
+    if(d<as_aRadius[i]+AS_MARINE_R+0.2 && as_now-as_buzzAt[p]>=1.5 && as_rollUntil[p]<=as_now) {
+        as_buzzAt[p]=as_now;
+        dmg=AS_Clamp(15.0*0.1*AS_AlienDamageScale(),1.0,30.0);
+        AS_HurtMarine(p,dmg,x,y,0.0);
+        as_blurUntil[p]=MaxF(as_blurUntil[p],as_now+0.6*(1.0+IntToFixed(as_md)/10.0));
+        AS_Sound("Mutalisk_Attack",PointGetX(mq),PointGetY(mq),80.0,0.05);
+        if(as_a[i]==null) {return;}
+        // Bounce back off the marine.
+        if(AS_Free(x-Cos(ang)*1.5,y-Sin(ang)*1.5,as_aRadius[i])) {AS_Order(i,Point(x-Cos(ang)*1.5,y-Sin(ang)*1.5));as_aNextOrder[i]=as_now+0.5;}
+        as_aState[i]=0;as_aStateAt[i]=as_now+2.0;AS_AlienSpeedUpdate(i);
+        return;
+    }
+    if(as_now>=as_aNextOrder[i]) {as_aNextOrder[i]=as_now+MinF(0.4,0.1+d*0.03);AS_Order(i,mq);}
+}
+// The ranger (asw_ranger.cpp 49-264): every 4 s, from up to 600 units with its quarry in sight, a volley of three
+// spits at 0, 0.1 and 0.2 s, straight and then 4 degrees either side, 425 u/s and 12 damage each (not scaled by
+// difficulty), at where it last saw the marine. It closes in when it cannot. Hurt, it steps back. With the extras
+// on it also backs away from a marine that gets close (the port's keep-distance).
+void AS_RangerThink (int i, int p, fixed d, fixed ang) {
+    point q=UnitGetPosition(as_a[i]);point mq=UnitGetPosition(as_m[p]);fixed x=PointGetX(q);fixed y=PointGetY(q);
+    bool sees=AS_LineClear(x,y,PointGetX(mq),PointGetY(mq));fixed a;int n;
+    if(sees) {as_aAimX[i]=PointGetX(mq);as_aAimY[i]=PointGetY(mq);}
+    // A volley under way: its next spit.
+    if(as_aState[i]>0) {
+        if(as_now>=as_aStateAt[i] && as_aStunUntil[i]<=as_now) {
+            n=3-as_aState[i];as_aState[i]-=1;as_aStateAt[i]=as_now+0.1;
+            a=ATan2(as_aAimY[i]-y,as_aAimX[i]-x);
+            if(n==1) {a-=4.0;}else if(n==2) {a+=4.0;}
+            AS_Lob(0,2,x+Cos(a)*0.5,y+Sin(a)*0.5,a,7.5,12.0,0.6);
+            if(n==0) {AS_Sound("Hydralisk_Attack",x,y,80.0,0.1);}
+        }
+        return;
+    }
+    if(sees && d<as_kindReach[AS_RANGER]) {
         if(as_now>=as_aNextOrder[i]) {
             as_aNextOrder[i]=as_now+0.5;
-            // Too close: back off a little, as rangers do.
-            if(d<keep*0.5 && AS_Free(x-Cos(ang)*2.0,y-Sin(ang)*2.0,as_aRadius[i])) {AS_Order(i,Point(x-Cos(ang)*2.0,y-Sin(ang)*2.0));}
+            if(as_extras && d<3.25 && AS_Free(x-Cos(ang)*2.0,y-Sin(ang)*2.0,as_aRadius[i])) {AS_Order(i,Point(x-Cos(ang)*2.0,y-Sin(ang)*2.0));}
             else {AS_Halt(i);}
         }
         UnitSetFacing(as_a[i],ang,0.2);
         if(as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now) {
-            as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[k]*RandomFixed(0.85,1.15));
+            as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[AS_RANGER]);
+            as_aState[i]=3;as_aStateAt[i]=as_now;
             AS_Swing(i);
-            if(k==AS_RANGER) {
-                AS_Lob(0,2,x+Cos(ang)*0.5,y+Sin(ang)*0.5,ang+RandomFixed(-3.0,3.0),d+1.0,AS_KindDamage(k),0.6);
-                AS_Sound("Hydralisk_Attack",x,y,80.0,0.1);
-            }
-            else if(k==AS_MORTAR) {
-                // Lead the target a little.
-                AS_Lob(0,3,x,y,ATan2(PointGetY(mq)+as_mvY[p]*0.5-y,PointGetX(mq)+as_mvX[p]*0.5-x),MinF(12.0,d+0.3),AS_KindDamage(k),2.0);
-                AS_Sound("Ravager_CorrosiveBile_AttackLaunch",x,y,90.0,0.2);
-            }
-            else if(as_aChildren[i]<4) {
-                c=AS_SpawnNear(AS_XENOMITE,x+Cos(ang)*0.9,y+Sin(ang)*0.9,true);
-                if(c>=0) {as_aParent[c]=i;as_aChildren[i]+=1;}
-                AS_Sound("SwarmHost_SpawnLaunch",x,y,80.0,0.2);
-            }
         }
         return;
     }
     if(as_now>=as_aNextOrder[i]) {as_aNextOrder[i]=as_now+0.4;AS_Order(i,mq);}
 }
-// Eggs hatch a parasite when a marine walks up to them.
+// A ranger that is hurt backs off a couple of steps from where the harm came (asw_ai_behavior_retreat.cpp).
+void AS_RangerStepBack (int i, fixed fromX, fixed fromY) {
+    fixed ang=ATan2(as_aY[i]-fromY,as_aX[i]-fromX)+RandomFixed(-30.0,30.0);fixed x=as_aX[i]+Cos(ang)*1.5;fixed y=as_aY[i]+Sin(ang)*1.5;
+    if(as_aState[i]>0 || as_now<as_aNextOrder[i]-0.3) {return;}
+    if(AS_Free(x,y,as_aRadius[i])) {AS_Order(i,Point(x,y));as_aNextOrder[i]=as_now+0.8;}
+}
+// Mortarbugs lob bile and harvesters breed, both from up to 1500 units with or without a sight of their quarry,
+// once they face it (dot 0.65: asw_mortarbug.cpp 205-258, asw_harvester.cpp 219-275). Touching either stings, 5
+// every 0.6 s (471).
+//   mortarbug  three shells at v - 40, v and v + 40 u/s; the next volley the flight time plus 0.5-2 s later; a
+//              marine more than 480 away that faces it is led by half a second (383-426)
+//   harvester  a defanged parasite 1 s into each lay, up to six alive; between lays it backs off (263-416)
+void AS_RangedThink (int i, int p, fixed d, fixed ang) {
+    int k=as_aKind[i];point q=UnitGetPosition(as_a[i]);point mq=UnitGetPosition(as_m[p]);fixed x=PointGetX(q);fixed y=PointGetY(q);
+    bool facing=Cos(AS_AngleDiff(UnitGetFacing(as_a[i]),ang))>=0.65;int c;int j;fixed tx;fixed ty;fixed dd;fixed fly;
+    if(d<as_aRadius[i]+AS_MARINE_R+0.15 && as_now>=as_aThinkAt[i] && as_aStunUntil[i]<=as_now) {
+        as_aThinkAt[i]=as_now+0.6;
+        AS_HurtMarine(p,5.0,x,y,0.0);
+        if(as_a[i]==null) {return;}
+    }
+    // The harvester's lay comes 1 s into it.
+    if(k==AS_HARVESTER && as_aState[i]==1) {
+        if(as_now<as_aStateAt[i]) {return;}
+        as_aState[i]=0;
+        if(as_aChildren[i]<6) {
+            c=AS_SpawnNear(AS_XENOMITE,x+Cos(UnitGetFacing(as_a[i]))*0.9,y+Sin(UnitGetFacing(as_a[i]))*0.9,true);
+            if(c>=0) {as_aParent[c]=i;as_aChildren[i]+=1;}
+            AS_Sound("SwarmHost_SpawnLaunch",x,y,80.0,0.2);
+        }
+    }
+    if(d<as_kindReach[k]) {
+        UnitSetFacing(as_a[i],ang,0.4);
+        if(facing && as_now>=as_aNextAttack[i] && as_aStunUntil[i]<=as_now) {
+            AS_Halt(i);
+            if(k==AS_MORTAR) {
+                tx=PointGetX(mq);ty=PointGetY(mq);
+                if(d>6.0 && Cos(AS_AngleDiff(as_aim[p],ang+180.0))>0.5) {tx+=as_mvX[p]*0.5;ty+=as_mvY[p]*0.5;}
+                dd=SquareRoot((tx-x)*(tx-x)+(ty-y)*(ty-y));fly=dd/6.5;
+                for(j=0;j<3;j+=1) {AS_Lob(0,3,x,y,ATan2(ty-y,tx-x),dd*(6.5+0.5*IntToFixed(j-1))/6.5,AS_KindDamage(k),2.75);}
+                as_aNextAttack[i]=as_now+fly+RandomFixed(0.5,2.0);
+                AS_Swing(i);
+                AS_Sound("Ravager_CorrosiveBile_AttackLaunch",x,y,90.0,0.2);
+            }
+            else {
+                as_aNextAttack[i]=as_now+AS_AlienTime(as_kindCooldown[k]*RandomFixed(0.85,1.15));
+                if(as_aChildren[i]<6) {as_aState[i]=1;as_aStateAt[i]=as_now+1.0;AS_Swing(i);}
+            }
+            return;
+        }
+        if(k==AS_HARVESTER && d<12.0 && as_now>=as_aNextOrder[i]) {
+            as_aNextOrder[i]=as_now+1.0;
+            if(AS_Free(x-Cos(ang)*2.5,y-Sin(ang)*2.5,as_aRadius[i])) {AS_Order(i,Point(x-Cos(ang)*2.5,y-Sin(ang)*2.5));}
+        }
+        else if(k==AS_MORTAR && as_now>=as_aNextOrder[i]) {as_aNextOrder[i]=as_now+0.5;AS_Halt(i);}
+        return;
+    }
+    if(as_now>=as_aNextOrder[i]) {as_aNextOrder[i]=as_now+0.4;AS_Order(i,mq);}
+}
+// Eggs (asw_egg.cpp 156-515): one opens for a marine within 120 units, and at each look round by a 10% chance
+// for one within 450 (250 on Easy). It looks round first 5-10 s in, then each 1.5 s on Insane and up, 2.0 on Hard,
+// 2.4 below, and each 5 s with no marine within 4096. The parasite hatches 3 x 1-2 s after it opens; a burning egg's
+// comes out alight.
 void AS_EggThink (int i) {
-    point q=UnitGetPosition(as_a[i]);int p;
+    point q=UnitGetPosition(as_a[i]);int p;int c;fixed reach=5.6;fixed gap=2.4;
     if(as_aHitAt[i]>0.0) {
         if(as_now>=as_aHitAt[i]) {
-            AS_SpawnNear(AS_PARASITE,PointGetX(q),PointGetY(q),true);
+            c=AS_SpawnNear(AS_PARASITE,PointGetX(q),PointGetY(q),true);
+            if(c>=0 && as_aBurnUntil[i]>as_now) {AS_Ignite(c,as_aBurnBy[i],5.0);}
             AS_KillAlien(i,0,0);
         }
         return;
     }
     p=AS_Nearest(q,as_kindReach[AS_EGG]);
+    if(p==0 && as_now>=as_aThinkAt[i]) {
+        if(as_skill==1) {reach=3.125;}
+        if(as_skill>=4) {gap=1.5;}else if(as_skill==3) {gap=2.0;}
+        if(AS_Nearest(q,51.2)==0) {gap=5.0;}
+        as_aThinkAt[i]=as_now+gap;
+        if(AS_Nearest(q,reach)>0 && RandomInt(1,10)==1) {p=AS_Nearest(q,reach);}
+    }
     if(p>0) {
-        as_aHitAt[i]=as_now+0.7;
+        as_aHitAt[i]=as_now+3.0*RandomFixed(1.0,2.0);
         ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"AnimPlay Birth Birth 0");
         AS_Sound("Egg_Birth",PointGetX(q),PointGetY(q),80.0,0.2);
+    }
+}
+// Alien goo (asw_alien_goo_shared.cpp 32-33, 398-414): acid to whoever touches it, 10 a second.
+void AS_GooThink (int i) {
+    int p;fixed r=as_aRadius[i]+AS_MARINE_R+0.1;point mq;
+    if(as_now<as_aNextAttack[i]) {return;}
+    as_aNextAttack[i]=as_now+1.0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p) || !as_alive[p]) {continue;}
+        mq=UnitGetPosition(as_m[p]);
+        if((PointGetX(mq)-as_aX[i])*(PointGetX(mq)-as_aX[i])+(PointGetY(mq)-as_aY[i])*(PointGetY(mq)-as_aY[i])<r*r) {AS_HurtMarine(p,10.0,as_aX[i],as_aY[i],0.0);}
     }
 }
 // Native movement leaves a wanderer stuck on a corner now and then: nudge it.
 void AS_Unstick (int i) {
     point q=UnitGetPosition(as_a[i]);int k=as_aKind[i];
     if(as_now-as_aStuckAt[i]<2.0) {return;}
-    if(as_aAwake[i] && DistanceBetweenPoints(q,Point(as_aStuckX[i],as_aStuckY[i]))<0.3 && as_aHitAt[i]==0.0 && k!=AS_RANGER && k!=AS_MORTAR && k!=AS_HARVESTER
+    if(as_aAwake[i] && !as_aHidden[i] && !as_aBurrowed[i] && as_aState[i]==0 && DistanceBetweenPoints(q,Point(as_aStuckX[i],as_aStuckY[i]))<0.3 && as_aHitAt[i]==0.0 && k!=AS_RANGER && k!=AS_MORTAR && k!=AS_HARVESTER
        && as_aFreezeUntil[i]<=as_now && as_aHitDoor[i]<0 && as_now-as_aNextAttack[i]>1.0) {
         AS_Order(i,Point(PointGetX(q)+RandomFixed(-2.0,2.0),PointGetY(q)+RandomFixed(-2.0,2.0)));
         as_aNextOrder[i]=as_now+0.6;
@@ -531,16 +875,19 @@ void AS_Unstick (int i) {
 }
 void AS_AlienPulse () {
     int i;
+    AS_BarrelPulse();
+    as_shieldBlocked=MaxF(0.0,as_shieldBlocked-20.0*AS_DT);
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null) {continue;}
         AS_HitFeedbackPulse(i);
         AS_AlienThink(i);
-        if(as_a[i]!=null && !AS_IsThing(as_aKind[i])) {AS_Unstick(i);}
+        if(as_a[i]!=null && !AS_IsThing(as_aKind[i]) && as_aMoveT1[i]<=0.0) {AS_Unstick(i);}
     }
 }
 // Every alien, egg and growth gone at once, without gore or kills: the level is being cleared.
 void AS_AliensClear () {
     int i;
     for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null) {UnitRemove(as_a[i]);as_a[i]=null;}as_aSpawner[i]= -1;}
-    as_alive2=0;as_bioCount=0;
+    for(i=0;i<8;i+=1) {as_boomAt[i]=0.0;}
+    as_alive2=0;as_bioCount=0;as_boomLast=0.0;as_shieldBlocked=0.0;
 }

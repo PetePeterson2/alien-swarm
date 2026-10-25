@@ -157,9 +157,12 @@ MAILS = {
     7: ('Tomas Reyes', 'North doors', 'The north doors are on the reactor bus. No power, no doors, and the hand crank is '
         'seized.\nWe are holding the turbine hall. If you get the reactor up, open the doors and do not wait for us.'),
 }
-PICKUPS = [('sentry', 8.1, 77.5)]
+# The west stores' rack (a sentry, a flamer and a chainsaw), and a medkit in reactor control. AS also leaves a jump
+# jet by the coolant shaft and a fire extinguisher in the turbine hall; the port has neither item.
+PICKUPS = [('sentry', 8.1, 77.5), ('flamer', 9.9, 77.9), ('chainsaw', 8.2, 76.5), ('medkit', 24.7, 115.3)]
 SENTRY_SPOT = (26.0, 106.0)
-AMMO = [(21.5, 115.0), (30.0, 60.0)]
+# The ammo drop in reactor control and the rifle ammo (asw_ammo_rifle) round the plant.
+AMMO = [(21.5, 115.0), (49.7, 106.2), (16.3, 82.1), (40.1, 64.7)]
 SLEEPERS = []
 BARRELS = [(22.2, 108.0), (34.5, 77.1), (19.9, 96.6), (27.8, 106.7), (25.0, 106.6), (27.7, 67.5), (23.4, 48.8)]
 EGGS = []
@@ -221,7 +224,8 @@ TRIGGERS = [
     ((17.0, 99.5, 25.0, 100.7), True, 1.0, [('stop', 'platform_drone_attack01', 0.0)]),
     # Reactor control's approach: rangers over the railings once a hand is on the door panel (random_ranger_trigger).
     ((21.0, 106.0, 32.5, 109.7), True, 1.0, [('fire', 'spawn_group_04', 0.0)], {'name': 'random_ranger_trigger', 'off': True}),
-    ((22.5, 109.8, 25.5, 111.0), True, 1.0, [('stop', 'DroneSpawn12', 0.0), ('stop', 'ranger_spawn01', 0.0)]),
+    ((22.5, 109.8, 25.5, 111.0), True, 1.0, [('stop', 'DroneSpawn12', 0.0), ('stop', 'ranger_spawn01', 0.0),
+                                             ('disable', 'reactor_holdout_choreo_timer2', 0.0)]),
     # Once the reactor is on (trigger_reactor_activated, trigger_reactor_online: enabled by the panel).
     ((32.5, 83.5, 34.0, 87.0), True, 1.0, [('spawn', 'DroneSpawn10', 0.0)], {'name': 'trigger_reactor_activated', 'off': True}),
     ((29.0, 104.5, 32.5, 106.0), True, 1.0, [('spawn', 'DroneSpawn8', 0.0)], {'name': 'trigger_reactor_online', 'off': True}),
@@ -240,6 +244,22 @@ ONS = [
     ('hackstart:reactor', 'enable', 'random_ranger_trigger', 0.0),
     ('spawn_group_04', 'spawnone', 'ranger_reactor_spawn_01a', 0.0), ('spawn_group_04', 'spawnone', 'ranger_reactor_spawn_01b', 1.0),
     ('spawn_group_04', 'spawnone', 'ranger_reactor_spawn_01c', 3.0),
+    # The holdout while the panel is worked (reactor_holdout_choreo_timer, every 2.5-5.5 s): one of three groups,
+    # drones over the west railing, over the east railing or out of the wall, each a burst of three or four.
+    ('hackstart:reactor', 'enable', 'reactor_holdout_choreo_timer', 0.0),
+    ('timer:reactor_holdout_choreo_timer', 'pickfire', 'spawn_group_01|spawn_group_02|spawn_group_03', 0.0),
+    ('spawn_group_01', 'spawnone', 'railing_spawn_01b', 0.0), ('spawn_group_01', 'spawnone', 'railing_spawn_01c', 0.07),
+    ('spawn_group_01', 'spawnone', 'railing_spawn_01a', 0.1),
+    ('spawn_group_02', 'spawnone', 'railing_spawn_02a', 0.0), ('spawn_group_02', 'spawnone', 'railing_spawn_02c', 0.07),
+    ('spawn_group_02', 'spawnone', 'railing_spawn_02b', 0.1), ('spawn_group_02', 'spawnone', 'railing_spawn_02d', 0.15),
+    ('spawn_group_03', 'spawnone', 'drone_wall_spawn_01b', 0.0), ('spawn_group_03', 'spawnone', 'drone_wall_spawn_01d', 0.07),
+    ('spawn_group_03', 'spawnone', 'drone_wall_spawn_01c', 0.1),
+    # Hacked: the drones stop three seconds later and buzzers take over (reactor_holdout_choreo_timer2, every 4-7 s,
+    # left or right of the door) until the squad steps through it.
+    ('hacked:reactor', 'disable', 'reactor_holdout_choreo_timer', 3.0),
+    ('hacked:reactor', 'enable', 'reactor_holdout_choreo_timer2', 0.0),
+    ('timer:reactor_holdout_choreo_timer2', 'pickfire', 'spawn_group_05|spawn_group_06', 0.0),
+    ('spawn_group_05', 'spawnone', 'reactor_buzzers_left', 0.0), ('spawn_group_06', 'spawnone', 'reactor_buzzers_right', 0.0),
     ('hacked:reactor', 'spawn', 'reactor_boomer_spawn', 0.0), ('hacked:reactor', 'notech', '', 0.0),
     # The reactor panel: the reactor online, the airlock powered, the escape shown.
     ('pressed:ReactorPanel', 'complete', 'reactor', 2.0), ('pressed:ReactorPanel', 'power', 'reactor_button2', 0.0),
@@ -259,8 +279,11 @@ ONS = [
     ('pressed:exit_door_button', 'boom', '47.5,113.5', 0.5),
     ('pressed:exit_door_button', 'open', 'exit', 32.0),
 ]
-TIMERS = []
+TIMERS = [('reactor_holdout_choreo_timer', 2.5, 5.5, False), ('reactor_holdout_choreo_timer2', 4.0, 7.0, False)]
 MOVERS = []
+# trigger_asw_jump: (rect, destination, minimum marine distance in cells, toward the quarry only). Drones crossing
+# the pump hall's west aisle toward a marine leap up the step onto JumpSpot2 rather than walking round.
+JUMPS = [((14.8, 50.8, 22.0, 51.9), (20.1, 48.4), 3.2, True)]
 
 LINES = {
     'co_m3_ob1': 'This is the Rydberg plant. Get to the reactor core and bring the power back up: the colony\'s running on batteries.',
@@ -274,8 +297,8 @@ ZONES = []
 # it hacked, 5 the button by it pressed, 6 the door by it open).
 ROUTE = [
     (7.5, 26.5, 0), (8.5, 31.5, 0), (14.5, 33.5, 0), (16.5, 46.5, 0), (23.5, 60.5, 0), (26.5, 65.5, 0),
-    (31.5, 79.5, 0), (31.5, 84.5, 0), (23.5, 86.5, 0), (23.5, 100.5, 0), (22.6, 108.4, 1), (23.5, 111.5, 0),
-    (22.5, 114.5, 0), (21.5, 113.5, 5), (22.5, 113.5, 0), (22.5, 99.5, 0), (24.5, 86.5, 0), (31.5, 83.5, 0),
-    (36.5, 78.5, 0), (38.5, 78.5, 0), (39.5, 86.5, 5), (40.8, 87.2, 6), (41.0, 95.5, 0), (46.5, 109.5, 0),
+    (32.5, 79.5, 0), (32.5, 84.5, 0), (23.5, 86.5, 0), (23.5, 100.5, 0), (22.6, 108.4, 1), (23.5, 111.5, 0),
+    (22.5, 114.5, 0), (21.5, 113.5, 5), (23.5, 114.0, 0), (23.5, 99.5, 0), (24.5, 86.5, 0), (31.5, 83.5, 0),
+    (36.5, 78.0, 0), (38.5, 78.0, 0), (39.5, 86.5, 5), (40.8, 87.2, 6), (41.0, 95.5, 0), (46.5, 109.5, 0),
     (48.5, 111.5, 5), (47.0, 113.5, 6), (48.5, 117.5, 0),
 ]

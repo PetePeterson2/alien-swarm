@@ -1,0 +1,93 @@
+// =====================================================================
+// Moments: Alien Swarm's slow-motion beats and its death scene.
+//   adrenaline   the whole game at 0.35 while it lasts (asw_stim_time_scale)
+//   (AS also has an objective beat, 0.2 for 1.8 s, but never sets its end time, so it never plays:
+//   asw_gamerules.cpp 679. Nor does it here.)
+//   a death      0.035 for 0.4 s from 0.15 s after it, the camera swung onto the body (asw_in_camera.cpp
+//                15-24): blending in over 0.5 s from 412 down to 200 units, pitch 60 to 50, orbiting at
+//                35 degrees a second, held 1.75 s (5 s when it is your own marine) and blending out over
+//                0.75 s; the squad unhurt from 0.15 to 2.05 s after it; a KILLED IN ACTION banner, and
+//                the death beep for the marine's own player (asw_gamerules.cpp 158-167, 2443-2460)
+// SC2's game speed cannot go below 0.6 of normal, so the rest of each scale comes from running only
+// that share of the script's 1/16 s steps (as_timeK in src/State.galaxy); the beats are timed in real
+// steps (as_realNow), which keep counting while game time crawls.
+// =====================================================================
+
+fixed as_deathSlowAt;            // the death beat, real time: from this
+fixed as_deathSlowUntil;         // to this
+bool as_speedSlowed;             // the game speed is down at Slower for a beat
+const fixed AS_SLOWER = 0.6;     // c_gameSpeedSlower against c_gameSpeedNormal
+fixed[5] as_dcYaw;
+fixed[5] as_dcStart;
+
+// The scale the game should run at now: the slowest beat wins.
+fixed AS_TimeScale () {
+    fixed s=1.0;
+    if(as_slowMo>as_now) {s=0.35;}
+    if(as_deathSlowUntil>as_realNow && as_realNow>=as_deathSlowAt) {s=MinF(s,0.035);}
+    return s;
+}
+// Every 1/16 s step, before anything else in the level: whether the script runs this step.
+bool AS_TimeStep () {
+    fixed s=AS_TimeScale();fixed k=1.0;int i;
+    as_realNow+=AS_DT;
+    if(s<0.999) {
+        if(!as_speedSlowed) {as_speedSlowed=true;GameSetSpeedLocked(false);GameSetSpeedValue(c_gameSpeedSlower);GameSetSpeedLocked(true);}
+        k=MinF(1.0,s/AS_SLOWER);
+    }
+    else if(as_speedSlowed) {as_speedSlowed=false;GameSetSpeedLocked(false);GameSetSpeedValue(c_gameSpeedNormal);GameSetSpeedLocked(true);}
+    if(k!=as_timeK) {
+        as_timeK=k;
+        for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && !AS_IsThing(as_aKind[i])) {AS_AlienSpeedUpdate(i);}}
+    }
+    AS_DeathCamPulse();
+    if(as_timeK>=1.0) {as_timeAcc=0.0;return true;}
+    as_timeAcc+=as_timeK;
+    if(as_timeAcc<1.0) {return false;}
+    as_timeAcc-=1.0;
+    return true;
+}
+// Back to full speed at once (a level ends, the mission restarts).
+void AS_TimeReset () {
+    int p;
+    as_deathSlowAt=0.0;as_deathSlowUntil=0.0;as_timeAcc=0.0;as_invulnFrom=0.0;as_invulnUntil=0.0;
+    if(as_speedSlowed) {as_speedSlowed=false;GameSetSpeedLocked(false);GameSetSpeedValue(c_gameSpeedNormal);GameSetSpeedLocked(true);}
+    as_timeK=1.0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_dcUntil[p]=0.0;}
+}
+
+// ---- the death scene ------------------------------------------------------------------
+void AS_DeathScene (int p, fixed x, fixed y) {
+    int v;fixed hold;string who=AS_MarineNameS(p);
+    as_deathSlowAt=as_realNow+0.15;as_deathSlowUntil=as_deathSlowAt+0.4;
+    as_invulnFrom=as_now+0.15;as_invulnUntil=as_now+2.05;
+    for(v=1;v<=AS_PLAYERS;v+=1) {
+        if(!AS_Person(v) || (as_bot[v] && !(as_auto && v==1))) {continue;}
+        if(v==p) {
+            SoundPlay(SoundLink("UI_BeaconTerranDeath",-1),AS_Me(v),90.0,0.0);
+            AS_AnnounceFor(v,"<c val=\"FF5040\">YOU HAVE BEEN KILLED IN ACTION</c>",who,3.0);
+        }
+        else {AS_AnnounceFor(v,"<c val=\"FF5040\">"+who+" - KILLED IN ACTION</c>","",2.5);}
+        if(as_view[v]!=0) {continue;}
+        hold=1.75;if(v==p) {hold=5.0;}
+        as_dcUntil[v]=as_realNow+hold;as_dcStart[v]=as_realNow;as_dcYaw[v]=90.0;
+        if(as_camUnit[v]!=null) {CameraFollowUnitGroup(v,libNtve_gf_ConvertUnitToUnitGroup(as_camUnit[v]),false,false);}
+        as_camUnit[v]=null;
+        CameraPan(v,Point(x,y),0.5,-1,10.0,false);
+        CameraSetValue(v,c_cameraValuePitch,60.0,0.0,-1,0.0);CameraSetValue(v,c_cameraValuePitch,50.0,0.5,-1,0.0);
+        CameraSetValue(v,c_cameraValueDistance,412.0/80.0,0.5,-1,0.0);
+    }
+}
+// The camera closes from 412 to 200 units and orbits the body; when its hold is up the player's own camera
+// blends back over 0.75 s (their next marine, or the squadmate they watch).
+void AS_DeathCamPulse () {
+    int v;fixed t;
+    for(v=1;v<=AS_PLAYERS;v+=1) {
+        if(as_dcUntil[v]<=0.0) {continue;}
+        t=as_realNow-as_dcStart[v];
+        if(as_realNow>=as_dcUntil[v] || !as_levelReady) {as_dcUntil[v]=0.0;AS_CameraMode(v,as_view[v],0.75);continue;}
+        as_dcYaw[v]+=35.0*AS_DT;
+        CameraSetValue(v,c_cameraValueYaw,as_dcYaw[v],AS_DT,-1,0.0);
+        if(t>=0.5 && t<0.5+AS_DT) {CameraSetValue(v,c_cameraValueDistance,200.0/80.0,1.0,-1,0.0);}
+    }
+}

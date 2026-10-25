@@ -1,0 +1,35 @@
+{
+ "aftermath": {
+  "bars": 16,
+  "bpm": 79.86,
+  "bytes": 417480,
+  "end": 120.000125,
+  "match": 0.916,
+  "pulse": 0.22,
+  "seconds": 48.0,
+  "start": 72.0,
+  "take": "music_aftermath_loop.wav"
+ },
+ "briefing": {
+  "bars": 12,
+  "bpm": 75.01,
+  "bytes": 352033,
+  "end": 114.76825,
+  "match": 0.852,
+  "pulse": 0.58,
+  "seconds": 38.4,
+  "start": 76.368,
+  "take": "music_briefing.wav"
+ },
+ "combat": {
+  "bars": 24,
+  "bpm": 124.2,
+  "bytes": 415050,
+  "end": 141.58053125,
+  "match": 0.753,
+  "pulse": 0.64,
+  "seconds": 46.461,
+  "start": 95.12,
+  "take": "music_combat_loop.wav"
+ }
+}

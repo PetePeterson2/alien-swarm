@@ -44,9 +44,14 @@ fixed[AS_SPAWNERS] as_spNext;
 fixed[AS_SPAWNERS] as_spNear;                         // NearDistance in cells
 fixed[AS_SPAWNERS] as_spJitter;                       // the interval varies by this fraction either way
 int[AS_SPAWNERS] as_spOrder;                          // AlienOrders for what it spawns (as_aGoal), and the target
+bool[AS_SPAWNERS] as_spLong;                          // LongRange: its aliens sense 1152 and see 1536 (asw_base_spawner.cpp 257)
 fixed[AS_SPAWNERS] as_spTX;
 fixed[AS_SPAWNERS] as_spTY;
 bool[AS_SPAWNERS] as_spDeadFired;                     // OnAllSpawnedDead has fired
+int[AS_SPAWNERS] as_spEnter;                          // how its aliens come out (Aliens.galaxy AS_AlienEnter), 0 the vents
+int as_logEnterN;                                      // climb-ins and jump-downs logged this mission (the first six of each)
+int as_logJumpN;
+fixed[AS_SPAWNERS] as_spEnterAng;                     // and the way they face as they do
 
 void AS_Spawner (string name, fixed x, fixed y, int kind, int num, int maxLive, fixed interval, int inf, int minSkill, int maxSkill, int ifNear, int burrow) {
     int i=as_spN;
@@ -56,19 +61,26 @@ void AS_Spawner (string name, fixed x, fixed y, int kind, int num, int maxLive, 
     as_spInt[i]=MaxF(0.25,interval);as_spInf[i]=inf!=0;as_spMin[i]=minSkill;as_spMax[i]=maxSkill;
     as_spIfNear[i]=ifNear!=0;as_spBurrow[i]=burrow!=0;as_spState[i]=1;as_spLive[i]=0;as_spMade[i]=0;as_spNext[i]=0.0;
     as_spNear[i]=AS_NEAR_DIST;as_spJitter[i]=0.25;as_spOrder[i]=0;as_spTX[i]=0.0;as_spTY[i]=0.0;as_spDeadFired[i]=false;
+    as_spEnter[i]=0;as_spEnterAng[i]=0.0;as_spLong[i]=false;
     // Easy: an infinite spawner runs dry after at least eight (asw_spawner.cpp MissionStart).
     if(as_skill==1 && as_spInf[i]) {as_spInf[i]=false;as_spNum[i]=MaxI(as_spNum[i],8);}
 }
 // The spawner made last, beyond the defaults: SpawnerState 0 (spawning from the start), its NearDistance in
-// cells, its interval jitter, and AlienOrders (1 MoveTo, 2 MoveToIgnoringMarines) with the target.
-void AS_SpawnerOpts (bool start, fixed nearDist, fixed jitter, int orders, fixed tx, fixed ty) {
+// cells, its interval jitter, AlienOrders (iasw_spawnable_npc.h 7-14: 0 SpreadThenHibernate, 1 MoveTo,
+// 2 MoveToIgnoringMarines, 3 MoveToNearestMarine) with the target, and LongRange.
+void AS_SpawnerOpts (bool start, fixed nearDist, fixed jitter, int orders, fixed tx, fixed ty, bool longRange) {
     int i=as_spN-1;
     if(i<0) {return;}
-    as_spNear[i]=nearDist;as_spJitter[i]=AS_Clamp(jitter,0.0,0.9);as_spOrder[i]=orders;as_spTX[i]=tx;as_spTY[i]=ty;
+    as_spNear[i]=nearDist;as_spJitter[i]=AS_Clamp(jitter,0.0,0.9);as_spOrder[i]=orders;as_spTX[i]=tx;as_spTY[i]=ty;as_spLong[i]=longRange;
     if(start) {
         if(AS_SpawnerValid(i)) {as_spState[i]=2;as_spNext[i]=as_now;}
         else {as_spState[i]=3;}
     }
+}
+// The spawner made last: its aliens climb in over a railing, out of a wall or drop from a ledge (AS_AlienEnter).
+void AS_SpawnerEnter (int how, fixed ang) {
+    if(as_spN<1) {return;}
+    as_spEnter[as_spN-1]=how;as_spEnterAng[as_spN-1]=ang;
 }
 // The skill gate: Brutal is treated as Insane.
 bool AS_SpawnerValid (int i) {
@@ -86,9 +98,13 @@ void AS_SpawnerStart (string name) {
     }
     if(n>0) {AS_Log("spawner on: "+name+" x"+IntToString(n));}
 }
+// StopSpawning; a name ending in * stops every spawner whose name starts so (ElevatorSpawn_group*).
 void AS_SpawnerStop (string name) {
-    int i;
-    for(i=0;i<as_spN;i+=1) {if(as_spName[i]==name && as_spState[i]==2) {as_spState[i]=1;}}
+    int i;int n=StringLength(name);bool wild=n>1 && StringSub(name,n,n)=="*";string head=StringSub(name,1,n-1);
+    for(i=0;i<as_spN;i+=1) {
+        if(as_spState[i]!=2) {continue;}
+        if(as_spName[i]==name || (wild && StringSub(as_spName[i],1,n-1)==head)) {as_spState[i]=1;}
+    }
 }
 bool AS_MarineWithin (fixed x, fixed y, fixed r) {
     int p;point q;
@@ -118,9 +134,15 @@ int AS_SpawnerSpawn (int i) {
     j=AS_SpawnNear(as_spKind[i],as_spX[i],as_spY[i],true);
     if(j<0) {return -1;}
     as_aSpawner[j]=i;as_spLive[i]+=1;as_spMade[i]+=1;
-    if(as_spOrder[i]>0) {as_aGoal[j]=as_spOrder[i];as_aGoalX[j]=as_spTX[i];as_aGoalY[j]=as_spTY[i];}
-    // Burrowed aliens dig up out of the deck, the rest come out of the vents.
-    if(as_spBurrow[i]) {AS_Fx("ASFxBlood",as_aX[j],as_aY[j],0.0,0.0);AS_Burst(as_aX[j],as_aY[j],0.2,0.7,"120,100,70",3);}
+    if(as_spOrder[i]>=1 && as_spOrder[i]<=3) {as_aGoal[j]=as_spOrder[i];as_aGoalX[j]=as_spTX[i];as_aGoalY[j]=as_spTY[i];}
+    if(as_spLong[i]) {as_aSense[j]=14.4;as_aSight[j]=19.2;}
+    // Climbers come in over the railings or out of the walls, burrowed aliens dig up out of the deck, the rest
+    // come out of the vents.
+    if(as_spEnter[i]>0) {
+        AS_AlienEnter(j,as_spEnter[i],as_spEnterAng[i]);
+        if(as_logEnterN<6) {as_logEnterN+=1;AS_Log("climb-in "+IntToString(as_spEnter[i])+" from "+as_spName[i]);}
+    }
+    else if(as_spBurrow[i]) {AS_AlienBurrow(j);}
     else {AS_Burst(as_aX[j],as_aY[j],0.5,0.5,"90,90,90",2);}
     AS_DirectorAlienAdded(j);
     AS_Fire("spawned:"+as_spName[i]);
@@ -147,18 +169,71 @@ void AS_SpawnerPulse () {
         AS_SpawnerSpawn(i);
     }
 }
-// An alien under a spawner's order: off to its goal, until it is there (or, for MoveTo, a marine is near).
+// An alien under a spawner's order (asw_alien.cpp 1196-1306, 2245-2306): off to its goal until it is there. MoveTo
+// and MoveToNearestMarine give way to the first marine it senses; MoveToIgnoringMarines ignores them all the way.
+// MoveToNearestMarine heads for whichever marine is nearest, wherever, re-pathing as it moves on.
 bool AS_AlienGoal (int i, point q) {
-    point to=Point(as_aGoalX[i],as_aGoalY[i]);
-    if(DistanceBetweenPoints(q,to)<1.5) {as_aGoal[i]=0;return false;}
-    if(as_aGoal[i]==1 && AS_Nearest(q,9.0)>0) {as_aGoal[i]=0;return false;}
-    if(as_now>=as_aNextOrder[i]) {as_aAwake[i]=true;AS_Order(i,to);as_aNextOrder[i]=as_now+1.0;}
+    point to=Point(as_aGoalX[i],as_aGoalY[i]);int p;
+    if(as_aGoal[i]!=2 && AS_AlienSense(i,q)>0) {as_aGoal[i]=0;return false;}
+    if(as_aGoal[i]==3) {
+        p=AS_Nearest(q,1000.0);
+        if(p==0) {as_aGoal[i]=0;return false;}
+        to=UnitGetPosition(as_m[p]);
+        if(DistanceBetweenPoints(q,to)<as_aSense[i]) {as_aGoal[i]=0;return false;}
+    }
+    else if(DistanceBetweenPoints(q,to)<1.5) {as_aGoal[i]=0;return false;}
+    if(as_now>=as_aNextOrder[i]) {AS_Order(i,to);as_aNextOrder[i]=as_now+1.0;}
     return true;
 }
 void AS_SpawnersClear () {
     int i;
     as_spN=0;
     for(i=0;i<AS_MAXALIEN;i+=1) {as_aSpawner[i]= -1;}
+}
+
+// ---- trigger_asw_jump: drones that run into one leap down off the ledge to its destination ---------------
+// (tools/<level>.py JUMPS). Each alien jumps once (CheckTriggerJumped); with a minimum distance, only while no
+// marine is that close (closer ones get clawed instead); with CheckEnemyDirection, only toward its quarry.
+const int AS_JUMPS = 8;
+int as_jpN;
+fixed[AS_JUMPS] as_jpX0;
+fixed[AS_JUMPS] as_jpY0;
+fixed[AS_JUMPS] as_jpX1;
+fixed[AS_JUMPS] as_jpY1;
+fixed[AS_JUMPS] as_jpTX;
+fixed[AS_JUMPS] as_jpTY;
+fixed[AS_JUMPS] as_jpMin;
+bool[AS_JUMPS] as_jpDir;
+void AS_JumpLink (fixed x0, fixed y0, fixed x1, fixed y1, fixed tx, fixed ty, fixed minDist, bool checkDir) {
+    if(as_jpN>=AS_JUMPS) {return;}
+    as_jpX0[as_jpN]=x0;as_jpY0[as_jpN]=y0;as_jpX1[as_jpN]=x1;as_jpY1[as_jpN]=y1;as_jpTX[as_jpN]=tx;as_jpTY[as_jpN]=ty;
+    as_jpMin[as_jpN]=minDist;as_jpDir[as_jpN]=checkDir;as_jpN+=1;
+}
+void AS_JumpPulse () {
+    int i;int k;int n;int p;fixed x;fixed y;fixed tx;fixed ty;fixed d;point mq;
+    if(as_jpN==0 || as_tick%4!=1) {return;}
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]==null || as_aJumped[i] || !as_aAwake[i] || as_aMoveT1[i]>0.0 || as_aLeapUntil[i]>as_now) {continue;}
+        n=as_aKind[i];
+        if(n!=AS_DRONE && n!=AS_JUMPER && n!=AS_UBER) {continue;}
+        x=as_aX[i];y=as_aY[i];
+        for(k=0;k<as_jpN;k+=1) {
+            if(x<as_jpX0[k] || x>as_jpX1[k] || y<as_jpY0[k] || y>as_jpY1[k]) {continue;}
+            p=AS_Nearest(Point(x,y),1000.0);
+            if(p==0) {break;}
+            mq=UnitGetPosition(as_m[p]);
+            if(DistanceBetweenPoints(Point(x,y),mq)<as_jpMin[k]) {break;}
+            tx=as_jpTX[k]+RandomFixed(-0.4,0.4);ty=as_jpTY[k]+RandomFixed(-0.4,0.4);
+            if(as_jpDir[k] && (tx-x)*(PointGetX(mq)-x)+(ty-y)*(PointGetY(mq)-y)<=0.0) {break;}
+            // ForceSpeed 400: five cells a second, and the higher the longer the leap.
+            d=SquareRoot((tx-x)*(tx-x)+(ty-y)*(ty-y));
+            as_aJumped[i]=true;
+            AS_AlienMoveStart(i,x,y,AS_GroundZ(x,y),tx,ty,AS_GroundZ(tx,ty),AS_Clamp(d*0.25,0.5,2.0),AS_Clamp(d/5.0,0.4,1.2));
+            AS_Sound("Broodling_Attack",x,y,60.0,0.2);
+            if(as_logJumpN<6) {as_logJumpN+=1;AS_Log("jump-down "+IntToString(k)+" over "+FixedToString(d,1));}
+            break;
+        }
+    }
 }
 
 // ---- triggers -------------------------------------------------------------
@@ -273,10 +348,13 @@ void AS_TriggerPulse () {
     for(k=0;k<AS_PENDING;k+=1) {
         if(as_pendDo[k]!="" && as_now>=as_pendAt[k]) {AS_Action(as_pendDo[k],as_pendArg[k]);as_pendDo[k]="";}
     }
-    AS_TimerPulse();AS_MoverPulse();
-    if(as_tick%4!=1) {return;}
+    AS_TimerPulse();AS_MoverPulse();AS_JumpPulse();
+    // Marine triggers every tick: AS's thin trigger_multiple strips (a unit wide, across a catwalk) are crossed in
+    // under a quarter second at a run, so a slower check can miss one (Deima's bridge gate, autopilot run 4).
+    // Alien triggers count every alien, so they keep the slower beat.
     for(i=0;i<as_trN;i+=1) {
         if(as_trDone[i] || as_trOff[i]) {continue;}
+        if(as_trAliens[i] && as_tick%4!=1) {continue;}
         inside=AS_TriggerTouched(i);
         if(!inside) {continue;}
         if(as_trOnce[i]) {as_trDone[i]=true;}
@@ -443,7 +521,7 @@ void AS_MoverPulse () {
 // With the level's triggers (AS_TriggersClear): its outputs, timers, counters and movers.
 void AS_LogicClear () {
     int k;
-    as_onN=0;as_tiN=0;as_ctN=0;
+    as_onN=0;as_tiN=0;as_ctN=0;as_jpN=0;as_logEnterN=0;as_logJumpN=0;
     for(k=0;k<as_moN;k+=1) {if(as_moA[k]!=null) {ActorSend(as_moA[k],"Destroy");as_moA[k]=null;}}
     as_moN=0;as_mpN=0;
 }

@@ -674,21 +674,24 @@ void AS_LiftClear () {
 
 // ---- failure -------------------------------------------------------------
 // The whole squad down: the mission is lost 0.6 s after the last marine fell (asw_last_marine_dead_delay).
-// A mission that needs a tech (asw_tech_marine_req) is lost too if the last tech dies while it still does:
-// "RESTARTING MISSION" for 5 s, then the failure screen (or a straight restart in the first 30 s).
+// A mission that needs a tech (asw_tech_marine_req) is lost too if the last tech dies while it still does: in the
+// first 30 s AS restarts it in place; after that a 5.9 s countdown, then MISSION FAILED (asw_gamerules.cpp
+// CheckTechFailure).
 bool as_needTech;                // the level's tech requirement is still on
 fixed as_failAt;
 string as_failWhy;
 bool as_failed;
 fixed as_techRestartAt;
+bool as_techFails;               // the countdown ends in failure, not a restart
 void AS_WipePulse () {
     if(as_stage==AS_ST_DONE || as_failed) {return;}
     if(as_failAt==0.0 && AS_Living()==0 && AS_Humans()>0) {as_failAt=as_now+0.6;as_failWhy="";AS_Log("squad wiped");}
-    // The last tech fell while the mission still needs one: AS restarts the mission in place, however far in
-    // (asw_marine.cpp ScheduleTechFailureRestart, asw_gamerules.cpp CheckTechFailure); a full wipe fails it instead.
+    // The last tech fell while the mission still needs one: restarted in place within the first 30 s, otherwise
+    // failed when the countdown ends (asw_marine.cpp ScheduleTechFailureRestart); a full wipe fails it anyway.
     if(as_techRestartAt>0.0 && as_now>=as_techRestartAt) {
         as_techRestartAt=0.0;
-        if(AS_Living()>0) {AS_Log("no tech: restart");as_failed=true;as_stage=AS_ST_DONE;AS_MissionRestart();return;}
+        if(AS_Living()>0 && !as_techFails) {AS_Log("no tech: restart");as_failed=true;as_stage=AS_ST_DONE;AS_MissionRestart();return;}
+        if(AS_Living()>0 && as_failAt==0.0) {as_failAt=as_now;as_failWhy="No live Tech Marine";}
     }
     if(as_failAt>0.0 && as_now>=as_failAt) {
         as_failAt=0.0;as_failed=true;as_stage=AS_ST_DONE;as_missionEnd=as_now;
@@ -704,8 +707,15 @@ void AS_MissionMarineDied (int p) {
     if(!as_needTech || as_stage==AS_ST_DONE || as_failed || AS_Living()==0) {return;}
     for(q=1;q<=AS_PLAYERS;q+=1) {if(AS_Person(q) && as_alive[q] && AS_IsTech(q)) {tech=true;}}
     if(tech || as_techRestartAt>0.0) {return;}
-    as_techRestartAt=as_now+1.5+5.0;
-    AS_All("RESTARTING MISSION","<c val=\"FF5040\">No live Tech Marine</c>  -  mission restart in 5 seconds");
+    as_techFails=as_now-as_missionStart>=30.0;
+    if(as_techFails) {
+        as_techRestartAt=as_now+5.9;
+        AS_All("NO TECH MARINE","<c val=\"FF5040\">No live Tech Marine</c>  -  mission failed in 6 seconds");
+    }
+    else {
+        as_techRestartAt=as_now+1.5+5.0;
+        AS_All("RESTARTING MISSION","<c val=\"FF5040\">No live Tech Marine</c>  -  mission restart in 5 seconds");
+    }
     AS_AllSound("Alert_UniObjectiveFailed");
     AS_Log("last tech down");
 }
@@ -764,6 +774,7 @@ void AS_MissionInit () {
     int k;
     as_probeAuto=0.0;
     as_missionStart=as_now;as_missionEnd=0.0;as_checkpoint=0;as_stage=AS_ST_LAND;as_stageAt=as_now;
+    AS_FailReset();
     as_failAt=0.0;as_failWhy="";as_failed=false;as_techRestartAt=0.0;as_victoryAt=0.0;as_objAt=null;as_needTech=false;
     as_scroll=0.0;as_ride=0;as_rideStep=0;as_rideGo=0.0;as_rideAt=0.0;as_boardAt=0.0;as_denyAt=0.0;as_rideWave=0;as_rideClock=0.0;
     as_ridePct[0]=0;as_ridePct[1]=13;as_ridePct[2]=35;as_ridePct[3]=57;as_ridePct[4]=75;
@@ -919,7 +930,9 @@ void AS_MissionAction (string act, string arg) {
     if(act=="line") {AS_CommanderLater(arg,0.0);return;}
     if(act=="hint") {AS_HintMap(arg);return;}
     if(act=="dropship") {as_bayDropship=as_now;AS_AllSound("ColonistShip_LiftOff");AS_ShakeAll(0.08,1.2);return;}
-    if(act=="music") {AS_AllSound("Event_Horner05sTerminalHack");return;}
+    // Rydberg's finale (asw_jukebox Finale_music) is the combat loop to the end; any other "music" a sting.
+    if(act=="music") {if(arg=="finale") {AS_Music("ASMus_Combat");} else {AS_AllSound("Event_Horner05sTerminalHack");}return;}
+    if(act=="musicstop") {AS_MusicStop();return;}
     if(act=="sentry") {
         // The holo sentry: where the squad is shown it could set a sentry for the hold.
         if(as_baySentrySpot==null && as_sentrySpotX>0.0) {
@@ -981,7 +994,7 @@ void AS_MissionHackStarted (int i, int p) {
     if(as_level!=AS_LV_BAY || i!=as_bayComputer) {return;}
     as_bayStage=MaxI(as_bayStage,3);
     AS_Log("flight data hack started");
-    AS_AllSound("Event_Horner05sTerminalHack");
+    AS_AllSound("Event_Horner05sTerminalHack");AS_Music("ASMus_Combat");
     AS_ActionLater("spawn","breakdoor_spawn",5.0);
     AS_ActionLater("spawn","dock_holdout_spawn_01",5.0);
     AS_ActionLater("spawn","insane_ranger_spawn",5.0);
@@ -1002,6 +1015,7 @@ void AS_MissionDownloaded (int i, int p) {
     // Out to the escape lift: the extraction check (AS_ExtractPulse) runs from here.
     as_stage=AS_ST_ESCAPE;as_stageAt=as_now;as_checkpoint=5;
     AS_Log("flight data downloaded");
+    AS_ActionLater("musicstop","",20.0);
     AS_CommanderLater("co_m1_ob2",14.0);
     as_bayDoorForce=as_now+40.0;
     if(d<0 || as_drBroken[d]) {AS_MarkAt((as_extX0+as_extX1)*0.5,(as_extY0+as_extY1)*0.5);}
@@ -1013,6 +1027,33 @@ void AS_ProtectTechCheck (int i, int p) {
     int q;
     if(p<1 || FixedToInt(as_dmgTaken[p])>as_cpHackTaken[i] || AS_SquadKills()-as_cpHackKills[i]<=10) {return;}
     for(q=1;q<=AS_PLAYERS;q+=1) {if(q!=p && AS_Person(q)) {AS_MedalEvent(q,"protect_tech");}}
+}
+// ---- the score (assets/music, tools/music.py): one loop at a time, under the whole squad -------------
+// ASMus_Briefing under the briefing, ASMus_Combat under a hold or a set-piece fight, ASMus_Aftermath under
+// the debrief. Each is a CSound that loops by itself (LoopCount -1, build.py music_files); starting one fades
+// out the one playing, and a stim's slow-motion ducks it.
+sound as_music;
+string as_musicId;
+void AS_Music (string id) {
+    if(id==as_musicId && as_music!=null) {return;}
+    AS_MusicStop();
+    SoundPlay(SoundLink(id,-1),PlayerGroupAll(),100.0,0.0);as_music=SoundLastPlayed();as_musicId=id;
+    AS_Log("music: "+id);
+}
+void AS_MusicStop () {
+    if(as_music!=null) {SoundStop(as_music,true);AS_Log("music stopped: "+as_musicId);}
+    as_music=null;as_musicId="";
+}
+void AS_MusicDuck (bool on) {
+    if(as_music==null) {return;}
+    if(on) {SoundSetVolume(as_music,40.0);}
+    else {SoundSetVolume(as_music,100.0);}
+}
+// A hold's music bed as level data names it ("musicloop"): one of the score's loops, or (older data naming a
+// stock ambience) the combat loop.
+string AS_MusicBed (string arg) {
+    if(StringSub(arg,1,6)=="ASMus_") {return arg;}
+    return "ASMus_Combat";
 }
 // ---- the commander's lines, as subtitles ------------------------------------------------
 void AS_CommanderLater (string key, fixed delay) {
@@ -1087,7 +1128,6 @@ int as_genObjN;
 string as_genExtName;
 bool as_genTech;                 // the mission needs a tech until 'notech'
 string as_genShip;               // the mover whose turrets are firing, "" none
-sound as_genMusic;               // the hold's music bed ("musicloop"), stopped by "musicstop"
 string as_genBroken="|";         // the windows already broken, "|x,y|" each: a window breaks once (never "": that is null to StringFind)
 fixed as_genShipNext;
 unit as_genShipLamp;
@@ -1188,9 +1228,8 @@ bool AS_GenAction (string act, string arg) {
     }
     // The hold's music: a stinger, then the bed under the fight until "musicstop" fades it.
     if(act=="musicloop") {
-        if(as_genMusic!=null) {SoundStop(as_genMusic,true);}
         AS_AllSound("Event_Horner05sTerminalHack");
-        SoundPlay(SoundLink(arg,-1),PlayerGroupAll(),80.0,0.0);as_genMusic=SoundLastPlayed();
+        AS_Music(AS_MusicBed(arg));
         return true;
     }
     // A floor vent bursts open under the drone coming up through it (relay_vent_explo_01): once per vent.
@@ -1210,7 +1249,7 @@ bool AS_GenAction (string act, string arg) {
     if(act=="liftbutton") {AS_LiftButton();return true;}
     if(act=="crawl") {AS_Crawl(arg);return true;}
     if(act=="slomo") {AS_Slomo();return true;}
-    if(act=="musicstop") {if(as_genMusic!=null) {SoundStop(as_genMusic,true);as_genMusic=null;}return true;}
+    if(act=="musicstop") {AS_MusicStop();return true;}
     if(act=="lightning") {AS_Lightning();return true;}
     if(act=="shipguns") {as_genShip=arg;return true;}
     // The level's lighting preset by number (src/Main.galaxy as_lightId), eased in: the power back on.
@@ -1256,7 +1295,7 @@ void AS_GenClear () {
     if(as_genShipLamp!=null) {UnitRemove(as_genShipLamp);as_genShipLamp=null;}
     if(as_genShipLamp2!=null) {UnitRemove(as_genShipLamp2);as_genShipLamp2=null;}
     as_genShip="";as_genFlashEnd=0.0;as_genBroken="|";
-    if(as_genMusic!=null) {SoundStop(as_genMusic,true);as_genMusic=null;}
+    AS_MusicStop();
 }
 // QA: Ctrl+L, the next objective done and the squad at the next marker.
 void AS_GenSkip () {

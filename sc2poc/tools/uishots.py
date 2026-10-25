@@ -40,6 +40,8 @@ def textures():
     t = {}
     t.update(hudart.textures(())[0])
     t.update(uiart.textures())
+    import genart                                     # the painted art in assets/ui-gen, as the map has it
+    t.update(genart.textures())
     t['white'] = Image.new('RGBA', (32, 32), (255, 255, 255, 255))
     return {k: v.convert('RGBA') for k, v in t.items()}
 

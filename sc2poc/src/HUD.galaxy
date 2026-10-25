@@ -36,6 +36,7 @@ int[5] as_cRing;
 int[5] as_cCls;
 int[5] as_cGunName;
 int[5] as_cLow;
+int[5] as_cLowIco;          // painted low-ammo / warning icon beside it (tools/genart.py)
 int[5] as_cBulIcon;
 int[5] as_cAmmo;
 int[5] as_cGrenIcon;
@@ -114,6 +115,7 @@ int[5] as_cUseKeyT;
 int[5] as_cUseText;
 int[5] as_cUseBar;
 int[5] as_cUseBarBg;
+int[5] as_cUseIco;          // painted icon for what the use panel does (AS_UseIcon)
 bool[5] as_useOn;
 // The minimap.
 int[5] as_cMap;
@@ -183,6 +185,14 @@ int[5] as_kGren;            // grenades shown, plus one
 int[5] as_kRel;             // the reload marker's x, plus one (0 hidden)
 string[5] as_kStatus;
 fixed[5] as_kHurt;          // the red edge's transparency (0 nothing set yet)
+int[5] as_dGreen;           // infestation's green and a buzzer's poison haze
+int[5] as_cInfest;          // "- INFESTED -", blinking
+int[5] as_cInfIco;          // painted infested icon above it
+fixed[5] as_kGreen;
+bool[5] as_kInfest;
+int[5] as_dHurtDir;         // the damage indicator: a red mark toward the hit
+int[5] as_cHurtDir;
+fixed[5] as_kHurtDir;
 // Names under the marines: a dialog per viewer and marine, following the marine.
 int[5][5] as_dTag;
 int[5][5] as_cTagName;
@@ -270,7 +280,13 @@ int AS_Image (int d, int anchor, int x, int y, int w, int h, string image, color
     return c;
 }
 // HUD art at the top left of a dialog.
-int AS_Art (int d, int x, int y, int w, int h, string name, color tint) {return AS_Image(d,c_anchorTopLeft,x,y,w,h,AS_Ui(name),tint);}
+// Panels and buttons use the painted kit when there is one (tools/genart.py), sliced for the control's proportions.
+string AS_Kit (string name, int w, int h) {
+    if(name!="frame" && name!="button" && name!="buttonhi" && name!="buttonoff") {return name;}
+    if(!AS_Painted("k_"+name+"_0")) {return name;}
+    return "k_"+name+"_"+IntToString(AS_KitBucket(w,h));
+}
+int AS_Art (int d, int x, int y, int w, int h, string name, color tint) {return AS_Image(d,c_anchorTopLeft,x,y,w,h,AS_Ui(AS_Kit(name,w,h)),tint);}
 int AS_Lbl (int d, int x, int y, int w, int h, string style, string s) {return AS_Label(d,0,c_anchorTopLeft,x,y,w,h,style,s);}
 void AS_Text (int c, int p, string s) {
     DialogControlSetPropertyAsText(c,c_triggerControlPropertyText,AS_Me(p),StringToText(s));
@@ -281,7 +297,11 @@ void AS_Show (int c, int p, bool on) {
 }
 // Player 1's control visibility as AS_Show last set it (QA; DialogControlIsVisible does not report it).
 bool AS_UiShown (int c) {return as_uiShowC[c%AS_UISHOW]!=c || as_uiShowOn[c%AS_UISHOW];}
-void AS_SetArt (int c, int p, string name) {DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,AS_Me(p),AS_Ui(name));}
+void AS_SetArt (int c, int p, string name) {
+    string n=name;
+    if(n=="frame" || n=="button" || n=="buttonhi" || n=="buttonoff") {n=AS_Kit(n,DialogControlGetWidth(c,p),DialogControlGetHeight(c,p));}
+    DialogControlSetPropertyAsString(c,c_triggerControlPropertyImage,AS_Me(p),AS_Ui(n));
+}
 void AS_SetTint (int c, int p, color k) {DialogControlSetPropertyAsColor(c,c_triggerControlPropertyColor,AS_Me(p),k);}
 void AS_SetStyle (int c, int p, string style) {DialogControlSetPropertyAsString(c,c_triggerControlPropertyStyle,AS_Me(p),style);}
 void AS_Place (int c, int p, int x, int y) {DialogControlSetPosition(c,AS_Me(p),c_anchorTopLeft,x,y);}
@@ -334,21 +354,37 @@ void AS_HudCreate (int p) {
     d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);
     AS_Image(d,c_anchorCenter,0,0,2400,1200,AS_VIGNETTE,Color(100.0,8.0,4.0));
     DialogSetTransparency(d,100.0);DialogSetVisible(d,AS_Me(p),true);as_dHurt[p]=d;
+    // Infestation tints the view green (clientmode_asw.cpp 63-64, faded over 0.5 s) under a blinking "- INFESTED -"
+    // (asw_hud_overlay_messages.cpp 286); a buzzer's sting hazes it the same way while its blur lasts.
+    d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);
+    AS_Image(d,c_anchorCenter,0,0,2400,1200,AS_VIGNETTE,AS_Rgb(70,230,40));
+    as_cInfest[p]=AS_Label(d,p,c_anchorTop,0,240,900,70,"ASHeadC","<c val=\"9CFF70\">- INFESTED -</c>");
+    as_cInfIco[p]=AS_Image(d,c_anchorTop,0,170,72,72,AS_Ui("clear"),AS_Rgb(156,255,112));
+    if(AS_Painted("ico_infested")) {AS_SetArt(as_cInfIco[p],p,"ico_infested");}
+    DialogSetTransparency(d,100.0);DialogSetVisible(d,AS_Me(p),true);as_dGreen[p]=d;AS_Show(as_cInfest[p],p,false);AS_Show(as_cInfIco[p],p,false);as_kGreen[p]=100.0;as_kInfest[p]=false;
+    // Where a hit came from: a red mark out from the middle of the screen toward it (asw_hud_damageindicator.cpp).
+    d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);
+    as_cHurtDir[p]=AS_Image(d,c_anchorCenter,0,0,150,150,AS_Ui("hurtmark"),AS_Full());
+    DialogSetTransparency(d,100.0);DialogSetVisible(d,AS_Me(p),true);as_dHurtDir[p]=d;as_kHurtDir[p]=100.0;
     // The marine, bottom left (ASW_Hud_Master).
     d=AS_Panel(p,AS_HUD_STRIP_W,AS_HUD_STRIP_H,c_anchorBottomLeft,0,0);as_dStrip[p]=d;DialogSetVisible(d,AS_Me(p),false);
     x=AS_HUD_PX;y=AS_HUD_PY;
     as_cGun2[p]=AS_Art(d,x,AS_HUD_GUN2_Y,AS_HUD_GUN_W,AS_HUD_GUN_H,"gun1",blue);AS_Show(as_cGun2[p],p,false);
     as_cGun1[p]=AS_Art(d,x,AS_HUD_GUN1_Y,AS_HUD_GUN_W,AS_HUD_GUN_H,"gun1",AS_Full());
     AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"plate",AS_Full());
-    AS_Art(d,x+AS_HUD_RING,y+AS_HUD_RING/2,AS_HUD_BAR_W,AS_HUD_RING-AS_HUD_RING/2,"black75",AS_Full());
+    if(AS_Painted("hudplate")) {AS_Art(d,x+AS_HUD_RING/2,y+AS_HUD_RING/2,AS_HUD_BAR_W+AS_HUD_RING/2,AS_HUD_RING-AS_HUD_RING/2,"hudplate",AS_Full());}
+    else {AS_Art(d,x+AS_HUD_RING,y+AS_HUD_RING/2,AS_HUD_BAR_W,AS_HUD_RING-AS_HUD_RING/2,"black75",AS_Full());}
     as_cFace[p]=AS_Art(d,x+AS_HUD_FACE_X-AS_HUD_FACE_R,y+AS_HUD_FACE_Y-AS_HUD_FACE_R,2*AS_HUD_FACE_R,2*AS_HUD_FACE_R,"face_"+AS_PortraitOf(p),AS_Full());as_kFace[p]=AS_PortraitOf(p);
     as_cRingBg[p]=AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"ringbg",AS_Full());
     as_cRingGhost[p]=AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"hp"+AS_Two(AS_HUD_RING_N),AS_HUD_GHOST_TINT());
     as_cRing[p]=AS_Art(d,x,y,AS_HUD_RING,AS_HUD_RING,"hp"+AS_Two(AS_HUD_RING_N),AS_HUD_HP_TINT());
     as_kRing[p]=AS_HUD_RING_N;as_kGhost[p]=AS_HUD_RING_N;
+    if(AS_Painted("hudbezel")) {AS_Art(d,x-(AS_HUD_BEZEL-AS_HUD_RING)/2,y-(AS_HUD_BEZEL-AS_HUD_RING)/2,AS_HUD_BEZEL,AS_HUD_BEZEL,"hudbezel",AS_Full());}
     as_cCls[p]=AS_Art(d,x+AS_HUD_CLS_X,y+AS_HUD_CLS_Y,AS_HUD_CLS,AS_HUD_CLS,"cls_"+AS_ClassOf(p),AS_Full());as_kCls[p]=AS_ClassOf(p);
     as_cGunName[p]=AS_Lbl(d,x+AS_HUD_NAME_X,y+AS_HUD_NAME_Y,300,26,"ASSmall","");
-    as_cLow[p]=AS_Lbl(d,x+AS_HUD_LOW_X,y+AS_HUD_LOW_Y,300,30,"ASLow","");
+    as_cLowIco[p]=AS_Art(d,x+AS_HUD_LOW_X,y+AS_HUD_LOW_Y,30,30,"clear",AS_Full());AS_Show(as_cLowIco[p],p,false);
+    if(AS_Painted("ico_lowammo")) {as_cLow[p]=AS_Lbl(d,x+AS_HUD_LOW_X+36,y+AS_HUD_LOW_Y,300,30,"ASLow","");}
+    else {as_cLow[p]=AS_Lbl(d,x+AS_HUD_LOW_X,y+AS_HUD_LOW_Y,300,30,"ASLow","");}
     as_cBulIcon[p]=AS_Art(d,x+AS_HUD_BUL_X,y+AS_HUD_BUL_Y,AS_HUD_ICON,AS_HUD_ICON,"bullets",AS_Full());
     as_cAmmo[p]=AS_Lbl(d,x+AS_HUD_AMMO_X,y+AS_HUD_AMMO_Y-4,90,42,"ASLarge","");
     as_cGrenIcon[p]=AS_Art(d,x+AS_HUD_GREN_X,y+AS_HUD_BUL_Y,AS_HUD_ICON,AS_HUD_ICON,"grenade",AS_Full());
@@ -409,6 +445,7 @@ void AS_HudCreate (int p) {
     as_cUseText[p]=AS_Lbl(d,AS_HUD_KEY+30,12,AS_HUD_USE_W-AS_HUD_KEY-44,34,"ASUse","");
     as_cUseBarBg[p]=AS_Art(d,AS_HUD_KEY+30,AS_HUD_USE_H-36,AS_HUD_USE_W-AS_HUD_KEY-46,16,"barbg",AS_Full());
     as_cUseBar[p]=AS_Art(d,AS_HUD_KEY+32,AS_HUD_USE_H-34,1,12,"barfg",AS_HUD_BAR_TINT());
+    as_cUseIco[p]=AS_Art(d,AS_HUD_USE_W-70,(AS_HUD_USE_H-56)/2,56,56,"clear",AS_HUD_BAR_TINT());AS_Show(as_cUseIco[p],p,false);
     DialogSetVisible(d,AS_Me(p),false);
     // The minimap, bottom right (ASWHudMinimap).
     k=AS_HUD_MM+2*AS_HUD_MM_BORDER;
@@ -509,11 +546,12 @@ void AS_HudCreate (int p) {
     AS_Lbl(d,36,74,730,570,"ASBody",
         "<c val=\"8CC8F0\">WASD</c>  move    <c val=\"8CC8F0\">MOUSE</c>  aim    <c val=\"8CC8F0\">SPACE</c>  roll<n/>"
         +"<c val=\"8CC8F0\">LEFT MOUSE</c>  fire    <c val=\"8CC8F0\">F / MIDDLE MOUSE</c>  secondary fire    <c val=\"8CC8F0\">RIGHT MOUSE</c>  melee<n/>"
-        +"<c val=\"8CC8F0\">R</c>  reload (again in the bright window: fast reload)    <c val=\"8CC8F0\">Q</c>  swap weapons    <c val=\"8CC8F0\">WHEEL</c>  zoom<n/>"
+        +"<c val=\"8CC8F0\">R</c>  reload (again in the bright window: fast reload)    <c val=\"8CC8F0\">Q</c> or <c val=\"8CC8F0\">WHEEL</c>  swap weapons    <c val=\"8CC8F0\">SHIFT</c>  walk<n/>"
         +"<c val=\"8CC8F0\">1</c>  offhand item (hold at a door with the welder)    <c val=\"8CC8F0\">E</c>  use: hack, pick up, build<n/>"
         +"<c val=\"8CC8F0\">G</c>  drop the weapon in hand    <c val=\"8CC8F0\">TAB</c>  full map and objectives<n/>"
         +"<c val=\"8CC8F0\">F1 - F4</c>  take control of another of your marines<n/>"
         +"<c val=\"8CC8F0\">V</c>  AI marines follow    <c val=\"8CC8F0\">X</c>  AI marines hold position<n/>"
+        +"<c val=\"8CC8F0\">2 - 4</c>  a squadmate uses its offhand item    <c val=\"8CC8F0\">SHIFT + 2 - 4</c>  that squadmate holds at the cursor<n/>"
         +"<c val=\"8CC8F0\">C</c>  top-down / third person    <c val=\"8CC8F0\">N</c>  damage numbers    <c val=\"8CC8F0\">H</c>  this help    <c val=\"8CC8F0\">Z</c>  camera distance<n/><n/>"
         +"Only a tech can hack door panels and terminals, and only a tech's scanner shows the swarm on the map.<n/>"
         +"Nobody comes back in a mission: if the whole squad falls, the mission restarts from the briefing.<n/>"
@@ -633,6 +671,9 @@ void AS_HudUpdate (int p) {
         else if(!(blink && (low || none))) {AS_Text(as_cLow[p],p,"");}
         else if(none) {AS_Text(as_cLow[p],p,"- NO AMMO -");}
         else {AS_Text(as_cLow[p],p,"- LOW AMMO -");}
+        if(key> -2 && blink && none && AS_Painted("ico_warning")) {AS_SetArt(as_cLowIco[p],p,"ico_warning");AS_Show(as_cLowIco[p],p,true);}
+        else if(key> -2 && blink && (low || none) && AS_Painted("ico_lowammo")) {AS_SetArt(as_cLowIco[p],p,"ico_lowammo");AS_Show(as_cLowIco[p],p,true);}
+        else {AS_Show(as_cLowIco[p],p,false);}
     }
     if(AS_ItemAlt(w) && as_kGren[p]!=MinI(as_alt[p][w],99)+1) {as_kGren[p]=MinI(as_alt[p][w],99)+1;AS_Text(as_cGren[p],p,IntToString(MinI(as_alt[p][w],99)));}
     // Clips: up to five, filled for those left; more than five is one clip and the count.
@@ -704,9 +745,31 @@ void AS_HurtPulse (int p) {
     if(t<0.6) {a=40.0+60.0*t/0.6;}
     if(as_alive[p] && as_hp[p]<30.0) {a=MinF(a,70.0+20.0*Sin(as_now*360.0));}
     if(!as_alive[p]) {a=30.0;}
-    if(a==as_kHurt[p]) {return;}
-    as_kHurt[p]=a;
-    DialogSetTransparency(as_dHurt[p],a);
+    if(a!=as_kHurt[p]) {as_kHurt[p]=a;DialogSetTransparency(as_dHurt[p],a);}
+    AS_GreenPulse(p);
+    AS_HurtDirPulse(p);
+}
+void AS_GreenPulse (int p) {
+    fixed a=100.0;bool infested=as_alive[p] && as_infestUntil[p]>as_now;bool blink;
+    if(as_dGreen[p]==0) {return;}
+    if(infested) {a=62.0;}
+    if(as_alive[p] && as_blurUntil[p]>as_now) {a=MinF(a,55.0+10.0*Sin(as_now*540.0));}
+    if(AbsF(a-as_kGreen[p])>0.5) {
+        // Toward the target over about half a second.
+        a=as_kGreen[p]+AS_Clamp(a-as_kGreen[p],-80.0*AS_DT*2.0,80.0*AS_DT*2.0);
+        as_kGreen[p]=a;DialogSetTransparency(as_dGreen[p],a);
+    }
+    blink=infested && ModF(as_now,0.8)<0.5;
+    if(blink!=as_kInfest[p]) {as_kInfest[p]=blink;AS_Show(as_cInfest[p],p,blink);AS_Show(as_cInfIco[p],p,blink && AS_Painted("ico_infested"));}
+}
+void AS_HurtDirPulse (int p) {
+    fixed t=as_now-as_hurtDirAt[p];fixed a=100.0;fixed len=MaxF(1.0,as_hurtDirLen[p]);
+    if(as_dHurtDir[p]==0) {return;}
+    if(as_alive[p] && as_hurtDirAt[p]>0.0 && t<len) {
+        a=20.0+80.0*t/len;
+        if(t<AS_DT*1.5) {DialogControlSetPosition(as_cHurtDir[p],AS_Me(p),c_anchorCenter,FixedToInt(Cos(as_hurtAng[p])*330.0),FixedToInt(0.0-Sin(as_hurtAng[p])*250.0));}
+    }
+    if(a!=as_kHurtDir[p]) {as_kHurtDir[p]=a;DialogSetTransparency(as_dHurtDir[p],a);}
 }
 
 // ---- the squad ----------------------------------------------------------
@@ -1044,18 +1107,38 @@ string AS_Clock (fixed secs) {
 }
 // The use panel: a key cap when there is a key to press, the line, and the progress under it.
 // Without a key the line and the bar take the key cap's place.
+// The painted icon for a use line (tools/genart.py's objective sheet), read off its words; "" for none.
+string AS_UseIcon (string s) {
+    string k="";
+    if(StringFind(s,"Weld",c_stringNoCase)!=c_stringNotFound) {k="weld";}
+    else if(StringFind(s,"Hack",c_stringNoCase)!=c_stringNotFound || StringFind(s,"Terminal",c_stringNoCase)!=c_stringNotFound
+         || StringFind(s,"Panel",c_stringNoCase)!=c_stringNotFound || StringFind(s,"PDA",c_stringCase)!=c_stringNotFound
+         || StringFind(s,"Computer",c_stringNoCase)!=c_stringNotFound || StringFind(s,"Log off",c_stringNoCase)!=c_stringNotFound) {k="hack";}
+    else if(StringFind(s,"Door",c_stringNoCase)!=c_stringNotFound) {k="door";}
+    else if(StringFind(s,"power",c_stringNoCase)!=c_stringNotFound || StringFind(s,"reactor",c_stringNoCase)!=c_stringNotFound) {k="power";}
+    else if(StringFind(s,"egg",c_stringNoCase)!=c_stringNotFound) {k="eggs";}
+    else if(StringFind(s,"biomass",c_stringNoCase)!=c_stringNotFound || StringFind(s,"burn",c_stringNoCase)!=c_stringNotFound) {k="biomass";}
+    else if(StringFind(s,"Lift",c_stringNoCase)!=c_stringNotFound || StringFind(s,"Descending",c_stringNoCase)!=c_stringNotFound
+         || StringFind(s,"elevator",c_stringNoCase)!=c_stringNotFound || StringFind(s,"dropship",c_stringNoCase)!=c_stringNotFound) {k="extract";}
+    if(k=="" || !AS_Painted("ico_"+k)) {return "";}
+    return "ico_"+k;
+}
 void AS_UsePanel (int p, bool show, string key, string s, fixed f) {
-    int x=AS_HUD_KEY+30;
+    int x=AS_HUD_KEY+30;int r=14;string ico;
     if(show!=as_useOn[p]) {as_useOn[p]=show;DialogSetVisible(as_dUse[p],AS_Me(p),show);}
     if(!show) {return;}
     if(key=="") {x=24;}
+    ico=AS_UseIcon(s);
+    if(ico!="") {r=78;AS_SetArt(as_cUseIco[p],p,ico);}
+    AS_Show(as_cUseIco[p],p,ico!="");
     AS_Show(as_cUseKey[p],p,key!="");AS_Show(as_cUseKeyT[p],p,key!="");
     AS_Text(as_cUseKeyT[p],p,key);
     AS_Place(as_cUseText[p],p,x,12);AS_Text(as_cUseText[p],p,s);
+    DialogControlSetSize(as_cUseText[p],AS_Me(p),AS_HUD_USE_W-x-r,34);
     AS_Place(as_cUseBarBg[p],p,x,AS_HUD_USE_H-36);AS_Place(as_cUseBar[p],p,x+2,AS_HUD_USE_H-34);
-    DialogControlSetSize(as_cUseBarBg[p],AS_Me(p),AS_HUD_USE_W-x-16,16);
+    DialogControlSetSize(as_cUseBarBg[p],AS_Me(p),AS_HUD_USE_W-x-r-2,16);
     AS_Show(as_cUseBarBg[p],p,f>=0.0);AS_Show(as_cUseBar[p],p,f>=0.0);
-    if(f>=0.0) {DialogControlSetSize(as_cUseBar[p],AS_Me(p),MaxI(1,FixedToInt(IntToFixed(AS_HUD_USE_W-x-20)*AS_Clamp(f,0.0,1.0))),12);}
+    if(f>=0.0) {DialogControlSetSize(as_cUseBar[p],AS_Me(p),MaxI(1,FixedToInt(IntToFixed(AS_HUD_USE_W-x-r-6)*AS_Clamp(f,0.0,1.0))),12);}
 }
 void AS_Progress (int p, bool show, fixed f, string s) {AS_UsePanel(p,show,"",s,f);}
 void AS_MissionHud (int p) {
@@ -1170,6 +1253,51 @@ void AS_HudSwapped (int a, int b) {
         for(q=1;q<=AS_PLAYERS;q+=1) {as_tagKey[k][q]= -1;as_tagUnit[k][q]=null;if(as_dTag[k][q]!=0) {DialogControlSetPropertyAsText(as_cTagName[k][q],c_triggerControlPropertyText,AS_Me(k),AS_MarineName(q));}}
     }
 }
+// The scanner's sounds (asw_hud_minimap.cpp 850-1000): each tech's ring sweeps out over 1/2.2 s and starts again
+// every second; the first alien the ring passes in a sweep beeps a warning, and a sweep ending within 3 s of a beep
+// pings. Both fade past 30% of 1324 units from the tech (as far as a listener is); movement after 10 s of quiet
+// tells the squad to watch the scanner.
+fixed[5] as_scanT;
+bool[5] as_scanBeeped;
+fixed as_scanBlipAt;
+fixed as_scanQuietAt;
+void AS_ScannerPulse () {
+    int q;int i;int p;fixed r;fixed ring;point mq;fixed dx;fixed dy;bool hit;
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(!AS_Person(q) || !as_alive[q] || as_m[q]==null || AS_Class(q)!=AS_CL_TECH) {as_scanT[q]=0.0;continue;}
+        mq=UnitGetPosition(as_m[q]);
+        r=(600.0+150.0*IntToFixed(AS_Skill(q,AS_SK_SCANNER)))/80.0;
+        as_scanT[q]+=AS_DT*2.2;
+        if(as_scanT[q]<=1.0 && !as_scanBeeped[q]) {
+            ring=r*as_scanT[q];hit=false;
+            for(i=0;i<AS_MAXALIEN;i+=1) {
+                if(as_a[i]==null || AS_IsThing(as_aKind[i])) {continue;}
+                dx=as_aX[i]-PointGetX(mq);dy=as_aY[i]-PointGetY(mq);
+                if(dx*dx+dy*dy<ring*ring) {hit=true;break;}
+            }
+            if(hit) {
+                as_scanBeeped[q]=true;as_scanBlipAt=as_now;
+                for(p=1;p<=AS_PLAYERS;p+=1) {AS_ScannerSound(p,mq,"WidowMine_ArmedBeep",60.0);}
+                if(as_now-as_scanQuietAt>10.0) {for(p=1;p<=AS_PLAYERS;p+=1) {AS_HintEvent("scanner_important",p);}}
+                as_scanQuietAt=as_now;
+            }
+        }
+        if(as_scanT[q]>2.2) {
+            if(as_now<as_scanBlipAt+3.0) {for(p=1;p<=AS_PLAYERS;p+=1) {AS_ScannerSound(p,mq,"UI_MiniMapPing",80.0);}}
+            as_scanBeeped[q]=false;as_scanT[q]=0.0;
+        }
+    }
+}
+void AS_ScannerSound (int p, point tech, string id, fixed vol) {
+    fixed f;
+    if(!AS_Person(p) || as_bot[p]) {return;}
+    if(as_alive[p] && as_m[p]!=null) {
+        f=DistanceBetweenPoints(UnitGetPosition(as_m[p]),tech)/(1324.0/80.0);
+        if(f>0.3) {vol*=1.0-(f-0.3)*0.7;}
+    }
+    if(vol<=0.0) {return;}
+    SoundPlay(SoundLink(id,-1),AS_Me(p),vol,0.0);
+}
 // The movement scanner: a living tech within 600 + 150 a Scanner point (AS units / 80).
 bool AS_Scanned (fixed x, fixed y) {
     int q;point mq;fixed r;
@@ -1275,6 +1403,7 @@ void AS_HudSlowMo (bool on) {
         DialogSetTransparency(as_dSlow,35.0);
     }
     DialogSetVisible(as_dSlow,PlayerGroupAll(),on);
+    AS_MusicDuck(on);
 }
 // An announcement that stays up a given time.
 void AS_AnnounceFor (int p, string big, string small, fixed secs) {

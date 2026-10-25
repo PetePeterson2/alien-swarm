@@ -144,7 +144,7 @@ int AS_WtAt (int w, int r, int c) {return w*24+r*8+c;}
 // A wire's path from its top-left socket to its bottom-right one, then scrambled: the tiles off the path turned
 // at random, then up to five on it turned out of line, the last columns first.
 void AS_WtBuild (int d, int rows, int cols, int wires) {
-    int w;int r;int c;int i;int row;int n;int tries;bool stay;
+    int w;int r;int c;int i;int row;int to;int n;int tries;bool stay;
     as_wtRows[d]=rows;as_wtCols[d]=cols;as_wtWires[d]=wires;as_wtStart[d]=0.0;as_wtLogged[d]=false;
     for(w=0;w<wires;w+=1) {
         for(r=0;r<rows;r+=1) {for(c=0;c<cols;c+=1) {i=AS_WtAt(w,r,c);as_wtType[d][i]=RandomInt(0,2);as_wtRot[d][i]=RandomInt(0,3);}}
@@ -152,21 +152,23 @@ void AS_WtBuild (int d, int rows, int cols, int wires) {
         for(c=0;c<cols;c+=1) {
             stay=RandomFixed(0.0,1.0)<0.4;
             if(rows==1) {stay=true;}
-            // The last column must leave from the bottom row.
-            if(c==cols-1) {stay=row==rows-1;}
-            if(stay) {i=AS_WtAt(w,row,c);as_wtType[d][i]=0;as_wtRot[d][i]=0;continue;}
-            if(row==0) {
-                // Down: a corner W-S here, a corner N-E below it.
-                as_wtType[d][AS_WtAt(w,0,c)]=1;as_wtRot[d][AS_WtAt(w,0,c)]=0;
-                as_wtType[d][AS_WtAt(w,1,c)]=2;as_wtRot[d][AS_WtAt(w,1,c)]=3;
-                row=1;
+            // The row the wire leaves this column on: any other row, but the last column leaves from the bottom row.
+            to=row;
+            if(!stay) {to=RandomInt(0,rows-2);if(to>=row) {to+=1;}}
+            if(c==cols-1) {to=rows-1;}
+            if(to==row) {i=AS_WtAt(w,row,c);as_wtType[d][i]=0;as_wtRot[d][i]=0;continue;}
+            if(to>row) {
+                // Down: a corner W-S here, straight N-S between, a corner N-E where it turns east again.
+                as_wtType[d][AS_WtAt(w,row,c)]=1;as_wtRot[d][AS_WtAt(w,row,c)]=0;
+                as_wtType[d][AS_WtAt(w,to,c)]=2;as_wtRot[d][AS_WtAt(w,to,c)]=3;
             }
             else {
-                // Up: a corner W-N here, a corner S-E above it.
+                // Up: a corner W-N here, straight N-S between, a corner S-E where it turns east again.
                 as_wtType[d][AS_WtAt(w,row,c)]=1;as_wtRot[d][AS_WtAt(w,row,c)]=1;
-                as_wtType[d][AS_WtAt(w,row-1,c)]=2;as_wtRot[d][AS_WtAt(w,row-1,c)]=0;
-                row-=1;
+                as_wtType[d][AS_WtAt(w,to,c)]=2;as_wtRot[d][AS_WtAt(w,to,c)]=0;
             }
+            for(r=MinI(row,to)+1;r<MaxI(row,to);r+=1) {as_wtType[d][AS_WtAt(w,r,c)]=0;as_wtRot[d][AS_WtAt(w,r,c)]=1;}
+            row=to;
         }
         // Mistakes, clustered toward the end; at least one.
         AS_WtLight(d);
@@ -317,9 +319,11 @@ void AS_UsePress (int p) {
     if(i>=0) {AS_PickUp(p,i);return;}
     i=AS_StashNear(p);
     if(i>=0) {AS_StashTake(p,i);return;}
+    i=AS_SentryNearBuilt(p);
+    if(i>=0) {AS_SentryPress(p,i);return;}
 }
 void AS_UseStart (int p, int kind, int ref) {
-    if(kind==AS_USE_BUTTON) {AS_ButtonPress(p,ref);return;}
+    if(kind==AS_USE_BUTTON) {AS_ButtonPress(p,ref);AS_HintEvent("button_used",p);return;}
     if(kind==AS_USE_PANEL) {
         if(!as_drLocked[ref]) {AS_Message(p,"Panel unlocked");return;}
         if(as_wtUser[ref]>0 && as_wtUser[ref]!=p) {AS_Message(p,"Someone is already at this panel");return;}
@@ -378,8 +382,8 @@ void AS_UsePulse () {
             if(as_useWhat[p]==AS_USE_PANEL) {AS_WirePulse(p,as_using[p]);}
             else {AS_CompPulse(p,as_using[p]);}
         }
-        // Hold E beside a sentry case to assemble it.
-        else if(as_useHeld[p] || (as_bot[p] && !(as_auto && p==1))) {AS_SentryBuildStep(p);}
+        // Hold E beside a sentry case to assemble it, or at a built one to pack it up.
+        else if(as_useHeld[p] || (as_bot[p] && !(as_auto && p==1))) {if(!AS_SentryBuildStep(p) && as_useHeld[p]) {AS_SentryHoldStep(p);}}
         // The extra item held: the welder at a door (seals, or cuts a welded door).
         if(as_extraHeld[p] && as_inv[p][2]==AS_IT_WELDER) {AS_WeldStep(p,as_weldDir[p]);}
     }
@@ -513,6 +517,12 @@ void AS_UseDescribe (int p) {
     if(i>=0) {as_useKey="E";as_useLine="Take Ammo";as_useBar=IntToFixed(as_stashUnits[i])/100.0;return;}
     f=AS_SentryProgress(p);
     if(f>=0.0) {as_useKey="E";as_useLine="Hold to Build Sentry";as_useBar=f;return;}
+    i=AS_SentryNearBuilt(p);
+    if(i>=0) {
+        as_useKey="E";as_useLine="Rotate Sentry  (hold: pack up)";
+        if(as_sentryHeld[p]==i && as_useHeld[p]) {as_useBar=AS_Clamp((as_now-as_sentryHeldAt[p])/2.0,0.0,1.0);}
+        return;
+    }
     i=AS_WeldTarget(p);
     if(i>=0) {
         as_useLine=AS_DoorUseText(p,i);

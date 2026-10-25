@@ -32,6 +32,8 @@ trigger as_brTrig;
 int[5] as_cBrMission;
 int[5] as_cBrPlace;
 int[5] as_cBrMap;
+int[5] as_cBrMini;                 // the minimap in the picture's corner when the level has painted art
+int[5] as_cBrMiniBg;
 int[5] as_cBrObj;
 int[5] as_cBrDesc;
 int[5] as_cBrTech;
@@ -39,6 +41,8 @@ int[5][6] as_cBrSkillImg;
 int[5] as_cBrSkillDesc;
 int[5] as_cBrOnsImg;
 int[5] as_cBrOnsTxt;
+int[5] as_cBrExtImg;
+int[5] as_cBrExtTxt;
 int[5][5] as_cBrRowFace;
 int[5][5] as_cBrRowName;
 int[5][5] as_cBrRowCls;
@@ -126,6 +130,7 @@ void AS_BriefingOpen (int mission) {
         as_brView[p]=0;
     }
     AS_BrRefreshAll();
+    AS_Music("ASMus_Briefing");
     AS_Log("briefing open: "+as_levelTitle[as_briefMission]);
 }
 void AS_BriefingClose () {
@@ -196,6 +201,7 @@ void AS_BrBuild (int p) {
     as_brCtlN[p]=0;
     d=DialogCreate(1600,1200,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);DialogSetFullscreen(d,true);as_dBriefBg[p]=d;
     AS_Image(d,c_anchorCenter,0,0,3200,1200,AS_WHITE,AS_Rgb(12,20,30));
+    if(AS_Painted("starchart")) {AS_Image(d,c_anchorCenter,0,40,2000,1000,AS_Ui("starchart"),AS_Rgb(110,120,130));}
     AS_Image(d,c_anchorTop,0,0,3200,76,AS_Ui("shade75"),AS_Rgb(0,0,0));
     DialogSetVisible(d,AS_Me(p),true);
     d=DialogCreate(1560,1180,c_anchorCenter,0,0,false);DialogSetImageVisible(d,false);as_dBrief[p]=d;
@@ -208,6 +214,8 @@ void AS_BrBuild (int p) {
     // The mission: map, objectives, description.
     AS_Art(d,10,90,520,520,"frame",AS_Full());
     as_cBrMap[p]=AS_Art(d,30,110,480,480,"map0",AS_Full());
+    as_cBrMiniBg[p]=AS_Art(d,322,402,184,184,"black75",AS_Full());
+    as_cBrMini[p]=AS_Art(d,324,404,180,180,"map0",AS_Full());
     AS_Art(d,10,620,520,360,"frame",AS_Full());
     AS_Art(d,10,620,520,44,"header",AS_Full());
     AS_Lbl(d,24,620,480,44,"ASHead","MISSION OBJECTIVES");
@@ -222,9 +230,13 @@ void AS_BrBuild (int p) {
         AS_BrButton(p,d,20+(s-1)*102,1032,96,46,"",StringCase(AS_SkillName(s),true),"ASTab",10+s);
     }
     as_cBrSkillDesc[p]=AS_Lbl(d,24,1082,500,40,"ASSmall","");
-    as_cBrOnsImg[p]=AS_Art(d,20,1124,200,40,"buttonoff",AS_Full());
-    AS_BrButton(p,d,20,1124,200,40,"","ONSLAUGHT","ASTab",20);
-    as_cBrOnsTxt[p]=AS_Lbl(d,230,1124,290,40,"ASSmall","");
+    as_cBrOnsImg[p]=AS_Art(d,20,1124,150,40,"buttonoff",AS_Full());
+    AS_BrButton(p,d,20,1124,150,40,"","ONSLAUGHT","ASTab",20);
+    as_cBrOnsTxt[p]=AS_Lbl(d,176,1124,84,40,"ASSmall","");
+    // The port's own additions (the ripper, the story director, waking on gunfire, keep-distance, the mortar ring).
+    as_cBrExtImg[p]=AS_Art(d,266,1124,150,40,"buttonoff",AS_Full());
+    AS_BrButton(p,d,266,1124,150,40,"","EXTRAS","ASTab",21);
+    as_cBrExtTxt[p]=AS_Lbl(d,422,1124,96,40,"ASSmall","");
     // The squad: a row per slot.
     for(r=1;r<=4;r+=1) {
         x=560;y=90+(r-1)*218;
@@ -312,7 +324,12 @@ void AS_BrRefresh (int p) {
     int r;int k;int it;int s;int lv=AS_PlayerLevel(p);int need;int have;bool host=AS_BrIsHost(p);string st;
     AS_Text(as_cBrMission[p],p,as_levelTitle[as_briefMission]);
     AS_Text(as_cBrPlace[p],p,as_levelPlace[as_briefMission]);
-    AS_SetArt(as_cBrMap[p],p,"map"+IntToString(as_briefMission));
+    // The level's painted picture with its minimap in the corner, else the minimap alone.
+    if(AS_PaintedMission(as_briefMission)!="") {
+        AS_SetArt(as_cBrMap[p],p,AS_PaintedMission(as_briefMission));AS_SetArt(as_cBrMini[p],p,"map"+IntToString(as_briefMission));
+    }
+    else {AS_SetArt(as_cBrMap[p],p,"map"+IntToString(as_briefMission));}
+    AS_Show(as_cBrMini[p],p,AS_PaintedMission(as_briefMission)!="");AS_Show(as_cBrMiniBg[p],p,AS_PaintedMission(as_briefMission)!="");
     AS_Text(as_cBrObj[p],p,AS_BrObjectives(as_briefMission));
     AS_Text(as_cBrDesc[p],p,AS_BrDescription(as_briefMission));
     if(AS_BrNeedsTech() && !AS_BrSquadHasTech()) {AS_Text(as_cBrTech[p],p,"Tech required");}else {AS_Text(as_cBrTech[p],p,"");}
@@ -320,8 +337,10 @@ void AS_BrRefresh (int p) {
         if(s==as_skill) {AS_SetArt(as_cBrSkillImg[p][s],p,"buttonhi");}else {AS_SetArt(as_cBrSkillImg[p][s],p,"buttonoff");}
     }
     AS_Text(as_cBrSkillDesc[p],p,AS_SkillDesc(as_skill));
-    if(as_onslaught) {AS_SetArt(as_cBrOnsImg[p],p,"buttonhi");AS_Text(as_cBrOnsTxt[p],p,"<c val=\"FFD24A\">ON</c>  hordes and wanderers");}
+    if(as_onslaught) {AS_SetArt(as_cBrOnsImg[p],p,"buttonhi");AS_Text(as_cBrOnsTxt[p],p,"<c val=\"FFD24A\">ON</c>");}
     else {AS_SetArt(as_cBrOnsImg[p],p,"buttonoff");AS_Text(as_cBrOnsTxt[p],p,"off");}
+    if(as_extras) {AS_SetArt(as_cBrExtImg[p],p,"buttonhi");AS_Text(as_cBrExtTxt[p],p,"<c val=\"FFD24A\">ON</c>");}
+    else {AS_SetArt(as_cBrExtImg[p],p,"buttonoff");AS_Text(as_cBrExtTxt[p],p,"off");}
     for(r=1;r<=4;r+=1) {
         if(!as_on[r] || as_prof[r]<0) {
             AS_SetArt(as_cBrRowFace[p][r],p,"clear");AS_Show(as_cBrRowCls[p][r],p,false);
@@ -349,7 +368,7 @@ void AS_BrRefresh (int p) {
         }
         for(k=0;k<3;k+=1) {
             it=as_inv[r][k];
-            if(it>0) {AS_SetArt(as_cBrSlotImg[p][r*3+k],p,"it"+IntToString(it));AS_Text(as_cBrSlotName[p][r*3+k],p,as_it[it].title);}
+            if(it>0) {AS_SetArt(as_cBrSlotImg[p][r*3+k],p,AS_ItArt(it));AS_Text(as_cBrSlotName[p][r*3+k],p,as_it[it].title);}
             else {AS_SetArt(as_cBrSlotImg[p][r*3+k],p,"clear");AS_Text(as_cBrSlotName[p][r*3+k],p,"");}
         }
     }
@@ -374,6 +393,11 @@ void AS_BrRefresh (int p) {
     AS_Text(as_cBrStatus[p],p,st);
 }
 
+// The briefing shows the painted loadout art where there is some (tools/genart.py), else the HUD's line icon.
+string AS_ItArt (int it) {
+    if(AS_Painted("gi"+IntToString(it))) {return "gi"+IntToString(it);}
+    return "it"+IntToString(it);
+}
 // ---- the marine roster -------------------------------------------------------------------
 void AS_BrRosterOpen (int p, int row) {
     int d;int i;int x;int y;int k;
@@ -468,8 +492,8 @@ void AS_BrItemsOpen (int p, int row, int slot) {
         if(slot==2) {cols=6;w=150;h=104;}else {cols=7;w=134;h=104;}
         x=12+(n%cols)*(w+6);y=66+(n/cols)*(h+6);
         as_cItFrame[p][n]=AS_Art(d,x,y,w,h,"buttonoff",AS_Full());
-        if(slot==2) {as_cItIcon[p][n]=AS_Art(d,x+(w-64)/2,y+6,64,64,"it"+IntToString(it),AS_Full());}
-        else {as_cItIcon[p][n]=AS_Art(d,x+4,y+10,w-8,(w-8)/2,"it"+IntToString(it),AS_Full());}
+        if(slot==2) {as_cItIcon[p][n]=AS_Art(d,x+(w-64)/2,y+6,64,64,AS_ItArt(it),AS_Full());}
+        else {as_cItIcon[p][n]=AS_Art(d,x+4,y+10,w-8,(w-8)/2,AS_ItArt(it),AS_Full());}
         as_cItName[p][n]=AS_Label(d,p,c_anchorTopLeft,x,y+h-30,w,28,"ASSmallC",as_it[it].title);
         as_cItLock[p][n]=AS_Art(d,x+w-34,y+4,30,30,"padlock",AS_Full());
         AS_BrButton(p,d,x,y,w,h,"","","ASTab",100+n);
@@ -532,7 +556,7 @@ void AS_BrItemsShow (int p) {
     }
     if(pick<1) {return;}
     if(AS_IsExtra(pick)) {DialogControlSetSize(as_cItBig[p],AS_Me(p),128,128);}else {DialogControlSetSize(as_cItBig[p],AS_Me(p),256,128);}
-    AS_SetArt(as_cItBig[p],p,"it"+IntToString(pick));
+    AS_SetArt(as_cItBig[p],p,AS_ItArt(pick));
     AS_Text(as_cItTitle[p],p,as_it[pick].name);
     AS_Text(as_cItDesc[p],p,as_it[pick].desc);
     AS_Text(as_cItStats[p],p,AS_ItemStats(p,pick));
@@ -596,6 +620,7 @@ void AS_BrAction (int p, int act) {
         AS_BrUnready();AS_BrRefreshAll();return;
     }
     if(act==20) {if(!AS_BrIsHost(p)) {return;}as_onslaught=!as_onslaught;AS_BrUnready();AS_BrRefreshAll();return;}
+    if(act==21) {if(!AS_BrIsHost(p)) {return;}as_extras=!as_extras;for(r=1;r<=AS_PLAYERS;r+=1) {as_numbers[r]=as_extras;}AS_BrUnready();AS_BrRefreshAll();return;}
     if(act>=31 && act<=34) {
         r=act-30;
         if(!AS_BrMayEdit(p,r)) {return;}

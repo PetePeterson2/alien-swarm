@@ -221,6 +221,19 @@ class Trace:
         if order in (1, 2) and target and self.named(target):
             o['order'] = order
             o['target'] = tuple(round(v, 1) for v in self.at(*self.named(target)[0]['origin'][:2]))
+        # MoveToNearestMarine needs no target: the nearest marine is it (asw_alien.cpp 1270, 2296-2306).
+        elif order == 3:
+            o['order'] = 3
+        if _num(k, 'LongRange'):
+            o['long'] = True
+        # The way its aliens come out (UnburrowActivity), facing the spawner's yaw: over a railing, out of or down a
+        # wall, or dropping off a ledge (src/Aliens.galaxy AS_AlienEnter).
+        act = k.get('UnburrowActivity', '').lower()
+        how = (1 if act.startswith('act_climb_off_rail') else 2 if act == 'act_climb_out_wall' else
+               3 if act.startswith('act_climb_down_wall') else 4 if act in ('act_jump_down_low', 'act_jump_from_offscreen_short') else
+               5 if act in ('act_jump_down_high', 'act_jump_from_offscreen_long') else 0)
+        if how and _num(k, 'StartBurrowed') and 'angles' in k:
+            o['enter'] = (how, round(float(k['angles'].split()[1]), 1))
         if o:
             row.append(o)
         return tuple(row)

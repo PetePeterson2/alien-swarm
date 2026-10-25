@@ -155,7 +155,7 @@ DOORS = [
     ('bridgegate',  (71, 112, 72, 116), 'panel', 0.0, (70.4, 115.2)),
     ('shipdeck',    (134, 116, 142, 121), 'hover', 0.0, None),
 ]
-PANEL_WIRES = (3, 5, 3)
+PANEL_WIRES = (2, 5, 3)            # the gate panel (trigger_asw_button_area: wirerows 2, wirecolumns 5, numwires 3)
 CONSOLE = (51.7, 61.2)
 NEEDS_TECH = True                # asw_tech_marine_req, lifted once the bridge gate is hacked
 EXTRACT = (141, 133, 145, 137)   # the reactor entrance (objective_escape's trigger_multiple)
@@ -261,6 +261,13 @@ ONS = [
     ('hackstart:gate', 'spawn', 'holdout_spawn', 3.0),
     ('hacked:gate', 'complete', 'gate', 0.0), ('hacked:gate', 'stop', 'holdout_spawn', 18.0),
     ('hacked:gate', 'spawn', 'spawn_ins_boomer', 0.0),
+    # The hold's music (jukebox: from two seconds into the hack until twenty after it), and the gatehouse windows
+    # blowing in five and eight seconds after the gate opens (window_5b, window_5).
+    ('hackstart:gate', 'musicloop', 'Ambience_CharDistantBattle', 2.0), ('hacked:gate', 'musicstop', '', 20.0),
+    ('hacked:gate', 'shatter', '51.2,51.5', 5.0), ('hacked:gate', 'shatter', '45.2,56.4', 8.0),
+    # The roadside windows the first drones come through (WindowSpawner5-8 break theirs as they spawn).
+    ('spawned:WindowSpawner5', 'shatter', '16.0,24.5', 0.0), ('spawned:WindowSpawner6', 'shatter', '16.0,27.7', 0.0),
+    ('spawned:WindowSpawner7', 'shatter', '16.0,44.7', 0.0), ('spawned:WindowSpawner8', 'shatter', '16.0,47.9', 0.0),
     # The ramp (relay_bridge: the ramps run out over a second and a half), and the charges (relay_bomb: they go
     # 1.9 s after the button; the wreckage is gone, the shieldbug wakes and the pipe drones come).
     ('pressed:openBridgeButton', 'open', 'ramp', 0.5),
@@ -278,6 +285,10 @@ ONS = [
     ('pass:path_12', 'line', 'co_m2_onback', 0.5),
 ]
 TIMERS = [('lightning', 15.0, 20.0, True)]      # timer_lightening
+# trigger_asw_jump: (rect, destination, minimum marine distance in cells, toward the quarry only). The bridge's
+# lower walkway: drones leap the gap up onto the east catwalk (jump_target, set on its nearest deck). AS's other
+# jump here (a forced leap south off the ramp's end) is left out: it only throws back drones chasing north.
+JUMPS = [((33.5, 89.6, 35.7, 92.0), (40.5, 89.5), 0.0, False)]
 # The dropship (train_ship along path_1 .. path_12), her height over the drop she flies above.
 _SHIP_Z = 8.8
 MOVERS = [
@@ -304,7 +315,7 @@ ZONES = []
 # The autopilot's way through (worked out over the deck, breadth first between the stops): x, y, wait (1 the panel by it
 # hacked, 5 the button by it pressed, 6 the door, gap or ramp by it open).
 ROUTE = [
-    (21.5, 12.5, 0), (22.5, 26.5, 0), (29.5, 36.5, 0), (42.5, 48.5, 0), (49.5, 58.5, 0), (51.2, 62.0, 1),
+    (21.5, 12.5, 0), (22.5, 26.5, 0), (29.5, 36.5, 0), (42.5, 48.5, 0), (47.5, 51.5, 0), (49.5, 58.5, 0), (51.2, 62.0, 1),
     (44.5, 67.5, 0), (44.5, 69.5, 0), (43.5, 83.5, 0), (41.5, 88.5, 0), (44.5, 90.5, 0), (48.5, 90.5, 5),
     (49.0, 90.5, 6), (60.3, 90.5, 5), (61.0, 89.5, 6), (67.5, 92.5, 0), (67.5, 106.5, 0), (69.5, 108.0, 0),
     (70.0, 114.0, 1), (73.5, 114.0, 0), (87.5, 114.5, 0), (101.5, 114.5, 0), (115.5, 114.5, 0), (129.5, 114.5, 0),

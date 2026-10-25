@@ -25,6 +25,7 @@ import numpy as np
 from tools import alien, marine, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout, uiart, heights
 from tools import pack as packer
 from tools import colony
+from tools import genart
 
 NAME = 'AlienPOC'
 TITLE = 'Halcyon Drift'
@@ -32,7 +33,7 @@ WIPE = False
 AUTO_SKILL, AUTO_ONSLAUGHT, AUTO_PROF = 2, False, 3
 MARINES = ['sarge', 'wildcat', 'faith', 'crash', 'jaeger', 'wolfe', 'bastille', 'vegas']
 REFERENCE_SOUNDS = Path.home() / 'OneDrive/Documents/sc2map/doodad-royale/reference/catalog/Sound.txt'
-MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Bots', 'Hive',
+MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Moments', 'Bots', 'Hive',
            'Progress', 'HUD', 'Hints', 'Briefing', 'Campaign', 'Main']
 SEATS = 4
 # The campaign in order, after Alien Swarm's Jacob's Rest: the level's module (tools/<name>.py), its title,
@@ -342,15 +343,20 @@ def mission_galaxy(n):
         px, py = at(*panel) if panel else (0.0, 0.0)
         out.append('    AS_Door("%s",%d,%d,%d,%d,%d,%.2f,%.2f,%.2f);' % (name, x0, y0, x1, y1, kinds[kind], seal, px, py))
     # A spawner's 13th field and a trigger's 5th, when there, are options (src/Objects.galaxy AS_SpawnerOpts,
-    # AS_TriggerOpts): spawners {start, near (cells), jitter, order (1 MoveTo, 2 MoveToIgnoringMarines), target (x, y)},
+    # AS_TriggerOpts): spawners {start, near (cells), jitter, order (1 MoveTo, 2 MoveToIgnoringMarines, 3 MoveToNearestMarine),
+    # target (x, y), long (LongRange),
+    # enter (how, facing): AS_SpawnerEnter},
     # triggers {name, off, need (marines inside: n, or -1 all living), aliens}.
     for sp in getattr(L, 'SPAWNERS', []):
         out.append('    AS_Spawner("%s",%.2f,%.2f,%s,%d,%d,%.2f,%d,%d,%d,%d,%d);' % ((sp[0],) + at(sp[1], sp[2]) + tuple(sp[3:12])))
         if len(sp) > 12:
             o = sp[12]
             tx, ty = at(*o['target']) if 'target' in o else (0.0, 0.0)
-            out.append('    AS_SpawnerOpts(%s,%.2f,%.2f,%d,%.2f,%.2f);' % ('true' if o.get('start') else 'false', o.get('near', 9.3),
-                                                                     o.get('jitter', 0.25), o.get('order', 0), tx, ty))
+            out.append('    AS_SpawnerOpts(%s,%.2f,%.2f,%d,%.2f,%.2f,%s);' % ('true' if o.get('start') else 'false', o.get('near', 9.3),
+                                                                        o.get('jitter', 0.25), o.get('order', 0), tx, ty,
+                                                                        'true' if o.get('long') else 'false'))
+            if 'enter' in o:
+                out.append('    AS_SpawnerEnter(%d,%.1f);' % o['enter'])
     for r, once, chance, acts, *opts in getattr(L, 'TRIGGERS', []):
         x0, y0, x1, y1 = rect(r)
         out.append('    AS_Trigger(%.2f,%.2f,%.2f,%.2f,%s,%.2f);' % (x0, y0, x1, y1, 'true' if once else 'false', chance))
@@ -363,6 +369,9 @@ def mission_galaxy(n):
     # The map's other logic (src/Objects.galaxy): outputs on named events, random timers, counters, movers on paths.
     for ev, act, arg, delay in getattr(L, 'ONS', []):
         out.append('    AS_On("%s","%s","%s",%.2f);' % (ev, act, arg, delay))
+    # trigger_asw_jump: (rect, destination, minimum marine distance in cells, toward the quarry only).
+    for (x0, y0, x1, y1), dest, near, check in getattr(L, 'JUMPS', []):
+        out.append('    AS_JumpLink(%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%s);' % (at(x0, y0) + at(x1, y1) + at(*dest) + (near, 'true' if check else 'false')))
     for name, lo, hi, on in getattr(L, 'TIMERS', []):
         out.append('    AS_Timer("%s",%.2f,%.2f,%s);' % (name, lo, hi, 'true' if on else 'false'))
     for name, top in getattr(L, 'COUNTERS', []):
@@ -411,8 +420,11 @@ def mission_galaxy(n):
     out.append('    int i;')
     for kind, x, y in getattr(L, 'SLEEPERS', []):
         out.append('    i=AS_SpawnAlien(%s,%.2f,%.2f,false);' % ((kind,) + at(x, y)))
-    for x, y in getattr(L, 'BARRELS', []):
+    # Explosive barrels: (x, y), or (x, y, name) for one whose going up fires "broken:<name>".
+    for x, y, *name in getattr(L, 'BARRELS', []):
         out.append('    i=AS_SpawnAlien(AS_BARREL,%.2f,%.2f,false);' % at(x, y))
+        if name:
+            out.append('    if(i>=0) {as_aTag[i]="%s";}' % name[0])
     # Barrels a mission counts (x, y, name): their going up fires "broken:<name>" (src/Hive.galaxy).
     for x, y, name in getattr(L, 'HIVE_BARRELS', []):
         out.append('    i=AS_SpawnAlien(AS_BARREL,%.2f,%.2f,false);AS_HiveName(i,"%s");' % (at(x, y) + (name,)))
@@ -602,6 +614,7 @@ def hud_galaxy(frames):
     for key in hudart.PORTRAITS:
         out.append('    if(key=="%s") {return true;}' % key)
     out += ['    return false;', '}']
+    out += genart_galaxy()
     out.append('void AS_HudMaps () {')
     for n, (x0, y0, size) in enumerate(frames):
         out.append('    as_mmX0[%d]=%d.0;as_mmY0[%d]=%d.0;as_mmSize[%d]=%d.0;' % (n, x0, n, y0, n, size))
@@ -724,7 +737,42 @@ def ui_textures(levels):
     files.update({'Base.SC2Assets/Derelict/UI/%s.dds' % k: shipkit.dds_rgba(v) for k, v in uiart.textures().items()})
     files.update({'Base.SC2Assets/Derelict/UI/white.dds': shipkit.dds_rgba(white),
                   'Base.SC2Assets/Derelict/UI/vignette.dds': shipkit.dds_rgba(vig)})
+    # The painted art in assets/ui-gen (tools/genart.py), over the drawn textures it replaces.
+    global GEN_NAMES
+    report = []
+    gen = genart.textures(GEN_DIR, [lv[0] for lv in LEVELS], report)
+    files.update({'Base.SC2Assets/Derelict/UI/%s.dds' % k: shipkit.dds_rgba(v) for k, v in gen.items()})
+    GEN_NAMES = genart.new_names(gen)
+    print('painted UI art: %d textures from %s' % (len(gen), GEN_DIR))
+    for f, m in report:
+        print('  %s: %s' % (f, m))
     return files, frames
+
+
+GEN_DIR = genart.GEN_DIR                                             # assets/ui-gen, or AS_GENART_DIR
+GEN_NAMES = []                                                       # the new texture names it made (AS_Painted)
+
+
+def genart_galaxy():
+    """AS_Painted (whether a painted texture exists), the panel kits' aspect buckets and each level's picture."""
+    out = ['bool AS_Painted (string name) {', '    string n="|"+name+"|";']
+    chunk = []
+    for name in GEN_NAMES + [None]:
+        if name is not None and sum(len(c) + 1 for c in chunk) + len(name) < 380:
+            chunk.append(name)
+            continue
+        if chunk:
+            out.append('    if(StringFind("|%s|",n,c_stringCase)!=c_stringNotFound) {return true;}' % '|'.join(chunk))
+        chunk = [name]
+    out += ['    return false;', '}', 'int AS_KitBucket (int w, int h) {', '    fixed r=IntToFixed(w)/IntToFixed(MaxI(h,1));']
+    for b in range(len(genart.RATIOS) - 1):
+        out.append('    if(r<%.3f) {return %d;}' % (math.sqrt(genart.RATIOS[b] * genart.RATIOS[b + 1]), b))
+    out += ['    return %d;' % (len(genart.RATIOS) - 1), '}', 'string AS_PaintedMission (int n) {']
+    for n, lv in enumerate(LEVELS):
+        if 'mis_' + lv[0] in GEN_NAMES:
+            out.append('    if(n==%d) {return "mis_%s";}' % (n, lv[0]))
+    out += ['    return "";', '}']
+    return out
 
 
 def compose(qa, demo=False, auto=False, start=-1):
@@ -745,8 +793,9 @@ def compose(qa, demo=False, auto=False, start=-1):
         hts.append(h)
         floors.add(L.FLOOR)
     assert len(floors) == 1, 'levels with different base heights: %s' % floors
-    # The cell tables are as big as the biggest level; the map holds every level, packed.
-    TABLES = (max(w for w, h in sizes), max(h for w, h in sizes))
+    # The cell tables are as big as the biggest level, rounded up to the kit's 4x4 tile blocks (AS_KitTiles reads a
+    # whole block at a time); the map holds every level, packed.
+    TABLES = (-(-max(w for w, h in sizes) // 4) * 4, -(-max(h for w, h in sizes) // 4) * 4)
     packed = packer.pack([{'w': w, 'h': h, 'vert': t['vert'], 'vmask': t['vmask']} for (w, h), t in zip(sizes, hts)], base=L.FLOOR)
     W, H = packed['size']
     places = packed['places']
@@ -830,6 +879,7 @@ def compose(qa, demo=False, auto=False, start=-1):
     catalog.build(files, [], set(), kit_models=sorted(models), runtime_props=props, mesh_units=sorted(pieces))
     voice_files(files)
     bark_files(files)
+    music_files(files)
     files['Objects'] = objects(at(*L.SPAWN))
     files['MapScript.galaxy'] = script(levels, missions, *TABLES, qa, demo, auto, start, bank, frames).encode()
     return files, report
@@ -842,7 +892,7 @@ def main():
     ap.add_argument('--skill', type=int, default=2, help='with --auto: difficulty picked in the briefing, 1 Easy .. 5 Brutal')
     ap.add_argument('--onslaught', action='store_true', help='with --auto: Onslaught on')
     ap.add_argument('--marine', default='crash', choices=MARINES, help='with --auto: the marine the autopilot plays')
-    ap.add_argument('--wipe', action='store_true', help='with --auto: Landing Bay loses its tech first (restart), then the whole squad (failed), then plays through')
+    ap.add_argument('--wipe', action='store_true', help='with --auto: Landing Bay loses its tech inside 30 s (restart), then past 30 s (failed), then the whole squad (failed), then plays through')
     ap.add_argument('--demo', action='store_true', help='scripted firing range for screenshots (shows script errors too)')
     ap.add_argument('--start', type=int, default=-1, help='QA: skip the briefing and start at this level (0 Landing Bay, 1 the cargo elevator)')
     args = ap.parse_args()

@@ -3,9 +3,10 @@
 // then the campaign (src/Campaign.galaxy) opens the briefing.
 //
 // Keys, as Alien Swarm binds them: WASD move; LEFT fire; F or MIDDLE secondary
-// fire; RIGHT melee; R reload; Q swap weapons; the wheel zooms; 1 the offhand item;
+// fire; RIGHT melee; R reload; Q or the wheel swap weapons; SHIFT walk; 1 the offhand item;
 // E use; SPACE roll; TAB the map; F1-F4 take control of another of your marines;
-// V and X tell the AI marines to follow or hold; G drop the weapon in hand.
+// V and X tell the AI marines to follow or hold; 2-4 a squadmate's offhand item, SHIFT+2-4 send that
+// one to hold at the cursor; G drop the weapon in hand.
 // Also C top-down / third person, Z camera distance, N damage numbers, H help. Developer keys
 // (Ctrl+...) exist in QA builds only.
 // =====================================================================
@@ -36,21 +37,25 @@ void AS_DemoPulse () {
 }
 bool AS_Pulse (bool testConds, bool runActions) {
     int p;
-    as_now+=AS_DT;as_tick+=1;
     // In the briefing, and for the moment between one level and the next, nothing else runs.
-    if(!as_levelReady) {AS_CampaignPulse();return true;}
+    if(!as_levelReady) {as_now+=AS_DT;as_tick+=1;AS_CampaignPulse();return true;}
+    // Slow motion (src/Moments.galaxy): only a share of the steps run while a beat lasts.
+    if(!AS_TimeStep()) {return true;}
+    as_now+=AS_DT;as_tick+=1;
     AS_AlienCache();
     AS_DemoPulse();
     for(p=1;p<=AS_PLAYERS;p+=1) {
         if(!AS_Person(p)) {continue;}
         AS_MarinePulse(p);AS_BotPulse(p);
-        if(as_alive[p]) {AS_AimUpdate(p);AS_Face(p);AS_Move(p);AS_Attachments(p);AS_Camera(p);AS_FirePulse(p);AS_GearPulse(p);}
+        if(as_alive[p]) {AS_AimUpdate(p);AS_Face(p);AS_Move(p);AS_ShotAimPulse(p);AS_Attachments(p);AS_Camera(p);AS_FirePulse(p);AS_GearPulse(p);}
         if(as_dCenter[p]!=0) {AS_HurtPulse(p);}
+        AS_ReticlePulse(p);
         if(as_tick%2==0 && as_dCenter[p]!=0) {AS_HudUpdate(p);}
     }
     if(as_tick%2==1) {AS_NameTagsPulse();}
     if(as_tick%4==2) {AS_HintPulse();}
     if(as_tick%4==1) {AS_ChatterPulse();}
+    AS_ScannerPulse();
     AS_WeaponsPulse();AS_AlienPulse();AS_PuffPulse();AS_FxPulse();AS_AirPulse();AS_SplatPulse();AS_LampPulse();AS_DirectorPulse();AS_KitPulse();AS_MissionPulse();
     return true;
 }
@@ -106,12 +111,14 @@ void AS_KeyDown (int p, int k, bool ctrl) {
     if(as_using[p]>=0) {return;}
     if(k==c_keyR) {AS_Reload(p);}
     if(k==c_keyQ) {AS_SwapWeapon(p);}
+    if(k==c_keyShift) {as_walkKey[p]=true;}
     if(k==c_key1) {as_extraHeld[p]=true;if(as_inv[p][2]==AS_IT_WELDER) {AS_WelderStart(p);}else {AS_UseExtra(p);}}
     if(k==c_keyF) {as_trigger2[p]=true;AS_Secondary(p);}
     if(k==c_keySpace) {AS_Roll(p);}
     if(k==c_keyG) {AS_DropHand(p);}
     if(k==c_keyV) {AS_SquadOrder(p,0);}
     if(k==c_keyX) {AS_SquadOrder(p,1);}
+    if(k>=c_key2 && k<=c_key4) {AS_Hotbar(p,k-c_key1);}
 }
 bool AS_KeyUpT (bool testConds, bool runActions) {
     AS_KeyUp(EventPlayer(),EventKeyPressed());
@@ -123,9 +130,10 @@ void AS_KeyUp (int p, int k) {
     if(k==c_keyA) {AS_KeyMove(p,1,false);}
     if(k==c_keyS) {AS_KeyMove(p,2,false);}
     if(k==c_keyD) {AS_KeyMove(p,3,false);}
-    if(k==c_keyE) {as_useHeld[p]=false;}
+    if(k==c_keyE) {as_useHeld[p]=false;AS_SentryRelease(p);}
     if(k==c_key1) {as_extraHeld[p]=false;}
     if(k==c_keyF) {as_trigger2[p]=false;}
+    if(k==c_keyShift) {as_walkKey[p]=false;}
 }
 // G: the weapon in hand to the deck, to give a squadmate.
 void AS_DropHand (int p) {
@@ -183,18 +191,21 @@ bool AS_WheelT (bool testConds, bool runActions) {
     AS_Wheel(EventPlayer(),EventMouseWheelSpin());
     return true;
 }
+// The mouse wheel swaps primary and secondary, either way, as AS's ASW_InvNext/Prev do (c_asw_concommands.cpp
+// 202-226); a flick of the wheel is one swap. The camera's distance steps with Z.
+fixed[5] as_wheelAt;
 void AS_Wheel (int p, fixed spin) {
-    if(!AS_Person(p) || !as_levelReady || as_view[p]!=0 || spin==0.0) {return;}
-    if(spin>0.0) {as_zoom[p]=as_zoom[p]/1.12;}
-    else {as_zoom[p]=as_zoom[p]*1.12;}
-    as_zoom[p]=AS_Clamp(as_zoom[p],AS_TOP_DIST_MIN,AS_TOP_DIST_MAX);
-    AS_TopDistApply(p,0.15);
-    AS_Message(p,"Camera distance "+FixedToString(as_zoom[p],1)+"  (default "+FixedToString(AS_TOP_DIST,1)+", Z steps presets)");
+    if(!AS_Person(p) || !as_levelReady || spin==0.0 || !as_alive[p] || as_using[p]>=0) {return;}
+    if(as_now-as_wheelAt[p]<0.2) {return;}
+    as_wheelAt[p]=as_now;
+    AS_SwapWeapon(p);
 }
 void AS_KeyEvents (trigger t, bool down) {
     int k;
     for(k=c_keyA;k<=c_keyZ;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
     for(k=c_key0;k<=c_key9;k+=1) {TriggerAddEventKeyPressed(t,c_playerAny,k,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);}
+    // Shift held: AS's walk (180 u/s, asw_marine_gamemovement.cpp 730-746).
+    TriggerAddEventKeyPressed(t,c_playerAny,c_keyShift,down,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
     if(!down) {return;}
     TriggerAddEventKeyPressed(t,c_playerAny,c_keyTab,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
     TriggerAddEventKeyPressed(t,c_playerAny,c_keySpace,true,c_keyModifierStateIgnore,c_keyModifierStateIgnore,c_keyModifierStateIgnore);
@@ -253,7 +264,7 @@ void AS_Init () {
     // Hiding the game UI hides text tags too; the damage numbers are text tags (Doodad Royale does the same).
     UISetFrameVisible(PlayerGroupAll(),c_syncFrameTypeTextTag,true);
     UISetDragSelectEnabled(PlayerGroupAll(),false);
-    for(p=1;p<=AS_PLAYERS;p+=1) {as_on[p]=PlayerStatus(p)==c_playerStatusActive && PlayerType(p)==c_playerTypeUser;as_prof[p]= -1;as_using[p]= -1;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_on[p]=PlayerStatus(p)==c_playerStatusActive && PlayerType(p)==c_playerTypeUser;as_prof[p]= -1;as_using[p]= -1;as_sentryHeld[p]= -1;}
     // Squad colours as the HUD draws them (debrief graph): blue, red, green, yellow; the swarm an orange-brown
     // carapace nearer Alien Swarm's drones than SC2's purple.
     PlayerSetColorIndex(1,2,true);PlayerSetColorIndex(2,1,true);PlayerSetColorIndex(3,7,true);PlayerSetColorIndex(4,5,true);
@@ -263,7 +274,7 @@ void AS_Init () {
         for(q=1;q<=AS_PLAYERS;q+=1) {if(q!=p) {PlayerSetAlliance(p,c_allianceIdPassive,q,true);PlayerSetAlliance(p,c_allianceIdVision,q,true);PlayerSetAlliance(p,c_allianceIdChat,q,true);}}
         VisRevealArea(p,RegionEntireMap(),0.0,false);
         CameraUseHeightDisplacement(p,false);CameraUseHeightSmoothing(p,false);
-        as_zoom[p]=AS_TOP_DIST;as_lightOn[p]=true;as_view[p]=0;as_numbers[p]=true;
+        as_zoom[p]=AS_TOP_DIST;as_lightOn[p]=true;as_view[p]=0;as_numbers[p]=false;
         if(!as_on[p]) {continue;}
         if(!as_bot[p] || (as_auto && p==1)) {AS_HudCreate(p);AS_HudShow(p,false);}
         if(as_auto && p==1) {as_god[p]=true;}

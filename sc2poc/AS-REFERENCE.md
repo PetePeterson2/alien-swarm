@@ -1,5 +1,7 @@
 # Alien Swarm reference: Landing Bay and Cargo Elevator, played 2026-10-23
 
+Combat feel (laser, reticle, rate of fire, hits and kills) has its own notes: `AS-COMBAT.md`, recorded 2026-10-24.
+
 Notes from playing the Steam game's first two missions (`asi-jac1-landingbay_01` and `_02`) at its high effects setting, 1920x1200 windowed, on Easy, with Crash. They record what the port should look and feel like. Numbers come from the SDK (`../AlienSwarm/src`) and from the maps' own entity lumps; everything else is from the screen.
 
 **Captures** (in `dist/asref/`; reference only, nothing of them is shipped in the map; the clips are git-ignored for size):
@@ -26,7 +28,7 @@ Notes from playing the Steam game's first two missions (`asi-jac1-landingbay_01`
 ## Shooting aliens
 
 - **Drones swarm onto the marine** and cling round him in a clump of 5+. Each claw hit throws a **bright red spray of streaks** off the marine.
-- **Rifle:** a white-hot thin tracer along the red laser line, and a small yellow-white muzzle flash. The laser runs from the gun to the cursor at all times.
+- **Rifle:** a white-hot thin tracer along the red laser line, and a small yellow-white muzzle flash. The laser runs from the gun along the aim to whatever it hits, past the cursor (corrected 2026-10-24; see `AS-COMBAT.md`).
 - **A drone's death** is the loudest effect on screen: a **bright lime-green flare of acid streaks about a cell and a half across** that hangs for a moment, then a wider green mist. Pale claw and leg gibs fly off, dark green splats stay on the floor, and some corpses stay.
 - **HUD:** "- RELOADING -" in red while reloading, the fast-reload bar beside the portrait, and LOW AMMO in red. Key-cap hints appear in the world: "Move Marine", "Melee", "Watch Movement Scanner", "Deploy Ammo", "65 Ammo lost in old clip".
 

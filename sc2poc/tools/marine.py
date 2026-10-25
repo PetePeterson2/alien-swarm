@@ -1,21 +1,26 @@
 """The marines: an original armoured trooper holding a real gun, after Alien Swarm's squad.
 
 Alien Swarm's marines are bulky armoured suits with a backpack and antenna, a
-helmet with glowing eye slits, and the gun held at the hip in both hands, its
-barrel along the aim with the laser sight leaving the muzzle. The stock SC2
-marine carried its own rifle across its chest whatever the weapon, and shots
-left a point in front of it; here every weapon family is its own model (the
-same trooper, a different gun), swapped in as the marine changes weapons
-(src/Marine.galaxy AS_GunModel), and the script fires every round, tracer,
-flame and laser from that gun's muzzle (MUZZLE below, written into the script
-as AS_GunMuzzle by build.py).
+rounded helmet with glowing eye slits, and the gun held at the hip in both
+hands, its barrel along the aim with the laser sight leaving the muzzle. The
+stock SC2 marine carried its own rifle across its chest whatever the weapon,
+and shots left a point in front of it; here every weapon family is its own
+model (the same trooper, a different gun), swapped in as the marine changes
+weapons (src/Marine.galaxy AS_GunModel), and the script fires every round,
+tracer, flame and laser from that gun's muzzle (MUZZLE below, written into the
+script as AS_GunMuzzle by build.py).
 
-Built like tools/alien.py's ripper (proven in the client): ellipsoids, swept
-tubes and boxes, each rigidly bound to one bone of a small rig, written as a
-native skinned M3 in the retained crate container. The upper body, arms and
-gun ride one bone (Torso) so the gun holds the aim line while the legs run.
-The armour is pale so the script can tint each squad member's suit
-(SetTintColor), as Alien Swarm's marines each wear their own colour.
+Built like tools/alien.py's ripper (proven in the client) and written as a
+native skinned M3 in the retained crate container, but soft-bodied: the armour
+is rounded boxes and shells with smooth normals, the limbs are continuous
+tubes along curves, and the legs and waist blend across their joints (up to
+two bones a vertex) so hips, knees and ankles bend instead of hinging apart.
+The upper body, arms and gun ride one bone (Torso) so the gun holds the aim
+line; the Spine under it takes the hips' turn back out, so the waist twists
+while the legs run. The feet are placed by IK on a stride that matches the
+script's walk rate, so they plant on the deck instead of skating. The armour
+is pale so the script can tint each squad member's suit (SetTintColor), as
+Alien Swarm's marines each wear their own colour.
 
 Authored facing +X with Z up, in world units (a cell is 1), turned a quarter
 turn when written: SC2 lays a unit model's -Y along the unit's facing.
@@ -31,23 +36,27 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/m3-reader'))
 sys.path.insert(0, str(ROOT))
-from tools.alien import qrot, rotmat, _knots, _clone, _fixed8, _posed, TURN, CONTAINER   # noqa: E402
+from tools.alien import qrot, qmul, rotmat, _knots, _clone, _fixed8, _posed, TURN, CONTAINER   # noqa: E402
 
 TEX = 'Derelict\\'
 
 # ------------------------------------------------------------------ rig
 BONES = [
     ('Root',   -1, (0.00, 0.00, 0.00)),
-    ('Pelvis',  0, (0.00, 0.00, 0.44)),
-    ('Torso',   1, (0.00, 0.00, 0.50)),
-    ('Head',    2, (0.01, 0.00, 0.76)),
-    ('ThighL',  1, (0.00, 0.085, 0.43)),
-    ('ShinL',   4, (0.01, 0.085, 0.25)),
-    ('ThighR',  1, (0.00, -0.085, 0.43)),
-    ('ShinR',   6, (0.01, -0.085, 0.25)),
-    ('Antenna', 2, (-0.17, 0.07, 0.80)),
+    ('Pelvis',  0, (0.00, 0.00, 0.47)),
+    ('Spine',   1, (0.00, 0.00, 0.535)),
+    ('Torso',   2, (0.00, 0.00, 0.60)),
+    ('Head',    3, (0.01, 0.00, 0.79)),
+    ('ThighL',  1, (0.00, 0.088, 0.455)),
+    ('ShinL',   5, (0.012, 0.088, 0.265)),
+    ('FootL',   6, (0.00, 0.088, 0.075)),
+    ('ThighR',  1, (0.00, -0.088, 0.455)),
+    ('ShinR',   8, (0.012, -0.088, 0.265)),
+    ('FootR',   9, (0.00, -0.088, 0.075)),
+    ('Antenna', 3, (-0.19, 0.075, 0.83)),
 ]
 B = {name: i for i, (name, _, _) in enumerate(BONES)}
+REST = {name: np.asarray(p, float) for name, _, p in BONES}
 
 # Palette: 16 columns of 32 pixels, one material each.
 SLOTS = {
@@ -61,21 +70,67 @@ GLOW = {'visor': (255, 110, 50), 'gunlite': (255, 30, 20), 'lamp': (220, 240, 25
         'tesla': (90, 190, 255)}
 
 
+def _ramp(z, lo, hi):
+    f = min(1.0, max(0.0, (z - lo) / (hi - lo)))
+    return f * f * (3 - 2 * f)
+
+
+def leg_skin(side):
+    """A leg's weights by height: pelvis into thigh at the hip, thigh into shin at the knee, shin into foot at the ankle."""
+    th, sh, ft = LEGS[side]
+
+    def weights(p):
+        z = p[2]
+        if z > 0.42:
+            t = _ramp(z, 0.42, 0.50)
+            return {'Pelvis': t, th: 1 - t}
+        if z > 0.23:
+            t = _ramp(z, 0.235, 0.295)
+            return {th: t, sh: 1 - t}
+        t = _ramp(z, 0.065, 0.115)
+        return {sh: t, ft: 1 - t}
+    return weights
+
+
+def waist_skin(p):
+    """The abdomen: pelvis into spine into torso, so the waist twists smoothly as the hips turn under the aim."""
+    z = p[2]
+    if z < 0.56:
+        t = _ramp(z, 0.49, 0.56)
+        return {'Pelvis': 1 - t, 'Spine': t}
+    t = _ramp(z, 0.56, 0.64)
+    return {'Spine': 1 - t, 'Torso': t}
+
+
+def neck_skin(p):
+    t = _ramp(p[2], 0.74, 0.80)
+    return {'Torso': 1 - t, 'Head': t}
+
+
 class Mesh:
-    """Indexed, rigidly skinned triangles: one bone per part (tools/alien.py's, with boxes)."""
+    """Indexed skinned triangles: each part rides one bone, or blends across joints (a weights function)."""
 
     def __init__(self):
-        self.pos, self.nrm, self.uv, self.bone, self.tri = [], [], [], [], []
+        self.pos, self.nrm, self.uv, self.skin, self.tri = [], [], [], [], []
 
     def add(self, pos, nrm, v, tri, slot, bone):
         base = len(self.pos)
         u = (SLOT_INDEX[slot] * 32 + 16) / 512.0
-        self.pos.extend(np.asarray(p, float) for p in pos); self.nrm.extend(np.asarray(n, float) for n in nrm)
+        pos = [np.asarray(p, float) for p in pos]; nrm = [np.asarray(n, float) for n in nrm]
+        self.pos.extend(pos); self.nrm.extend(nrm)
         self.uv.extend((u, vv) for vv in v)
-        self.bone.extend([B[bone]] * len(pos))
-        self.tri.extend((base + a, base + b, base + c) for a, b, c in tri)
+        if isinstance(bone, str):
+            self.skin.extend([{bone: 1.0}] * len(pos))
+        else:
+            self.skin.extend(bone(p) for p in pos)
+        # Front faces wind counter-clockwise about the outward normal (what the client culls by).
+        for a, b, c in tri:
+            fn = np.cross(pos[b] - pos[a], pos[c] - pos[a])
+            if np.dot(fn, nrm[a] + nrm[b] + nrm[c]) < 0:
+                b, c = c, b
+            self.tri.append((base + a, base + b, base + c))
 
-    def ellipsoid(self, center, radii, slot, bone, pitch=0.0, yaw=0.0, roll=0.0, sides=12, rings=8):
+    def ellipsoid(self, center, radii, slot, bone, pitch=0.0, yaw=0.0, roll=0.0, sides=16, rings=10):
         m = rotmat(qrot(((1, 0, 0), roll), ((0, 1, 0), pitch), ((0, 0, 1), yaw)))
         c = np.asarray(center, float); r = np.asarray(radii, float)
         pos, nrm, v, tri = [], [], [], []
@@ -93,43 +148,63 @@ class Mesh:
                 tri.extend([(a, b, b + 1), (a, b + 1, a + 1)])
         self.add(pos, nrm, v, tri, slot, bone)
 
-    def box(self, center, size, slot, bone, pitch=0.0, yaw=0.0, roll=0.0, taper=1.0):
-        """A flat-shaded box; ``taper`` shrinks its +X end (a wedge for gun stocks and boots)."""
-        m = rotmat(qrot(((1, 0, 0), roll), ((0, 1, 0), pitch), ((0, 0, 1), yaw)))
+    def box(self, center, size, slot, bone, pitch=0.0, yaw=0.0, roll=0.0, taper=1.0, bevel=None, basis=None):
+        """A box with rounded edges and smooth normals (a box core inflated by ``bevel``, by default 40% of its
+        thinnest half-size); ``taper`` narrows its +X end (a wedge for gun stocks and boot toes); ``basis`` (columns
+        the box's axes) places it along a limb instead of by angles."""
+        m = basis if basis is not None else rotmat(qrot(((1, 0, 0), roll), ((0, 1, 0), pitch), ((0, 0, 1), yaw)))
         c = np.asarray(center, float); h = np.asarray(size, float) / 2
+        r = min(h) * 0.4 if bevel is None else min(bevel, min(h) * 0.98)
+        core = h - r
+        seg = 2 if r > 0.02 else 1
+        band = [r * math.tan(math.pi / 4 * i / seg) for i in range(seg + 1)]
+        coords = [sorted({-(core[k] + b) for b in band} | {core[k] + b for b in band}) for k in range(3)]
+        slope = (taper - 1.0) / (2 * h[0])
         pos, nrm, v, tri = [], [], [], []
-        corner = lambda sx, sy, sz: c + m @ np.array([sx * h[0], sy * h[1] * (taper if sx > 0 else 1), sz * h[2] * (taper if sx > 0 else 1)])
         for axis in range(3):
+            o1, o2 = [k for k in range(3) if k != axis]
             for sign in (-1, 1):
-                n = np.zeros(3); n[axis] = sign
-                o = [a for a in range(3) if a != axis]
-                quad = []
-                for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-                    s = np.zeros(3); s[axis] = sign; s[o[0]] = su; s[o[1]] = sv
-                    quad.append(corner(*s))
                 base = len(pos)
-                fn = np.cross(quad[1] - quad[0], quad[2] - quad[0]); fn /= np.linalg.norm(fn) + 1e-12
-                want = m @ n
-                if np.dot(fn, want) < 0:
-                    quad = quad[::-1]
-                    fn = -fn
-                pos.extend(quad); nrm.extend([want] * 4)
-                v.extend([1.0 + 0.3 * k + (c[0] + c[2]) for k in range(4)])
-                tri.extend([(base, base + 1, base + 2), (base, base + 2, base + 3)])
+                n1, n2 = len(coords[o1]), len(coords[o2])
+                for a in coords[o1]:
+                    for b in coords[o2]:
+                        q = np.zeros(3); q[axis] = sign * h[axis]; q[o1] = a; q[o2] = b
+                        cc = np.clip(q, -core, core); d = q - cc; d /= np.linalg.norm(d)
+                        p = cc + r * d
+                        s = 1.0 + slope * (p[0] + h[0])
+                        n = np.array([d[0] - slope * (p[1] * d[1] + p[2] * d[2]) / s, d[1] / s, d[2] / s])
+                        pos.append(c + m @ np.array([p[0], p[1] * s, p[2] * s]))
+                        nrm.append(m @ (n / np.linalg.norm(n)))
+                        v.append(1.0 + 0.8 * (p[2] + 0.3 * p[0]) + (c[0] + c[2]))
+                for i in range(n1 - 1):
+                    for j in range(n2 - 1):
+                        a = base + i * n2 + j
+                        tri.extend([(a - 0, a + n2, a + n2 + 1), (a, a + n2 + 1, a + 1)])
         self.add(pos, nrm, v, tri, slot, bone)
 
-    def tube(self, a, b, r0, r1=None, slot='gun', bone='Torso', sides=8, caps=True):
+    def along(self, a, b, width, height, slot, bone, at=0.5, length=None, bevel=None, taper=1.0):
+        """A rounded box laid along a limb from a to b (an armour plate on a forearm)."""
+        a = np.asarray(a, float); b = np.asarray(b, float)
+        x = b - a; span = np.linalg.norm(x); x /= span
+        ref = np.array([0, 0, 1.0]) if abs(x[2]) < 0.8 else np.array([1.0, 0, 0])
+        z = ref - x * np.dot(ref, x); z /= np.linalg.norm(z); y = np.cross(z, x)
+        self.box(a + (b - a) * at, (length or span * 0.6, width, height), slot, bone, bevel=bevel, taper=taper,
+                 basis=np.column_stack((x, y, z)))
+
+    def tube(self, a, b, r0, r1=None, slot='gun', bone='Torso', sides=12, caps=True):
         """A straight cylinder (or cone frustum) from a to b."""
         a = np.asarray(a, float); b = np.asarray(b, float); r1 = r0 if r1 is None else r1
         t = b - a; length = np.linalg.norm(t); t /= length
         up = np.array([0, 0, 1.0]) if abs(t[2]) < 0.9 else np.array([1.0, 0, 0])
         n1 = np.cross(t, up); n1 /= np.linalg.norm(n1); n2 = np.cross(t, n1)
+        tilt = (r0 - r1) / length
         pos, nrm, v, tri = [], [], [], []
         for k, (p, r) in enumerate(((a, r0), (b, r1))):
             for i in range(sides + 1):
                 ang = math.tau * i / sides
                 d = math.cos(ang) * n1 + math.sin(ang) * n2
-                pos.append(p + d * r); nrm.append(d); v.append(1.0 + k * length * 3)
+                n = d + t * tilt
+                pos.append(p + d * r); nrm.append(n / np.linalg.norm(n)); v.append(1.0 + k * length * 3)
         for i in range(sides):
             tri.extend([(i, sides + 1 + i, sides + 2 + i), (i, sides + 2 + i, i + 1)])
         if caps:
@@ -139,85 +214,139 @@ class Mesh:
                 for i in range(sides + 1):
                     pos.append(pos[ring + i]); nrm.append(t * sign); v.append(1.0)
                 for i in range(sides):
-                    tri.append((centre, rim + i + 1, rim + i) if sign > 0 else (centre, rim + i, rim + i + 1))
+                    tri.append((centre, rim + i, rim + i + 1))
         self.add(pos, nrm, v, tri, slot, bone)
 
-    def limb(self, a, b, r0, r1, slot, bone, sides=8):
-        """A limb segment with rounded joints at both ends."""
-        self.tube(a, b, r0, r1, slot, bone, sides, caps=False)
-        self.ellipsoid(a, (r0, r0, r0), slot, bone, sides=sides, rings=5)
-        self.ellipsoid(b, (r1, r1, r1), slot, bone, sides=sides, rings=5)
+    def sweep(self, points, radii, slot, bone, sides=14, sub=4, caps=(True, True)):
+        """A smooth limb: a tube along a Catmull-Rom curve through ``points``, its radius easing through ``radii``,
+        closed with rounded ends."""
+        P = [np.asarray(p, float) for p in points]; R = [float(r) for r in radii]
+        ext = [2 * P[0] - P[1]] + P + [2 * P[-1] - P[-2]]; extR = [R[0]] + R + [R[-1]]
+        cr = lambda p0, p1, p2, p3, t: 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
+                                              + (3 * p1 - p0 - 3 * p2 + p3) * t ** 3)
+        path, rad = [], []
+        for i in range(len(P) - 1):
+            for k in range(sub):
+                path.append(cr(*ext[i:i + 4], k / sub)); rad.append(max(0.003, cr(*extR[i:i + 4], k / sub)))
+        path.append(P[-1]); rad.append(R[-1])
+        n = len(path)
+        tang = [path[min(i + 1, n - 1)] - path[max(i - 1, 0)] for i in range(n)]
+        tang = [t / np.linalg.norm(t) for t in tang]
+        up = np.array([0, 0, 1.0]) if abs(tang[0][2]) < 0.9 else np.array([1.0, 0, 0])
+        frame = np.cross(tang[0], up); frame /= np.linalg.norm(frame)
+        rings = []          # (centre, radius, tangent, side vector, tilt of the normal along the tangent)
+        for i in range(n):
+            frame = frame - tang[i] * np.dot(frame, tang[i]); frame /= np.linalg.norm(frame)
+            ds = np.linalg.norm(path[min(i + 1, n - 1)] - path[max(i - 1, 0)])
+            tilt = math.atan2(rad[max(i - 1, 0)] - rad[min(i + 1, n - 1)], ds)
+            rings.append((path[i], rad[i], tang[i], frame.copy(), tilt))
+        if caps[0]:
+            c, r, t, f, _ = rings[0]
+            rings = [(c - t * r * 0.8 * math.sin(a), r * math.cos(a), t, f, -a) for a in (math.pi / 2, math.pi / 3, math.pi / 6)] + rings
+        if caps[1]:
+            c, r, t, f, _ = rings[-1]
+            rings += [(c + t * r * 0.8 * math.sin(a), r * math.cos(a), t, f, a) for a in (math.pi / 6, math.pi / 3, math.pi / 2)]
+        pos, nrm, v, tri = [], [], [], []
+        run = 0.0
+        for j, (c, r, t, f, tilt) in enumerate(rings):
+            g = np.cross(t, f)
+            if j:
+                run += np.linalg.norm(c - rings[j - 1][0])
+            for i in range(sides + 1):
+                ang = math.tau * i / sides
+                d = math.cos(ang) * f + math.sin(ang) * g
+                pos.append(c + d * r); nrm.append(d * math.cos(tilt) + t * math.sin(tilt)); v.append(1.0 + run * 2.5)
+        for j in range(len(rings) - 1):
+            for i in range(sides):
+                a = j * (sides + 1) + i; b = a + sides + 1
+                tri.extend([(a, b, b + 1), (a, b + 1, a + 1)])
+        self.add(pos, nrm, v, tri, slot, bone)
+
+    def limb(self, a, b, r0, r1, slot, bone, sides=12):
+        """A straight limb segment with rounded ends."""
+        self.sweep([a, b], [r0, r1], slot, bone, sides=sides, sub=2)
 
 
 # --------------------------------------------------------------- the body
 GUN_Y = -0.075        # the gun rides at the right hip
-GUN_Z = 0.56          # barrel height above the deck
+GUN_Z = 0.59          # barrel height above the deck
+LEGS = {1: ('ThighL', 'ShinL', 'FootL'), -1: ('ThighR', 'ShinR', 'FootR')}
 
 
 def body(m, grip, fore, twohanded=True):
     """The trooper: ``grip`` the right hand on the pistol grip, ``fore`` the left hand on the foregrip."""
-    # Boots and shins (each leg rigid on its two bones).
-    for side, thigh, shin in ((1, 'ThighL', 'ShinL'), (-1, 'ThighR', 'ShinR')):
-        y = side * 0.085
-        m.box((0.035, y, 0.04), (0.17, 0.085, 0.08), 'joint', shin, taper=0.8)
-        m.box((0.05, y, 0.075), (0.11, 0.075, 0.03), 'armor2', shin)
-        m.limb((0.0, y, 0.08), (0.01, y, 0.25), 0.042, 0.046, 'suit', shin)
-        m.box((0.035, y, 0.16), (0.05, 0.075, 0.15), 'armor', shin, pitch=-4)        # shin plate
-        m.ellipsoid((0.05, y, 0.255), (0.04, 0.045, 0.045), 'armor2', shin)          # knee pad
-        m.limb((0.01, y, 0.25), (0.0, y, 0.43), 0.05, 0.06, 'suit', thigh)
-        m.box((0.02, y + side * 0.018, 0.35), (0.09, 0.05, 0.13), 'armor', thigh)    # thigh plate
-    # Hips and belt.
-    m.box((0.0, 0.0, 0.44), (0.15, 0.21, 0.09), 'suit', 'Pelvis')
-    m.box((0.0, 0.0, 0.47), (0.16, 0.225, 0.035), 'joint', 'Pelvis')
-    m.box((0.075, 0.0, 0.43), (0.03, 0.11, 0.08), 'armor2', 'Pelvis')               # groin plate
+    # Legs: one continuous undersuit tube from hip to ankle each, blended across hip, knee and ankle, with
+    # rounded armour over it: a thigh plate, a knee cap, a shin guard and a heavy boot.
     for side in (1, -1):
-        m.box((0.0, side * 0.12, 0.43), (0.08, 0.03, 0.09), 'armor2', 'Pelvis')      # hip plates
-    # Torso: a bulky cuirass, a trimmed chest plate, the abdomen.
-    m.ellipsoid((0.0, 0.0, 0.55), (0.10, 0.12, 0.08), 'suit', 'Torso')
-    m.ellipsoid((0.0, 0.0, 0.645), (0.12, 0.15, 0.10), 'armor', 'Torso')
-    m.box((0.075, 0.0, 0.645), (0.06, 0.20, 0.13), 'armor', 'Torso', pitch=-8)
-    m.box((0.103, 0.0, 0.60), (0.012, 0.15, 0.022), 'trim', 'Torso', pitch=-8)
-    m.box((0.104, 0.05, 0.665), (0.008, 0.035, 0.035), 'lamp', 'Torso')             # chest lamp
-    m.box((0.104, -0.05, 0.665), (0.010, 0.045, 0.02), 'joint', 'Torso')
-    # Pauldrons: layered angular plates sloping off the shoulder, a coloured edge on the lower one, over a
-    # rounded cap (AS's are plates, not balls).
+        y = side * 0.088
+        th, sh, ft = LEGS[side]
+        m.sweep([(0.0, y * 0.9, 0.51), (0.005, y, 0.455), (0.022, y, 0.36), (0.012, y, 0.265), (0.0, y, 0.17),
+                 (-0.004, y, 0.09)], [0.058, 0.062, 0.058, 0.045, 0.047, 0.036], 'suit', leg_skin(side), sides=14, sub=4)
+        m.box((0.03, y + side * 0.012, 0.37), (0.10, 0.10, 0.14), 'armor', th, pitch=-4, bevel=0.035)          # thigh plate
+        m.box((0.0, y + side * 0.05, 0.38), (0.11, 0.025, 0.10), 'armor2', th, bevel=0.01)                     # its outer guard
+        m.ellipsoid((0.058, y, 0.27), (0.034, 0.046, 0.048), 'armor2', sh, sides=14, rings=8)                 # knee cap
+        m.box((0.042, y, 0.175), (0.06, 0.082, 0.15), 'armor', sh, pitch=-5, bevel=0.026)                      # shin guard
+        m.box((-0.025, y, 0.19), (0.05, 0.07, 0.11), 'armor2', sh, bevel=0.02)                                # calf plate
+        m.box((0.0, y, 0.105), (0.095, 0.094, 0.05), 'armor2', sh, bevel=0.02)                                # ankle cuff
+        m.box((0.035, y, 0.048), (0.21, 0.098, 0.085), 'armor', ft, taper=0.82, bevel=0.032)                  # boot
+        m.box((0.037, y, 0.012), (0.22, 0.104, 0.024), 'joint', ft, taper=0.85, bevel=0.01)                   # its sole
+        m.ellipsoid((0.112, y, 0.042), (0.036, 0.044, 0.027), 'armor2', ft, sides=14, rings=8)                # toe cap
+    # Hips: a padded core under a belt, a groin plate and flared tassets.
+    m.ellipsoid((0.0, 0.0, 0.48), (0.088, 0.125, 0.07), 'suit', 'Pelvis')
+    m.box((0.0, 0.0, 0.505), (0.17, 0.235, 0.042), 'joint', 'Pelvis', bevel=0.016)
+    m.box((0.075, 0.0, 0.46), (0.035, 0.11, 0.085), 'armor2', 'Pelvis', pitch=10, taper=0.85, bevel=0.012)
     for side in (1, -1):
-        m.ellipsoid((-0.005, side * 0.16, 0.70), (0.07, 0.06, 0.04), 'armor2', 'Torso', sides=10, rings=5)
-        m.box((-0.005, side * 0.175, 0.725), (0.15, 0.09, 0.035), 'armor', 'Torso', roll=side * 24)
-        m.box((-0.01, side * 0.205, 0.68), (0.14, 0.06, 0.03), 'armor', 'Torso', roll=side * 48)
-        m.box((-0.01, side * 0.232, 0.655), (0.14, 0.012, 0.02), 'trim', 'Torso', roll=side * 48)
-    # The backpack: a power pack with ribbed cooling fins and a status lamp on its back, twin tanks, the antenna.
-    m.box((-0.15, 0.0, 0.64), (0.11, 0.21, 0.20), 'pack', 'Torso')
-    m.box((-0.207, 0.0, 0.64), (0.02, 0.17, 0.16), 'armor2', 'Torso')
+        m.box((0.0, side * 0.128, 0.455), (0.10, 0.03, 0.10), 'armor2', 'Pelvis', roll=-side * 12, bevel=0.012)
+        m.box((-0.07, side * 0.06, 0.505), (0.04, 0.05, 0.05), 'pack', 'Pelvis', bevel=0.012)                # belt pouches
+    # The waist, blended from the hips to the chest.
+    m.sweep([(0.0, 0.0, 0.49), (0.0, 0.0, 0.56), (0.005, 0.0, 0.63)], [0.098, 0.088, 0.105], 'suit', waist_skin, sides=16, sub=3)
+    # The chest: a barrel cuirass, a trimmed chest plate, a neck seal.
+    m.box((0.005, 0.0, 0.665), (0.20, 0.27, 0.17), 'armor', 'Torso', bevel=0.065)
+    m.box((0.072, 0.0, 0.672), (0.08, 0.22, 0.13), 'armor', 'Torso', pitch=-8, bevel=0.035)
+    m.box((0.106, 0.0, 0.625), (0.014, 0.16, 0.02), 'trim', 'Torso', pitch=-8, bevel=0.006)
+    m.box((0.108, 0.05, 0.69), (0.01, 0.035, 0.035), 'lamp', 'Torso', bevel=0.004)                          # chest lamp
+    m.box((0.108, -0.05, 0.69), (0.012, 0.045, 0.02), 'joint', 'Torso', bevel=0.005)
+    m.tube((0.005, 0.0, 0.73), (0.008, 0.0, 0.765), 0.062, 0.055, slot='joint', bone='Torso', sides=16)
+    # Pauldrons: big rounded shells over the shoulder balls, a flared rim plate with a coloured edge under each.
+    for side in (1, -1):
+        m.ellipsoid((0.0, side * 0.165, 0.70), (0.055, 0.05, 0.055), 'suit', 'Torso', sides=12, rings=8)
+        m.ellipsoid((-0.005, side * 0.182, 0.742), (0.09, 0.068, 0.042), 'armor', 'Torso', roll=side * 24)
+        m.box((-0.005, side * 0.222, 0.69), (0.15, 0.03, 0.075), 'armor', 'Torso', roll=side * 22, bevel=0.013)
+        m.box((-0.005, side * 0.236, 0.655), (0.135, 0.014, 0.016), 'trim', 'Torso', roll=side * 22, bevel=0.006)
+    # The backpack: a rounded power pack with a ribbed cooling plate and a status lamp, twin tanks, the antenna.
+    m.box((-0.155, 0.0, 0.67), (0.12, 0.23, 0.23), 'pack', 'Torso', bevel=0.04)
+    m.box((-0.214, 0.0, 0.67), (0.022, 0.18, 0.17), 'armor2', 'Torso', bevel=0.009)
     for k in range(4):
-        m.box((-0.219, 0.0, 0.585 + k * 0.03), (0.008, 0.13, 0.012), 'joint', 'Torso')
-    m.box((-0.15, 0.0, 0.745), (0.09, 0.17, 0.012), 'armor2', 'Torso')                 # its lid, seen from above
+        m.box((-0.226, 0.0, 0.615 + k * 0.03), (0.01, 0.13, 0.013), 'joint', 'Torso', bevel=0.004)
+    m.box((-0.155, 0.0, 0.783), (0.10, 0.19, 0.016), 'armor2', 'Torso', bevel=0.007)                        # its lid
     for side in (1, -1):
-        m.tube((-0.17, side * 0.075, 0.53), (-0.17, side * 0.075, 0.75), 0.04, slot='armor2', bone='Torso', sides=10)
-        m.ellipsoid((-0.17, side * 0.075, 0.75), (0.04, 0.04, 0.015), 'trim', 'Torso', sides=10, rings=4)
-    m.box((-0.218, -0.05, 0.715), (0.012, 0.04, 0.018), 'lamp', 'Torso')
-    m.tube((-0.17, 0.07, 0.75), (-0.19, 0.07, 1.05), 0.006, 0.003, slot='joint', bone='Antenna', sides=5)
-    m.ellipsoid((-0.19, 0.07, 1.05), (0.01, 0.01, 0.01), 'gunlite', 'Antenna', sides=6, rings=4)
-    # Helmet: a domed shell, a jaw guard and two glowing eye slits.
-    m.limb((0.0, 0.0, 0.70), (0.005, 0.0, 0.76), 0.045, 0.045, 'joint', 'Head')
-    m.ellipsoid((0.01, 0.0, 0.81), (0.085, 0.075, 0.075), 'armor', 'Head')
-    m.ellipsoid((0.0, 0.0, 0.84), (0.075, 0.065, 0.05), 'armor2', 'Head')
-    m.box((0.0, 0.0, 0.89), (0.15, 0.022, 0.02), 'armor', 'Head', pitch=-6)        # a crest ridge front to back
+        m.sweep([(-0.175, side * 0.088, 0.56), (-0.175, side * 0.088, 0.77)], [0.042, 0.042], 'armor2', 'Torso', sides=14, sub=1)
+        m.tube((-0.175, side * 0.088, 0.745), (-0.175, side * 0.088, 0.758), 0.045, slot='trim', bone='Torso', sides=14)
+    m.box((-0.226, -0.05, 0.745), (0.012, 0.04, 0.018), 'lamp', 'Torso', bevel=0.005)
+    m.tube((-0.19, 0.075, 0.78), (-0.21, 0.075, 1.08), 0.006, 0.003, slot='joint', bone='Antenna', sides=6)
+    m.ellipsoid((-0.21, 0.075, 1.08), (0.011, 0.011, 0.011), 'gunlite', 'Antenna', sides=8, rings=5)
+    # Helmet: a round shell, a crown cap and crest, ear discs, a face plate with two glowing eye slits.
+    m.sweep([(0.0, 0.0, 0.72), (0.008, 0.0, 0.79)], [0.046, 0.046], 'joint', neck_skin, sides=12, sub=2, caps=(False, False))
+    m.ellipsoid((0.012, 0.0, 0.845), (0.09, 0.08, 0.08), 'armor', 'Head', sides=18, rings=12)
+    m.ellipsoid((0.0, 0.0, 0.874), (0.076, 0.068, 0.052), 'armor2', 'Head')
+    m.box((0.0, 0.0, 0.922), (0.15, 0.024, 0.024), 'armor', 'Head', pitch=-6, bevel=0.011)                  # crest ridge
     for side in (1, -1):
-        m.box((-0.005, side * 0.074, 0.81), (0.07, 0.012, 0.045), 'joint', 'Head')  # ear vents
-    m.box((0.06, 0.0, 0.775), (0.05, 0.10, 0.05), 'joint', 'Head', pitch=10)
+        m.tube((-0.005, side * 0.07, 0.84), (-0.005, side * 0.086, 0.84), 0.03, 0.026, slot='joint', bone='Head', sides=14)
+    m.box((0.066, 0.0, 0.808), (0.05, 0.11, 0.06), 'joint', 'Head', pitch=10, bevel=0.02)                   # face plate
     for side in (1, -1):
-        m.box((0.083, side * 0.03, 0.81), (0.014, 0.05, 0.02), 'visor', 'Head', yaw=side * 14)
+        m.box((0.09, side * 0.03, 0.845), (0.014, 0.05, 0.02), 'visor', 'Head', yaw=side * 14, bevel=0.006)
         # Two lamps on the crown, the lights AS's helmets show from above.
-        m.ellipsoid((0.04, side * 0.035, 0.875), (0.014, 0.012, 0.009), 'visor', 'Head', sides=6, rings=4)
-    # Arms reaching to the gun: upper arm, elbow, forearm and armoured glove.
-    shoulder_r, shoulder_l = np.array((0.0, -0.155, 0.665)), np.array((0.0, 0.155, 0.665))
-    elbow_r = np.array((0.02, -0.19, 0.53)) if twohanded else np.array((0.04, -0.20, 0.54))
+        m.ellipsoid((0.042, side * 0.035, 0.905), (0.014, 0.012, 0.009), 'visor', 'Head', sides=8, rings=5)
+    # Arms reaching to the gun, each one smooth tube through shoulder and elbow, with an armoured bracer and glove.
+    shoulder_r, shoulder_l = np.array((0.0, -0.165, 0.70)), np.array((0.0, 0.165, 0.70))
+    elbow_r = np.array((0.03, -0.205, 0.565)) if twohanded else np.array((0.05, -0.21, 0.575))
     elbow_l = (shoulder_l + np.asarray(fore)) / 2 + (-0.06, 0.06, -0.08)
-    for shoulder, elbow, hand in ((shoulder_r, elbow_r, np.asarray(grip)), (shoulder_l, elbow_l, np.asarray(fore))):
-        m.limb(shoulder, elbow, 0.042, 0.04, 'suit', 'Torso', sides=7)
-        m.limb(elbow, hand, 0.042, 0.034, 'armor2', 'Torso', sides=7)
-        m.ellipsoid(hand, (0.035, 0.03, 0.03), 'glove', 'Torso', sides=7, rings=5)
+    for shoulder, elbow, hand in ((shoulder_r, elbow_r, np.asarray(grip, float)), (shoulder_l, elbow_l, np.asarray(fore, float))):
+        wrist = hand + (elbow - hand) / np.linalg.norm(elbow - hand) * 0.03
+        m.sweep([shoulder, elbow, wrist], [0.046, 0.041, 0.033], 'suit', 'Torso', sides=12, sub=4)
+        m.ellipsoid(elbow, (0.042, 0.042, 0.042), 'joint', 'Torso', sides=12, rings=7)
+        m.along(elbow, wrist, 0.072, 0.072, 'armor2', 'Torso', at=0.5, bevel=0.024)
+        m.ellipsoid(hand, (0.04, 0.033, 0.035), 'glove', 'Torso', sides=12, rings=7)
 
 
 # ---------------------------------------------------------------- the guns
@@ -249,7 +378,7 @@ def _prifle(m):
 def _autogun(m):
     z, y = GUN_Z - 0.03, GUN_Y - 0.01
     m.box((0.16, y, z), (0.30, 0.07, 0.10), 'gun', 'Torso')                            # body slung on the harness
-    m.tube((0.0, y, z + 0.02), (0.0, -0.13, 0.66), 0.012, slot='joint', sides=6)        # harness arm to the shoulder
+    m.tube((0.0, y, z + 0.02), (0.0, -0.13, 0.69), 0.012, slot='joint', sides=6)        # harness arm to the shoulder
     m.box((0.12, y - 0.05, z), (0.12, 0.04, 0.12), 'gun2', 'Torso')                    # side drum
     for k, dz in enumerate((-0.02, 0.02)):
         m.tube((0.30, y, z + dz), (0.64, y, z + dz), 0.014, slot='gun', sides=6)         # twin barrels
@@ -306,7 +435,7 @@ def _flamer(m):
     m.tube((0.22, y, z + 0.01), (0.56, y, z + 0.01), 0.02, slot='gun2', sides=8)
     m.tube((0.56, y, z + 0.01), (0.62, y, z + 0.01), 0.028, 0.022, slot='gun', sides=8)
     m.ellipsoid((0.625, y, z - 0.02), (0.012, 0.012, 0.012), 'visor', 'Torso', sides=6, rings=4)     # pilot flame
-    m.tube((-0.17, -0.075, 0.55), (0.12, y - 0.04, z - 0.04), 0.01, slot='joint', sides=5)          # hose to the pack
+    m.tube((-0.175, -0.088, 0.58), (0.12, y - 0.04, z - 0.04), 0.01, slot='joint', sides=5)          # hose to the pack
     return (0.10, y, z - 0.04), (0.40, y + 0.01, z - 0.02), (0.63, y, z + 0.01)
 
 
@@ -379,13 +508,13 @@ def _launcher(m):
 
 def _case(m):
     """Carrying a deployable (a sentry case, the ammo bag): a case in the right hand, a pistol-light in the left."""
-    m.box((0.02, -0.20, 0.38), (0.22, 0.07, 0.16), 'pack', 'Torso')
-    m.box((0.02, -0.20, 0.47), (0.08, 0.02, 0.02), 'joint', 'Torso')
-    m.box((0.02, -0.235, 0.38), (0.12, 0.004, 0.04), 'trim', 'Torso')
+    m.box((0.02, -0.20, 0.41), (0.22, 0.07, 0.16), 'pack', 'Torso', bevel=0.02)
+    m.box((0.02, -0.20, 0.50), (0.08, 0.02, 0.02), 'joint', 'Torso')
+    m.box((0.02, -0.236, 0.41), (0.12, 0.004, 0.04), 'trim', 'Torso')
     z, y = GUN_Z + 0.03, 0.08
     m.box((0.30, y, z), (0.12, 0.035, 0.05), 'gun', 'Torso')
     m.box((0.33, y + 0.022, z + 0.01), (0.03, 0.01, 0.015), 'gunlite', 'Torso')
-    return (0.02, -0.20, 0.48), (0.26, y, z - 0.02), (0.37, y, z)
+    return (0.02, -0.20, 0.51), (0.26, y, z - 0.02), (0.37, y, z)
 
 
 # Model name, builder, two-handed (both hands on one gun). Script weapon ids map to these (AS_GunModel).
@@ -405,7 +534,7 @@ def gun_only(gun):
     lo, hi = pos.min(0), pos.max(0)
     shift = np.array([-(lo[0] + hi[0]) / 2, -(lo[1] + hi[1]) / 2, -lo[2] + 0.01])
     m.pos = [p + shift for p in m.pos]
-    m.bone = [B['Root']] * len(m.bone)
+    m.skin = [{'Root': 1.0}] * len(m.skin)
     return m
 
 
@@ -419,97 +548,217 @@ def geometry(gun):
 
 
 # ----------------------------------------------------------- animation
+X3, Y3, Z3 = (1, 0, 0), (0, 1, 0), (0, 0, 1)
+BALL, HEEL, ANKLE_Z = 0.105, 0.05, 0.075       # the boot's ball and heel from the ankle, the ankle's height
+STANCE = 0.3          # of a run cycle each foot is down (a run: both feet are off the deck between steps)
+RATE = 2.2            # src/Marine.galaxy AS_Walk plays the gaits at time scale rate/2.2: 2.2 cells a second at 1x
+
+
+def _conj(q):
+    return np.array([-q[0], -q[1], -q[2], q[3]])
+
+
+def _loop(t, knots):
+    """Periodic Catmull-Rom through (phase, value) knots: smooth through every knot, never stopping at one."""
+    ts = [k[0] for k in knots]; vs = [k[1] for k in knots]; n = len(knots)
+    t %= 1.0
+    i = max([j for j in range(n) if ts[j] <= t], default=n - 1)
+    t0 = ts[i] - (1.0 if t < ts[i] else 0.0); t1 = ts[(i + 1) % n] + (1.0 if i + 1 >= n else 0.0) - (1.0 if t < ts[i] else 0.0)
+    u = (t - t0) / (t1 - t0)
+    p0, p1, p2, p3 = (vs[(i + k) % n] for k in (-1, 0, 1, 2))
+    return 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (3 * p1 - p0 - 3 * p2 + p3) * u ** 3)
+
+
+def _foot(flat, yaw, pitch):
+    """(ankle, world rotation) of a boot whose flat-footed ankle would stand over ``flat``, turned ``yaw``, rolled
+    ``pitch`` (+ heel up, rolling over the ball; - toe up, rocking on the heel)."""
+    f = np.array([math.cos(math.radians(yaw)), math.sin(math.radians(yaw)), 0.0])
+    a = np.array([flat[0], flat[1], ANKLE_Z])
+    pivot = a + f * (BALL if pitch >= 0 else -HEEL); pivot[2] = 0.0
+    turn = rotmat(qrot((Z3, -yaw), (Y3, pitch), (Z3, yaw)))
+    return pivot + turn @ (a - pivot), qrot((Y3, pitch), (Z3, yaw))
+
+
+def _leg(side, pel_loc, pel_q, ankle, foot_q):
+    """Two-bone IK: thigh, shin and foot rotations that put this leg's ankle at ``ankle`` with the boot at ``foot_q``."""
+    th, sh, ft = LEGS[side]
+    R = rotmat(pel_q)
+    hip = REST['Pelvis'] + np.asarray(pel_loc, float) + R @ (REST[th] - REST['Pelvis'])
+    v = R.T @ (np.asarray(ankle, float) - hip)
+    a = REST[sh] - REST[th]; b = REST[ft] - REST[sh]
+    L1, L2 = np.linalg.norm(a), np.linalg.norm(b)
+    roll = math.atan2(v[1], -v[2])
+    vx, vz = v[0], -math.hypot(v[1], v[2])
+    D = min(max(math.hypot(vx, vz), abs(L1 - L2) + 1e-4), (L1 + L2) * 0.9995)
+    aim = math.atan2(vx, -vz)
+    thf = aim + math.acos(max(-1.0, min(1.0, (L1 * L1 + D * D - L2 * L2) / (2 * L1 * D))))      # the knee bends forward
+    kx, kz = L1 * math.sin(thf), -L1 * math.cos(thf)
+    shf = math.atan2(D * math.sin(aim) - kx, -(-D * math.cos(aim) - kz))
+    th0, sh0 = math.atan2(a[0], -a[2]), math.atan2(b[0], -b[2])
+    q_th = qrot((Y3, -math.degrees(thf - th0)), (X3, math.degrees(roll)))
+    q_sh = qrot((Y3, -math.degrees((shf - thf) - (sh0 - th0))))
+    q_ft = qmul(_conj(qmul(qmul(pel_q, q_th), q_sh)), foot_q)
+    zero = np.zeros(3)
+    return {B[th]: (zero, q_th), B[sh]: (zero, q_sh), B[ft]: (zero, q_ft)}
+
+
+def _upright(out, pel_q, upper_q):
+    """The Spine takes the hips' turn and tilt back out, so the chest (and the gun on it) sits at ``upper_q``."""
+    out[B['Spine']] = (np.zeros(3), qmul(_conj(pel_q), upper_q))
+    out[B['Torso']] = (np.zeros(3), np.array([0.0, 0.0, 0.0, 1.0]))
+
+
+def _planted(out, pel_loc, pel_q, feet):
+    """Both boots planted flat: ``feet`` is {side: (x, y, yaw)}."""
+    for side, (x, y, yaw) in feet.items():
+        out.update(_leg(side, pel_loc, pel_q, *_foot((x, y), yaw, 0.0)))
+
+
+def _gait(t, travel, hips, duration):
+    """A run cycle along ``travel`` degrees (0 ahead, 90 to the left), the hips turned ``hips`` toward it while the
+    chest keeps the aim. The left foot lands at t=0 and the right at t=0.5; each boot is down for STANCE of the
+    cycle, sliding back exactly as fast as the deck passes at the rate the script plays the cycle, then swings
+    through high and lands reaching, heel first."""
+    out = {}
+    stride = RATE * duration / 1000.0                 # cells the body covers a cycle
+    reach = stride * STANCE                           # how far a planted boot passes under the body
+    u = np.array([math.cos(math.radians(travel)), math.sin(math.radians(travel))])
+    mid = STANCE / 2
+    bob = -0.03 - 0.012 * math.cos(2 * math.tau * (t - mid))          # lowest mid-stance, highest in the air
+    twist = -7.0 * math.cos(math.tau * t)                               # the leading leg's hip comes forward
+    roll = 3.0 * math.cos(math.tau * (t - mid))                         # the hip over the planted foot rides high
+    sway = 0.008 * math.cos(math.tau * (t - mid))                       # and the body sways over it
+    yaw = math.radians(hips)
+    pel_loc = np.array([-math.sin(yaw) * sway, math.cos(yaw) * sway, bob])
+    pel_q = qrot((Y3, 7.0), (X3, roll), (Z3, hips + twist))
+    out[B['Pelvis']] = (pel_loc, pel_q)
+    bounce = math.cos(2 * math.tau * (t - mid - 0.07))
+    _upright(out, pel_q, qrot((Y3, 2.5 + 1.2 * bounce), (X3, 0.25 * roll)))
+    out[B['Head']] = (np.zeros(3), qrot((Y3, -3.0 - 0.6 * bounce), (Z3, 2.0 * math.sin(math.tau * t))))
+    out[B['Antenna']] = (np.zeros(3), qrot((Y3, -10.0 - 7.0 * math.cos(2 * math.tau * (t - mid - 0.15))),
+                                           (X3, 5.0 * math.sin(math.tau * t - 1.0))))
+    pitch_knots = [(0.0, -11.0), (0.07, 0.0), (0.16, 0.0), (STANCE, 26.0), (0.42, 44.0), (0.62, 14.0), (0.85, -6.0), (0.94, -12.0)]
+    for side, offset in ((1, 0.0), (-1, 0.5)):
+        ph = (t - offset) % 1.0
+        centre = np.array([-math.sin(yaw) * side * 0.098, math.cos(yaw) * side * 0.098]) - u * 0.012
+        fyaw = hips * 0.85 + side * 5.0
+        land, lift = centre + u * reach / 2, centre - u * reach / 2
+        pitch = _loop(ph, pitch_knots)
+        if ph < STANCE:
+            pitch = min(pitch, 0.0) if ph < mid else max(pitch, 0.0)
+            flat = land + (lift - land) * (ph / STANCE)
+            ankle, fq = _foot(flat, fyaw, pitch)
+        else:
+            s = (ph - STANCE) / (1 - STANCE)
+            # Hermite from lift-off to landing, leaving and arriving with the deck's speed (the boot keeps sweeping
+            # back a moment after it leaves and is pulled back under as it lands), arcing up early in the swing.
+            v = -(reach / STANCE) * (1 - STANCE) * 0.5
+            h00, h10, h01, h11 = 2 * s ** 3 - 3 * s * s + 1, s ** 3 - 2 * s * s + s, -2 * s ** 3 + 3 * s * s, s ** 3 - s * s
+            flat = lift * h00 + land * h01 + u * v * (h10 + h11)
+            ankle, fq = _foot(flat, fyaw, pitch)
+            ankle = ankle + np.array([0, 0, 0.09 * math.sin(math.pi * s) * (1 + 0.45 * math.cos(math.pi * s))])
+        out.update(_leg(side, pel_loc, pel_q, ankle, fq))
+    return out
+
+
+STAND_DROP = 0.022    # the stance's knee bend lowers the gun this far from the model's rest pose
+
+
 def pose(name, t):
     out = {}
     ph = t * math.tau
-    X, Y, Z = (1, 0, 0), (0, 1, 0), (0, 0, 1)
 
     def put(bone, loc=(0, 0, 0), *rot):
         out[B[bone]] = (np.asarray(loc, float), qrot(*rot))
 
     if name == 'Stand':
-        # Breathing: the chest rises, the head looks about a little; the gun stays on the line.
-        put('Pelvis', (0, 0, -0.004 + 0.004 * math.sin(ph)))
-        put('Torso', (0, 0, 0.003 * math.sin(ph)), (Y, 0.8 * math.sin(ph)))
-        put('Head', (0, 0, 0), (Z, 6 * math.sin(ph * 0.5)), (Y, -2 * math.sin(ph)))
-        put('Antenna', (0, 0, 0), (X, 4 * math.sin(ph * 2)))
-        for leg in ('ThighL', 'ThighR', 'ShinL', 'ShinR'):
-            put(leg)
+        # A ready stance, knees soft and boots apart, the left a little ahead; the weight drifts from foot to foot,
+        # the chest breathes and the head looks about while the gun stays on the line.
+        pel_loc = np.array([0.0, 0.006 * math.sin(ph), -STAND_DROP + 0.003 * math.sin(2 * ph)])
+        pel_q = qrot((Y3, 3.0), (X3, -1.2 * math.sin(ph)), (Z3, -6.0))
+        out[B['Pelvis']] = (pel_loc, pel_q)
+        _upright(out, pel_q, qrot((Y3, 1.0 + 0.8 * math.sin(2 * ph)), (X3, 0.4 * math.sin(ph))))
+        _planted(out, pel_loc, pel_q, {1: (0.035, 0.105, 10.0), -1: (-0.04, -0.10, -16.0)})
+        put('Head', (0, 0, 0), (Z3, 7 * math.sin(ph)), (Y3, -2 * math.sin(2 * ph)))
+        put('Antenna', (0, 0, 0), (X3, 3 * math.sin(2 * ph + 0.5)), (Y3, -2 + 2 * math.sin(ph)))
     elif name == 'Walk':
-        # A run: long strides, knees lifting, the hips bobbing; the torso keeps the gun level.
-        bob = 0.022 * abs(math.cos(ph))
-        put('Pelvis', (0, 0, -0.012 + bob), (Z, 6 * math.sin(ph)))
-        put('Torso', (0, 0, 0), (Z, -6 * math.sin(ph)), (Y, 5))
-        put('Head', (0, 0, 0), (Y, -4))
-        put('Antenna', (0, 0, 0), (Y, -8 - 6 * abs(math.sin(ph))))
-        for thigh, shin, phase in (('ThighL', 'ShinL', 0.0), ('ThighR', 'ShinR', math.pi)):
-            p = ph + phase
-            swing = 34 * math.sin(p)                    # + forward
-            knee = 12 + 46 * max(0.0, math.sin(p + 1.3)) # the shin folds back as the foot comes through
-            put(thigh, (0, 0, 0), (Y, -swing))
-            put(shin, (0, 0, 0), (Y, knee))
+        # The run forward.
+        return _gait(t, 0.0, 0.0, WALK_MS)
     elif name == 'Work':
-        # Backing off while aiming ahead: the run's stride played backwards.
+        # Backing off while aiming ahead: the run played backwards (the boots land toe first and leave heel last).
         return pose('Walk', 1.0 - t)
     elif name in ('Spell', 'Cover'):
-        # Side-steps (Spell to the marine's left, Cover to its right): the legs reach sideways in turn,
-        # the hips sway over the planted foot, the torso keeps the gun on its line.
+        # Side-steps (Spell to the marine's left, Cover to its right): the hips turn toward the run and the legs
+        # run that way while the waist twists the chest back onto the aim.
         side = 1 if name == 'Spell' else -1
-        put('Pelvis', (0, side * 0.012 * math.sin(ph), -0.01 + 0.012 * abs(math.cos(ph))))
-        put('Torso', (0, 0, 0), (Y, 4))
-        put('Head', (0, 0, 0), (Y, -3))
-        put('Antenna', (0, 0, 0), (X, -side * 6 * math.sin(ph)))
-        # Step and close: the leading leg reaches out (lifting as it goes), the other follows it in; never crossing.
-        spread = 0.5 - 0.5 * math.cos(ph)
-        lead, trail = (('ThighL', 'ShinL'), ('ThighR', 'ShinR')) if side > 0 else (('ThighR', 'ShinR'), ('ThighL', 'ShinL'))
-        put(lead[0], (0, 0, 0), (X, side * 19 * spread), (Y, -6))
-        put(lead[1], (0, 0, 0), (Y, 10 + 34 * max(0.0, math.sin(ph))))
-        put(trail[0], (0, 0, 0), (X, -side * 5 * spread), (Y, -6))
-        put(trail[1], (0, 0, 0), (Y, 10 + 30 * max(0.0, -math.sin(ph))))
+        return _gait(t, side * 90.0, side * 50.0, WALK_MS)
     elif name == 'Attack':
-        # A rifle-butt swing: the torso winds back, then drives across.
+        # A rifle-butt swing: boots planted wide, the chest winds back, then drives across from the hips.
         twist = _knots(t, [(0, 0), (0.25, 30), (0.5, -38), (0.8, -10), (1, 0)])
         lean = _knots(t, [(0, 0), (0.25, -6), (0.5, 14), (1, 0)])
-        put('Torso', (_knots(t, [(0, 0), (0.5, 0.05), (1, 0)]), 0, 0), (Z, twist), (Y, lean))
-        put('Pelvis', (0, 0, -0.01), (Z, twist * 0.3))
-        put('Head', (0, 0, 0), (Z, -twist * 0.5))
-        put('ThighL', (0, 0, 0), (Y, -18)); put('ShinL', (0, 0, 0), (Y, 22))
-        put('ThighR', (0, 0, 0), (Y, 10)); put('ShinR', (0, 0, 0), (Y, 8))
+        lunge = _knots(t, [(0, 0), (0.5, 0.04), (1, 0)])
+        pel_loc = np.array([lunge, 0.0, -0.035 - 0.5 * lunge])
+        pel_q = qrot((Y3, 4.0 + 0.3 * lean), (Z3, 0.4 * twist))
+        out[B['Pelvis']] = (pel_loc, pel_q)
+        _upright(out, pel_q, qrot((Y3, lean), (Z3, twist)))
+        _planted(out, pel_loc, pel_q, {1: (0.08, 0.115, 15.0), -1: (-0.085, -0.105, -25.0)})
+        put('Head', (0, 0, 0), (Z3, -twist * 0.5))
+        put('Antenna', (0, 0, 0), (Y3, -twist * 0.2), (X3, twist * 0.15))
     elif name == 'Morph':
         # The reload (stock name Morph, so the client's lookup finds it): the gun dips and turns in toward the body
         # as the old clip drops and a new one goes in, then comes back up onto the aim. Upper body only (see
         # SEQ_BONES), so the legs keep running under it.
         dip = _knots(t, [(0, 0), (0.18, 1), (0.75, 1), (1, 0)])
         jolt = _knots(t, [(0, 0), (0.55, 0), (0.62, 1), (0.72, 0), (1, 0)])
-        put('Torso', (0, 0, -0.01 * dip), (Y, 16 * dip + 4 * jolt), (Z, 22 * dip), (X, -8 * dip))
-        put('Head', (0, 0, 0), (Y, 14 * dip), (Z, -10 * dip))
+        put('Torso', (0, 0, -0.01 * dip), (Y3, 16 * dip + 4 * jolt), (Z3, 22 * dip), (X3, -8 * dip))
+        put('Head', (0, 0, 0), (Y3, 14 * dip), (Z3, -10 * dip))
     elif name == 'Death':
         # Shot down: the knees buckle, the marine goes over backwards and lands on its pack, legs out in front,
         # the gun still in its hands; a last twitch, then still.
         f = _knots(t, [(0, 0), (0.15, 0.12), (0.55, 1.0), (0.62, 0.95), (0.7, 1.0), (1, 1)])
+        buckle = _knots(t, [(0, 0), (0.18, 1), (0.5, 0.3), (1, 0.15)])
         tw = math.sin(t * 50) * max(0.0, 1 - abs(t - 0.8) / 0.08) * 3
-        put('Pelvis', (-0.12 * f, 0, -0.36 * f), (Y, -82 * f))
-        put('Torso', (0, 0, 0), (Y, -8 * f + tw), (Z, 78 * f))     # turned onto its side, so the gun lies along the deck
-        put('Head', (0, 0, 0), (Y, 20 * f), (Z, 25 * f))
-        put('Antenna', (0, 0, 0), (Y, 30 * f))
-        put('ThighL', (0, 0, 0), (Y, -30 * f), (X, 8 * f)); put('ShinL', (0, 0, 0), (Y, 40 * f))
-        put('ThighR', (0, 0, 0), (Y, -12 * f), (X, -10 * f)); put('ShinR', (0, 0, 0), (Y, 14 * f + tw))
+        put('Pelvis', (-0.12 * f, 0, -0.05 * buckle - DEATH_DROP * f), (Y3, -80 * f))
+        put('Spine', (0, 0, 0), (Y3, -6 * f + 10 * buckle))
+        put('Torso', (0, 0, 0), (Y3, -4 * f + tw), (Z3, 74 * f))     # turned onto its side, so the gun lies along the deck
+        put('Head', (0, 0, 0), (Y3, 20 * f), (Z3, 25 * f))
+        put('Antenna', (0, 0, 0), (Y3, 30 * f))
+        put('ThighL', (0, 0, 0), (Y3, -30 * f - 35 * buckle), (X3, 8 * f)); put('ShinL', (0, 0, 0), (Y3, 40 * f + 60 * buckle))
+        put('FootL', (0, 0, 0), (Y3, -10 * f - 20 * buckle))
+        put('ThighR', (0, 0, 0), (Y3, -12 * f - 30 * buckle), (X3, -10 * f)); put('ShinR', (0, 0, 0), (Y3, 14 * f + 55 * buckle + tw))
+        put('FootR', (0, 0, 0), (Y3, 20 * f - 20 * buckle))
     elif name == 'Fire':
         # Recoil: a short kick back through the shoulders.
         k = _knots(t, [(0, 0), (0.15, 1), (1, 0)])
-        put('Torso', (-0.02 * k, 0, 0), (Y, -4 * k))
+        put('Torso', (-0.02 * k, 0, 0), (Y3, -4 * k))
     return out
 
 
-WALK_SPEED = 2.6
+WALK_MS = 500
+DEATH_DROP = 0.235
+WALK_SPEED = RATE
 # Walk runs forward; Work backs off, Spell and Cover side-step left and right (stock animation names, so the
 # client's lookup finds them: src/Marine.galaxy AS_Walk picks one from the run's angle to the aim).
-SEQUENCES = [('Stand', 3000, 0.0, False), ('Walk', 560, WALK_SPEED, False), ('Work', 600, 0.0, False), ('Spell', 600, 0.0, False),
-             ('Cover', 600, 0.0, False), ('Attack', 600, 0.0, True), ('Fire', 160, 0.0, True), ('Death', 1300, 0.0, True),
-             ('Morph', 1000, 0.0, True)]
+SEQUENCES = [('Stand', 3000, 0.0, False), ('Walk', WALK_MS, WALK_SPEED, False), ('Work', WALK_MS, 0.0, False),
+             ('Spell', WALK_MS, 0.0, False), ('Cover', WALK_MS, 0.0, False), ('Attack', 600, 0.0, True),
+             ('Fire', 160, 0.0, True), ('Death', 1300, 0.0, True), ('Morph', 1000, 0.0, True)]
 ANIMATED = {'location': {B['Pelvis'], B['Torso']}, 'rotation': set(range(1, len(BONES)))}
 # Sequences that move only part of the body: the client blends them over whatever the rest is playing.
 SEQ_BONES = {'Morph': {'location': {B['Torso']}, 'rotation': {B['Torso'], B['Head']}}}
+
+
+def fk(posed):
+    """World (position, rotation) of every rig bone in a pose from pose(): for checks."""
+    out = []
+    for i, (name, parent, pivot) in enumerate(BONES):
+        loc, q = posed.get(i, (np.zeros(3), np.array([0.0, 0.0, 0.0, 1.0])))
+        local = REST[name] - (REST[BONES[parent][0]] if parent >= 0 else 0) + loc
+        if parent < 0:
+            out.append((local, q))
+        else:
+            pp, pq = out[parent]
+            out.append((pp + rotmat(pq) @ local, qmul(pq, q)))
+    return out
 
 
 # ------------------------------------------------------------------ M3
@@ -587,8 +836,15 @@ def rig(model, m3, name, muzzle):
                 ids.append(getattr(bones[bi], field).header.animId)
                 track = m3.structures['SD3V' if field == 'location' else 'SD4Q'].getVersion(0).createInstance()
                 track.frames = frames; track.flags = 1; track.fend = duration; track.keys = []
+                prev = None
                 for p in poses:
                     loc, rot = p.get(bi, (np.zeros(3), np.array([0.0, 0.0, 0.0, 1.0])))
+                    if field == 'rotation':
+                        # Keep each key in the previous key's hemisphere, so the client never turns the long way.
+                        rot = rot / np.linalg.norm(rot)
+                        if prev is not None and np.dot(rot, prev) < 0:
+                            rot = -rot
+                        prev = rot
                     value = _clone(getattr(bones[bi], field).initValue)
                     if field == 'location':
                         loc = TURN @ loc
@@ -617,8 +873,17 @@ def write_m3(mesh, name, path, muzzle):
     assert np.abs(uv).max() < 15.9
     vertex = np.zeros((n, 32), np.uint8)
     vertex[:, 0:12] = pos.view(np.uint8).reshape(n, 12)
-    vertex[:, 12] = 255
-    vertex[:, 16] = np.asarray(mesh.bone, np.uint8)
+    # Up to four (bone, weight) pairs a vertex, heaviest first, the weights in bytes summing to 255.
+    pairs = 1
+    for i, skin in enumerate(mesh.skin):
+        ranked = sorted(((w, B[b]) for b, w in skin.items() if w > 1e-3), reverse=True)[:4]
+        total = sum(w for w, _ in ranked)
+        q = [int(round(255 * w / total)) for w, _ in ranked]
+        q[0] += 255 - sum(q)
+        ranked = [(w, b) for w, (_, b) in zip(q, ranked) if w > 0]
+        pairs = max(pairs, len(ranked))
+        for k, (w, b) in enumerate(ranked):
+            vertex[i, 12 + k] = w; vertex[i, 16 + k] = b
     vertex[:, 20:23] = _fixed8(np.asarray(mesh.nrm) @ TURN.T)
     vertex[:, 23] = 255
     vertex[:, 24:28] = np.rint(uv * 2048).astype('<i2').view(np.uint8).reshape(n, 4)
@@ -629,6 +894,7 @@ def write_m3(mesh, name, path, muzzle):
     region.firstVertexIndex = 0; region.numberOfVertices = n
     region.firstFaceVertexIndexIndex = 0; region.numberOfFaceVertexIndices = tri.size
     div.faces = [int(v) for v in tri.reshape(-1)]; div.regions = [region]; div.objects = [obj]
+    region.numberOfBoneWeightPairsPerVertex = pairs
     obj.regionIndex = obj.materialReferenceIndex = 0
 
     def bound(b, lo, hi):
@@ -682,9 +948,15 @@ def textures():
     return to(diffuse), to(emissive)
 
 
+def stand_muzzle(muzzle):
+    """Where a rest-pose muzzle sits in the ready stance (knees bent, chest breathing out), what the script fires from."""
+    tp, tq = fk(pose('Stand', 0.0))[B['Torso']]
+    return tp + rotmat(tq) @ (np.asarray(muzzle, float) - REST['Torso'])
+
+
 def muzzles():
     """{gun: (forward, left, height)} of each model's muzzle, for the script."""
-    return {name: tuple(round(float(v), 3) for v in geometry(name)[1]) for name, _, _ in GUNS}
+    return {name: tuple(round(float(v), 3) for v in stand_muzzle(geometry(name)[1])) for name, _, _ in GUNS}
 
 
 def build():
@@ -772,7 +1044,7 @@ def preview(out=ROOT / 'dist/marine-preview.png'):
         model = m3.loadModel(str(ROOT / ('dist/meshes/Marine%s.m3' % name)))
         _, muzzle = geometry(name)
         x, y = (k % cols) * W, (k // cols) * (H + 22) + 34
-        sheet.paste(render(model, diffuse, emissive, 'Stand', 0.0, -50, 35, (W, H), tint=tints[k % 4], muzzle=muzzle), (x, y))
+        sheet.paste(render(model, diffuse, emissive, 'Stand', 0.0, -50, 35, (W, H), tint=tints[k % 4], muzzle=stand_muzzle(muzzle)), (x, y))
         d.text((x + 8, y + H + 4), name, fill=(190, 205, 210))
     # The last row: the rifleman from the game camera (pitch 60), walking, and the melee swing.
     model = m3.loadModel(str(ROOT / 'dist/meshes/MarineRifle.m3'))
@@ -787,8 +1059,29 @@ def preview(out=ROOT / 'dist/marine-preview.png'):
     return out
 
 
+def motion(out=ROOT / 'dist/marine-motion.png'):
+    """Filmstrips of the gaits (eight frames a cycle) and the idle, to judge the motion: side-on and from the game camera."""
+    import m3
+    diffuse, emissive = textures()
+    model = m3.loadModel(str(ROOT / 'dist/meshes/MarineRifle.m3'))
+    W, H = 200, 220
+    strips = [('Walk', -90, 8, 'Walk (run), side'), ('Walk', -40, 12, 'Walk, three-quarter'), ('Spell', 180, 60, 'Spell (strafe left), game camera'),
+              ('Cover', -40, 15, 'Cover (strafe right)'), ('Work', -90, 8, 'Work (back-pedal), side'), ('Stand', -50, 20, 'Stand (idle)'),
+              ('Death', -60, 25, 'Death')]
+    sheet = Image.new('RGB', (W * 8, (H + 20) * len(strips)), (10, 12, 16)); d = ImageDraw.Draw(sheet)
+    for r, (seq, yaw, pitch, label) in enumerate(strips):
+        for k in range(8):
+            img = render(model, diffuse, emissive, seq, k / 8, yaw, pitch, (W, H), scale=170.0, centre=(0.1, 0.0, 0.5))
+            sheet.paste(img, (k * W, r * (H + 20) + 20))
+        d.text((8, r * (H + 20) + 4), label, fill=(230, 190, 100))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(out)
+    return out
+
+
 if __name__ == '__main__':
     files = build()
     print({k: len(v) for k, v in files.items()})
     print(muzzles())
     print(preview())
+    print(motion())

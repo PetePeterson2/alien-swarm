@@ -90,6 +90,7 @@ void AS_LevelLaunch (int n) {
     for(p=1;p<=AS_PLAYERS;p+=1) {if(as_on[p]) {squad+=1;}}
     for(p=1;p<=AS_PLAYERS;p+=1) {as_invLaunch[p][0]=as_inv[p][0];as_invLaunch[p][1]=as_inv[p][1];as_invLaunch[p][2]=as_inv[p][2];}
     AS_DifficultySet(as_skill,squad);
+    AS_MusicStop();
     as_botCount=0;
     for(p=1;p<=AS_PLAYERS;p+=1) {if(as_on[p] && as_bot[p] && !(as_auto && p==1)) {as_botCount+=1;}}
     AS_Log("launch "+as_levelTitle[n]+" skill "+IntToString(as_skill)+" md "+IntToString(as_md)+" squad "+IntToString(squad)+" onslaught "+IntToString(BoolToInt(as_onslaught)));
@@ -144,6 +145,7 @@ void AS_ScreenQuiet () {
     int p;
     AS_HintsHideAll();
     as_lineN=0;as_lineUntil=0.0;as_lineBusy=0.0;as_lineTalk=0.0;
+    AS_MusicStop();
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_HudSubtitle(p,"");}}
 }
 void AS_MissionWon () {
@@ -155,6 +157,7 @@ void AS_MissionWon () {
     if(as_level+1<AS_LEVELS) {next="Next: <c val=\"FFBA40\">"+as_levelTitle[as_level+1]+"</c>";}
     else {next="<c val=\"FFBA40\">CAMPAIGN COMPLETE</c>  -  every mission so far is done.";}
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p,next,true);}}
+    AS_Music("ASMus_Aftermath");
     AS_UiDump("debrief_"+IntToString(as_level),1);
     as_debriefOn=true;as_continueGo=false;
     TriggerExecute(TriggerCreate("AS_NextT"),false,false);
@@ -173,25 +176,76 @@ bool AS_FailT (bool testConds, bool runActions) {
     int p;
     Wait(6.0,c_timeGame);
     for(p=1;p<=AS_PLAYERS;p+=1) {if(AS_Person(p)) {AS_Debrief(p,"<c val=\"FF6050\">"+as_failWhy+"</c>",false);}}
+    AS_Music("ASMus_Aftermath");
     AS_UiDump("failed_"+IntToString(as_level),1);
     as_debriefOn=true;as_continueGo=false;
     if(as_failStreak>=4 && as_skill>1) {AS_AllMsg("Your squad may be better suited to an easier difficulty: the host can lower it in the briefing.");}
     TriggerExecute(TriggerCreate("AS_NextT"),false,false);
     return true;
 }
-// Alien Swarm's fail advice: why the squad fell, or one of its general lines.
-string AS_FailAdvice (string why) {
-    int r=RandomInt(0,8);
-    if(why!="") {return why;}
-    if(r==0) {return "Coordinate your squad's movement and firing zones.";}
-    if(r==1) {return "Tactically coordinate your squad's loadout equipment.";}
-    if(r==2) {return "Plan your squad's route and consider alternatives.";}
-    if(r==3) {return "Weld doors shut to block swarm entrances.";}
-    if(r==4) {return "Protect the squad tech while the hack runs.";}
-    if(r==5) {return "Use health items to keep the squad healthy.";}
-    if(r==6) {return "Build defensive sentries to fight large swarms.";}
-    if(r==7) {return "Keep your squad formation tight to avoid being overwhelmed.";}
+// Alien Swarm's fail advice (asw_fail_advice.cpp 41-89): each mission scores what went wrong; a lost mission's
+// advice is the highest score that came to anything and is not cooling down. It then cools for 3 missions, one
+// fewer each mission, and scores nothing meanwhile. Nothing scored: teamwork, loadout or routes at random. Lines
+// from swarm_english.txt 1191-1209; the ignored-item, wasted-heal, lighting and slow-progress tips have nothing
+// here to count.
+fixed[12] as_faScore;
+int[12] as_faCool;
+fixed[5][3] as_faHitAt;
+string AS_FailLine (int k) {
+    if(k==AS_FA_TEAMWORK) {return "Coordinate your squad's movement and firing zones.";}
+    if(k==AS_FA_LOADOUT) {return "Tactically coordinate your squad's loadout equipment.";}
+    if(k==AS_FA_ROUTES) {return "Plan your squad's route and consider alternatives.";}
+    if(k==AS_FA_LOWAMMO) {return "Conserve your squad's ammo carefully.";}
+    if(k==AS_FA_INFESTEDLOTS) {return "Avoid becoming infested to save health resources.";}
+    if(k==AS_FA_INFESTED) {return "Use health resources to save and cure infested squad mates.";}
+    if(k==AS_FA_SWARMED) {return "Build defensive sentries to fight large swarms.";}
+    if(k==AS_FA_FF) {return "Avoid dealing damage to other squad mates.";}
+    if(k==AS_FA_HACKER) {return "Protect the squad tech while they hack.";}
+    if(k==AS_FA_SHIELDBUG) {return "The shield bug can block frontal attacks.";}
+    if(k==AS_FA_ALONE) {return "Keep your squad formation tight to prevent becoming overwhelmed.";}
     return "Bring a medic along to keep the squad in good health.";
+}
+void AS_FailScore (int k, fixed v) {
+    if(k<0 || k>=AS_FA_N || as_faCool[k]>0) {return;}
+    as_faScore[k]+=v;
+}
+// Each mission's start: the scores from nothing, the cooldowns one shorter, and a squad with no medic noted.
+void AS_FailReset () {
+    int k;int p;bool medic=false;
+    for(k=0;k<AS_FA_N;k+=1) {as_faScore[k]=0.0;if(as_faCool[k]>0) {as_faCool[k]-=1;}}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        for(k=0;k<3;k+=1) {as_faHitAt[p][k]= -10.0;}
+        if(AS_Person(p) && AS_Class(p)==AS_CL_MEDIC) {medic=true;}
+    }
+    if(!medic) {AS_FailScore(AS_FA_NOMEDIC,2.0);}
+}
+void AS_FailHurt (int p, fixed dmg, int kind, int byP) {
+    if(byP>=1 && byP<=AS_PLAYERS && byP!=p) {AS_FailScore(AS_FA_FF,dmg/50.0);}
+    if(as_using[p]>=0 && AS_IsTech(p)) {AS_FailScore(AS_FA_HACKER,dmg/40.0);}
+    if(kind!=0 || byP>=1) {return;}
+    as_faHitAt[p][2]=as_faHitAt[p][1];as_faHitAt[p][1]=as_faHitAt[p][0];as_faHitAt[p][0]=as_now;
+    if(as_now-as_faHitAt[p][2]<1.5) {AS_FailScore(AS_FA_SWARMED,1.0);as_faHitAt[p][1]= -10.0;as_faHitAt[p][2]= -10.0;}
+}
+void AS_FailDied (int p) {
+    int q;fixed best=999.0;point here=UnitGetPosition(as_m[p]);
+    if(as_using[p]>=0 && AS_IsTech(p)) {AS_FailScore(AS_FA_HACKER,1.0);}
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(q!=p && as_alive[q] && as_m[q]!=null) {best=MinF(best,DistanceBetweenPoints(here,UnitGetPosition(as_m[q])));}
+    }
+    if(best<999.0 && best>12.5) {AS_FailScore(AS_FA_ALONE,1.0);}
+}
+string AS_FailAdvice (string why) {
+    int k;int pick= -1;fixed need;
+    for(k=AS_FA_LOWAMMO;k<AS_FA_N;k+=1) {
+        need=1.0;if(k==AS_FA_SWARMED) {need=3.0;}
+        if(as_faCool[k]>0 || as_faScore[k]<need) {continue;}
+        if(pick<0 || as_faScore[k]>as_faScore[pick]) {pick=k;}
+    }
+    if(pick<0) {pick=RandomInt(AS_FA_TEAMWORK,AS_FA_ROUTES);}
+    else {as_faScore[pick]=0.0;as_faCool[pick]=3;}
+    AS_Log("fail advice: "+IntToString(pick));
+    if(why!="") {return why+"  -  "+AS_FailLine(pick);}
+    return AS_FailLine(pick);
 }
 // The debrief waits for the host (CONTINUE or RESTART); the autopilot waits a moment and goes on.
 bool AS_NextT (bool testConds, bool runActions) {
@@ -268,7 +322,8 @@ bool AS_AutoBriefT (bool testConds, bool runActions) {
     AS_Log("ui test: briefing open on "+as_levelTitle[as_briefMission]+", squad slots "+IntToString(AS_SquadCount()));
     Wait(1.0,c_timeGame);
     AS_BrAction(p,2);AS_BrAction(p,1);
-    for(k=0;k<AS_LEVELS && as_briefMission!=AS_LV_BAY;k+=1) {AS_BrAction(p,1);}
+    // To the --start level (Landing Bay unless asked otherwise).
+    for(k=0;k<AS_LEVELS && as_briefMission!=MaxI(as_startLevel,AS_LV_BAY);k+=1) {AS_BrAction(p,1);}
     for(k=11;k<=15;k+=1) {AS_BrAction(p,k);Wait(0.25,c_timeGame);}
     AS_BrAction(p,10+as_autoSkill);AS_BrAction(p,20);AS_BrAction(p,20);
     if(as_autoOnslaught) {AS_BrAction(p,20);}

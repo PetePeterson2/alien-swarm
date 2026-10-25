@@ -230,7 +230,11 @@ void AS_PuffPulse () {
             if((as_aX[j]-nx)*(as_aX[j]-nx)+(as_aY[j]-ny)*(as_aY[j]-ny)<(r+as_aRadius[j])*(r+as_aRadius[j])) {
                 if(as_puffCold[i]) {
                     as_aBurnUntil[j]=0.0;
-                    if(as_puffDmg[i]>0.0) {AS_Freeze(j,0.6);}
+                    // The freeze sentry's spray also stings, 1 a shot (asw_sentry_top_icer.cpp 54-56); the extinguisher does not.
+                    if(as_puffDmg[i]>0.0) {
+                        if(as_aFreezeUntil[j]<=as_now) {as_dmgItem=as_puffItem[i];AS_HurtAlien(j,as_puffDmg[i],0,as_puffBy[i],as_puffX[i]-as_puffVX[i],as_puffY[i]-as_puffVY[i]);as_dmgItem=0;}
+                        if(as_a[j]!=null) {AS_Freeze(j,0.6);}
+                    }
                     continue;
                 }
                 as_dmgItem=as_puffItem[i];AS_HurtAlien(j,as_puffDmg[i]*AS_DT*3.0,1,as_puffBy[i],as_puffX[i]-as_puffVX[i],as_puffY[i]-as_puffVY[i]);as_dmgItem=0;

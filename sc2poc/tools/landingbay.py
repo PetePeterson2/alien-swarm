@@ -251,6 +251,11 @@ SPAWNERS = [
 # span the traced passage. Actions: spawn <spawner>, stop <spawner>, pick <a|b|c|> (one at random,
 # '' for none), complete <objective>, line <commander line>, hint <hint>, wall <wall burst>,
 # weld <door> (suggest welding it once the whole squad is past), sentry (show the sentry spot).
+# trigger_asw_jump: (rect, destination, minimum marine distance in cells, toward the quarry only). Drones leap the
+# gap at x 24 east to JumpSpot1, and off the ledge west to JumpSpot2, but only toward a marine and only while
+# none is already on them (MinMarineDist 128).
+JUMPS = [((23.4, 68.7, 24.5, 69.8), (28.8, 69.6), 1.6, True), ((16.2, 98.6, 17.6, 102.9), (15.1, 101.2), 1.6, True),
+         ((17.9, 99.8, 20.0, 102.9), (15.1, 101.2), 1.6, True)]
 TRIGGERS = [
     ((47.0, 3.0, 59.0, 14.0), True, 1.0, [('hint', 'movement', 0.0), ('line', 'co_m1_ob1', 6.0), ('dropship', '', 5.0)]),
     ((38.0, 4.0, 40.0, 9.0), True, 1.0, [('hint', 'general', 0.0)]),

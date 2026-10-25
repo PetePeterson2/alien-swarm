@@ -1,11 +1,15 @@
 // =====================================================================
 // AI marines, as Alien Swarm's own: the marines a lone player is given, or
-// the host adds in the briefing. A bot follows the squad leader (the first
-// living human) by the trail the leader leaves, or holds where it was told
-// to (V / X); holds the platform when the squad boards the lift, stands on
-// the transit platform at the end, shoots the nearest alien it can see,
-// never hurts a squadmate, heals itself and, a medic, the squad; an AI tech
-// walks over and hacks a panel or terminal a squadmate could not.
+// the host adds in the briefing. A bot takes its slot in AS's formation round
+// the squad leader (the first living human; asw_squadformation.cpp), by the
+// trail the leader leaves where the slot is out of reach, or holds where it
+// was told to (V / X, or SHIFT+2-4 for one marine at the cursor); holds the
+// platform when the squad boards the lift, stands on the transit platform at
+// the end, shoots the nearest alien it can see, never hurts a squadmate,
+// fetches ammo from a stash and hands out its satchel's, and, a medic, heals
+// the squad with its gun or a beacon; an AI tech walks over and hacks a panel
+// or terminal a squadmate could not. 2-4 have a squadmate use its offhand
+// item, and every marine barks AS's chatter as text over its head.
 //
 // Autopilot (build.py --auto): player 1 is driven too, along the mission's
 // route (tools/cargo.py ROUTE), so a whole run plays itself for QA; every
@@ -50,6 +54,7 @@ int AS_Leader () {
 void AS_CrumbPulse () {
     point q;
     as_leader=AS_Leader();
+    AS_FormationPulse();
     if(as_leader==0 || as_tick%4!=0) {return;}
     q=UnitGetPosition(as_m[as_leader]);
     if(as_crumbHead>=0 && DistanceBetweenPoints(q,as_crumb[as_crumbHead])<0.9) {return;}
@@ -67,7 +72,54 @@ point AS_TrailPoint (point at0) {
 // Spots for each marine on the lift and the transit platform, so the squad spreads out.
 point AS_PostOf (int p, fixed x0, fixed y0, fixed x1, fixed y1) {
     fixed cx=(x0+x1)*0.5;fixed cy=(y0+y1)*0.5;
-    return Point(cx-2.0+IntToFixed((p-1)%2)*4.0,cy-2.0+IntToFixed((p-1)/2)*4.0);
+    // Two cells out from the middle, but well inside: on a zone four cells across that was its very edge, and a bot
+    // holding a post on the edge of the extraction zone kept Cargo Elevator from ending (autopilot run, 2026-10-24).
+    fixed ox=MinF(2.0,(x1-x0)*0.5-0.7);fixed oy=MinF(2.0,(y1-y0)*0.5-0.7);
+    return Point(cx-ox+IntToFixed((p-1)%2)*2.0*ox,cy-oy+IntToFixed((p-1)/2)*2.0*oy);
+}
+// ---- the formation (asw_squadformation.cpp) -------------------------------------------------
+// Three slots behind the leader: back-right, straight back and back-left, at (-60,-70), (-120,0), (-60,70) units
+// (forward, left), each watching its own way (-70, 180, 70 off the leader's facing) (106-118). The slots are laid
+// round where the leader will be in 0.3 s, and move only once the leader has gone 40 units (0.5 cells) (20-21, 388).
+point as_fmAnchor;
+fixed as_fmFace;
+void AS_FormationPulse () {
+    point lq;point pred;
+    if(as_leader==0 || as_m[as_leader]==null) {as_fmAnchor=null;return;}
+    lq=UnitGetPosition(as_m[as_leader]);
+    pred=Point(PointGetX(lq)+as_mvX[as_leader]*0.3,PointGetY(lq)+as_mvY[as_leader]*0.3);
+    if(!AS_LineClear(PointGetX(lq),PointGetY(lq),PointGetX(pred),PointGetY(pred))) {pred=lq;}
+    if(as_fmAnchor==null || DistanceBetweenPoints(pred,as_fmAnchor)>0.5) {as_fmAnchor=pred;as_fmFace=as_aim[as_leader];}
+}
+// Which slot a following bot takes: the following bots in player order.
+int AS_FormationSlot (int p) {
+    int q;int n=0;
+    for(q=1;q<p;q+=1) {if(as_bot[q] && as_alive[q] && q!=as_leader && as_botOrder[q]==0 && !(as_auto && q==1)) {n+=1;}}
+    return n%3;
+}
+point AS_FormationPoint (int p) {
+    int k=AS_FormationSlot(p);fixed fx=-0.75;fixed fy=-0.875;fixed c=Cos(as_fmFace);fixed s=Sin(as_fmFace);point q;
+    if(as_fmAnchor==null) {return null;}
+    if(k==1) {fx=-1.5;fy=0.0;}
+    if(k==2) {fx=-0.75;fy=0.875;}
+    q=Point(PointGetX(as_fmAnchor)+c*fx-s*fy,PointGetY(as_fmAnchor)+s*fx+c*fy);
+    // A slot inside a wall, or round a corner from the leader: the leader's own spot instead.
+    if(!AS_Free(PointGetX(q),PointGetY(q),AS_MARINE_R) || !AS_LineClear(PointGetX(as_fmAnchor),PointGetY(as_fmAnchor),PointGetX(q),PointGetY(q))) {return as_fmAnchor;}
+    return q;
+}
+fixed AS_FormationLook (int p) {
+    int k=AS_FormationSlot(p);
+    if(k==0) {return as_fmFace-70.0;}
+    if(k==1) {return as_fmFace+180.0;}
+    return as_fmFace+70.0;
+}
+// AS's catch-up: 1.10 + 0.65 (d^2 - 400) / 1800^2 times the run, d in units from the leader, 1 to 1.75
+// (asw_marine_shared.cpp 310-316).
+fixed AS_BotPace (int p) {
+    fixed d;
+    if(as_leader==0 || as_leader==p || as_botOrder[p]!=0 || (as_auto && p==1)) {return 1.0;}
+    d=DistanceBetweenPoints(UnitGetPosition(as_m[p]),UnitGetPosition(as_m[as_leader]))*80.0;
+    return AS_Clamp(1.10+0.65*(d*d-400.0)/(1800.0*1800.0),1.0,1.75);
 }
 point AS_BotWay (point here, point to) {
     point t;fixed a=AngleBetweenPoints(here,to)+90.0;fixed ox=Cos(a)*0.3;fixed oy=Sin(a)*0.3;
@@ -80,10 +132,14 @@ point AS_BotWay (point here, point to) {
     return t;
 }
 point AS_BotGoal (int p) {
-    point lq;point here=UnitGetPosition(as_m[p]);point tech;
+    point lq;point here=UnitGetPosition(as_m[p]);point tech;point fp;int h;
     if(as_auto && p==1) {return AS_RouteGoal();}
     tech=AS_TechAiGoal(p);
     if(tech!=null) {return tech;}
+    // Healing comes first, then ammo (asw_marine_schedule.cpp 317-337): close to half the gun's reach of the hurt.
+    h=as_botHealWho[p];
+    if(h>0 && as_alive[h] && DistanceBetweenPoints(here,UnitGetPosition(as_m[h]))>as_it[AS_IT_HEALGUN].range*0.5) {return AS_BotWay(here,UnitGetPosition(as_m[h]));}
+    if(as_botStash[p]>=0 && as_stash[as_botStash[p]]!=null) {return AS_BotWay(here,UnitGetPosition(as_stash[as_botStash[p]]));}
     if(as_botOrder[p]==1 && as_botHoldAt[p]!=null) {
         if(DistanceBetweenPoints(here,as_botHoldAt[p])<0.6) {return null;}
         return as_botHoldAt[p];
@@ -97,8 +153,10 @@ point AS_BotGoal (int p) {
         return AS_BotWay(here,AS_PostOf(p,as_liftX0,as_liftY0,as_liftX1,as_liftY1));
     }
     if(as_stage==AS_ST_ESCAPE && AS_InRect(lq,as_extX0,as_extY0,as_extX1,as_extY1)) {return AS_BotWay(here,AS_PostOf(p,as_extX0,as_extY0,as_extX1,as_extY1));}
-    if(DistanceBetweenPoints(here,lq)<2.6 && AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(lq),PointGetY(lq))) {return null;}
-    return AS_TrailPoint(here);
+    fp=AS_FormationPoint(p);
+    if(fp==null) {return AS_TrailPoint(here);}
+    if(DistanceBetweenPoints(here,fp)<0.35) {return null;}
+    return AS_BotWay(here,fp);
 }
 bool as_autoTask;                       // the autopilot is busy at a waypoint's job (a welder, a door)
 // The watchdog on every leg: a waypoint not reached in 60 s is logged every 30 s with where the marine is, where it is
@@ -217,7 +275,7 @@ void AS_BotPulse (int p) {
     as_botVX[p]=0.0;as_botVY[p]=0.0;
     if(goal!=null) {
         dx=PointGetX(goal)-PointGetX(here);dy=PointGetY(goal)-PointGetY(here);d=SquareRoot(dx*dx+dy*dy);
-        if(d>0.35) {as_botVX[p]=dx/d;as_botVY[p]=dy/d;}
+        if(d>0.35) {as_botVX[p]=dx/d*AS_BotPace(p);as_botVY[p]=dy/d*AS_BotPace(p);}
     }
     // Keep a little room from the rest of the squad.
     for(q=1;q<=AS_PLAYERS;q+=1) {
@@ -226,6 +284,9 @@ void AS_BotPulse (int p) {
         if(d<0.9 && d>0.01) {sx+=(PointGetX(here)-PointGetX(oq))/d*(0.9-d);sy+=(PointGetY(here)-PointGetY(oq))/d*(0.9-d);}
     }
     as_botVX[p]+=sx*1.5;as_botVY[p]+=sy*1.5;
+    AS_BotAmmo(p);
+    // A medic at work holds its gun on the hurt marine, not on the swarm.
+    if(AS_BotHealGun(p)) {as_mouseSeen[p]=true;return;}
     // Pick a target a few times a second; shoot while it is in sight.
     if(as_now>=as_botNextLook[p]) {
         was=as_botFoe[p];as_botNextLook[p]=as_now+0.25;as_botFoe[p]=AS_BotFoe(p);
@@ -252,6 +313,8 @@ void AS_BotPulse (int p) {
     else {
         as_trigger[p]=false;
         if(as_botVX[p]*as_botVX[p]+as_botVY[p]*as_botVY[p]>0.1) {as_mouseDX[p]=as_botVX[p]*4.0;as_mouseDY[p]=as_botVY[p]*4.0;}
+        // At its slot, it watches its own way.
+        else if(as_botOrder[p]==0 && as_fmAnchor!=null && as_leader!=p && !(as_auto && p==1)) {as_mouseDX[p]=Cos(AS_FormationLook(p))*4.0;as_mouseDY[p]=Sin(AS_FormationLook(p))*4.0;}
     }
     as_mouseSeen[p]=true;
     if(as_auto && p==1 && as_extraHeld[1]) {as_trigger[p]=false;}
@@ -262,13 +325,14 @@ void AS_BotPulse (int p) {
     w=as_slot[p];
     if(w>0 && !AS_IsDeployable(w)) {
         if(AS_BotFull(p)) {if(as_reserve[p][w]<as_it[w].mag) {as_reserve[p][w]=as_it[w].reserve;}}
-        else if(as_mag[p][w]<=0 && as_reserve[p][w]<=0) {
+        else if(as_extras && as_mag[p][w]<=0 && as_reserve[p][w]<=0) {
             if(as_botDryAt[p]==0.0) {as_botDryAt[p]=as_now+20.0;AS_Log("bot "+IntToString(p)+" dry: "+as_it[w].title);}
             else if(as_now>=as_botDryAt[p]) {as_botDryAt[p]=0.0;as_reserve[p][w]=as_it[w].mag;AS_Log("bot "+IntToString(p)+" scrounged a clip");}
         }
         else {as_botDryAt[p]=0.0;}
     }
-    if((as_hp[p]<as_hpMax[p]*0.45 || as_infestUntil[p]>as_now) && as_inv[p][2]==AS_IT_MEDKIT && as_charges[p]>0) {AS_UseExtra(p);}
+    // AS's AI marines never use a medkit themselves (nothing in asw_marine_schedule.cpp does); the port's extras let them.
+    if(as_extras && (as_hp[p]<as_hpMax[p]*0.45 || as_infestUntil[p]>as_now) && as_inv[p][2]==AS_IT_MEDKIT && as_charges[p]>0) {AS_UseExtra(p);}
     if(as_tick%16==p) {AS_BotMedic(p);}
 }
 // An AI medic drops a heal beacon among two or more hurt squadmates (or one infested one) near it.
@@ -284,7 +348,115 @@ void AS_BotMedic (int p) {
     as_mag[p][w]-=1;AS_FieldStart(p,0,PointGetX(here),PointGetY(here));
     AS_Log("bot "+IntToString(p)+" heal beacon");
 }
-bool AS_FieldBusy (int p) {return false;}
+bool AS_FieldBusy (int p) {
+    int i;point here=UnitGetPosition(as_m[p]);
+    for(i=0;i<AS_FIELDS;i+=1) {
+        if(as_field[i]!=null && as_fieldKind[i]==0 && as_fieldUntil[i]>as_now && DistanceBetweenPoints(UnitGetPosition(as_field[i]),here)<4.0) {return true;}
+    }
+    return false;
+}
+// An AI medic's heal gun (asw_marine_schedule.cpp 847-848, 865, 1890, 2396): a squadmate under 65% (or infested)
+// within the gun's reach is healed until 85%. True while the gun is at work.
+bool AS_BotHealGun (int p) {
+    int q;int h=as_botHealWho[p];int hand= -1;point here=UnitGetPosition(as_m[p]);point mq;fixed r=as_it[AS_IT_HEALGUN].range;fixed d;
+    if(as_inv[p][0]==AS_IT_HEALGUN) {hand=0;}else if(as_inv[p][1]==AS_IT_HEALGUN) {hand=1;}
+    if(hand<0 || as_mag[p][AS_IT_HEALGUN]<=0 || AS_Class(p)!=AS_CL_MEDIC) {as_botHealWho[p]=0;return false;}
+    if(h>0 && (!as_alive[h] || (as_hp[h]>=as_hpMax[h]*0.85 && as_infestUntil[h]<=as_now) || DistanceBetweenPoints(here,UnitGetPosition(as_m[h]))>r*1.5)) {h=0;}
+    if(h==0) {
+        for(q=1;q<=AS_PLAYERS;q+=1) {
+            if(q==p || !AS_Person(q) || !as_alive[q] || as_m[q]==null) {continue;}
+            if(as_hp[q]>=as_hpMax[q]*0.65 && as_infestUntil[q]<=as_now) {continue;}
+            mq=UnitGetPosition(as_m[q]);
+            if(DistanceBetweenPoints(here,mq)<r && AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(mq),PointGetY(mq))) {h=q;break;}
+        }
+    }
+    if(h>0 && h!=as_botHealWho[p]) {AS_Log("bot "+IntToString(p)+" heal gun on p"+IntToString(h));}
+    as_botHealWho[p]=h;
+    if(h==0) {return false;}
+    if(as_hand[p]!=hand) {AS_SelectHand(p,hand);}
+    mq=UnitGetPosition(as_m[h]);d=DistanceBetweenPoints(here,mq);
+    as_mouseDX[p]=PointGetX(mq)-PointGetX(here);as_mouseDY[p]=PointGetY(mq)-PointGetY(here);
+    as_trigger[p]=d<r;
+    return true;
+}
+// Ammo (asw_marine_schedule.cpp 402, 576-714; asw_marine.cpp 1984, 4306-4381): once a second a bot whose gun has
+// room for a clip looks for a stash within 384 units (4.8 cells), leaving one a person is shorter of ammo by; one it
+// cannot get to in 6 s is left alone for 15. Every 2 s one carrying a satchel deploys it for a person who is out
+// (AS's NEEDS), or failing that for an AI marine who is dry (WANTS).
+void AS_BotAmmo (int p) {
+    int i;int q;int w=as_slot[p];int bag= -1;int best= -1;point here=UnitGetPosition(as_m[p]);point sq;point mq;fixed mine;bool needs;
+    if(as_botStash[p]>=0) {
+        i=as_botStash[p];
+        if(as_stash[i]==null || as_now>=as_botStashGive[p]) {
+            if(as_stash[i]!=null) {as_botStashSkip[p]=i;as_botStashSkipUntil[p]=as_now+15.0;}
+            as_botStash[p]= -1;
+        }
+        else if(AS_StashNear(p)==i) {AS_StashTake(p,i);as_botStash[p]= -1;}
+    }
+    if(as_now>=as_botStashAt[p] && as_botStash[p]<0 && as_botOrder[p]==0) {
+        as_botStashAt[p]=as_now+1.0;
+        if(w>0 && !AS_IsDeployable(w) && w!=AS_IT_CHAINSAW && w!=AS_IT_HEALGUN && as_reserve[p][w]<=as_it[w].reserve-as_it[w].mag) {
+            mine=IntToFixed(as_reserve[p][w])/IntToFixed(MaxI(1,as_it[w].reserve));
+            for(i=0;i<AS_STASHES;i+=1) {
+                if(as_stash[i]==null || as_stashUnits[i]<AS_StashCost(w) || (i==as_botStashSkip[p] && as_now<as_botStashSkipUntil[p])) {continue;}
+                sq=UnitGetPosition(as_stash[i]);
+                if(DistanceBetweenPoints(here,sq)>4.8 || !AS_LineClear(PointGetX(here),PointGetY(here),PointGetX(sq),PointGetY(sq))) {continue;}
+                needs=false;
+                for(q=1;q<=AS_PLAYERS;q+=1) {
+                    if(!AS_Person(q) || as_bot[q] || !as_alive[q] || as_slot[q]<=0 || AS_IsDeployable(as_slot[q])) {continue;}
+                    if(DistanceBetweenPoints(UnitGetPosition(as_m[q]),sq)<6.0 && IntToFixed(as_reserve[q][as_slot[q]])/IntToFixed(MaxI(1,as_it[as_slot[q]].reserve))<mine) {needs=true;}
+                }
+                if(!needs) {best=i;break;}
+            }
+            if(best>=0) {as_botStash[p]=best;as_botStashGive[p]=as_now+6.0;}
+        }
+    }
+    if(as_now<as_botAmmoAt[p]) {return;}
+    as_botAmmoAt[p]=as_now+2.0;
+    if(as_inv[p][0]==AS_IT_AMMOBAG) {bag=0;}else if(as_inv[p][1]==AS_IT_AMMOBAG) {bag=1;}
+    if(bag<0 || as_mag[p][AS_IT_AMMOBAG]<=0) {return;}
+    best=0;
+    for(q=1;q<=AS_PLAYERS;q+=1) {
+        if(q==p || !AS_Person(q) || !as_alive[q] || as_m[q]==null) {continue;}
+        w=as_slot[q];
+        if(w<=0 || AS_IsDeployable(w) || w==AS_IT_CHAINSAW || w==AS_IT_HEALGUN || as_reserve[q][w]>0) {continue;}
+        mq=UnitGetPosition(as_m[q]);
+        if(DistanceBetweenPoints(here,mq)>6.0) {continue;}
+        if(!as_bot[q] && as_mag[q][w]<=as_it[w].mag/2) {best=q;break;}
+        if(as_bot[q] && as_mag[q][w]<=0 && best==0) {best=q;}
+    }
+    if(best==0) {return;}
+    mq=UnitGetPosition(as_m[best]);
+    as_mag[p][AS_IT_AMMOBAG]-=1;
+    AS_AmmoDrop(p,(PointGetX(here)+PointGetX(mq))*0.5,(PointGetY(here)+PointGetY(mq))*0.5);
+    AS_Log("bot "+IntToString(p)+" ammo for p"+IntToString(best));
+}
+
+// ---- the hotbar: 2-4 for the squadmates (asw_hud_squad_hotbar.cpp) --------------------------------
+// 2, 3 and 4 have the player's other marines use their offhand item toward the cursor; with SHIFT held, that
+// marine alone goes to hold at the cursor (AS's "position specific marine").
+void AS_Hotbar (int p, int n) {
+    int k;int q= -1;int i=0;point at=AS_AimPoint(p);point mq;
+    for(k=1;k<=AS_PLAYERS;k+=1) {
+        q=AS_OwnByIndex(p,k);
+        if(q<=0) {break;}
+        if(q==p) {continue;}
+        i+=1;
+        if(i==n) {break;}
+    }
+    if(i!=n || q<=0 || q==p || !as_alive[q] || !as_bot[q]) {return;}
+    mq=UnitGetPosition(as_m[q]);
+    if(as_walkKey[p]) {
+        if(!AS_Free(PointGetX(at),PointGetY(at),AS_MARINE_R)) {AS_Message(p,"Nowhere to stand there");return;}
+        as_botOrder[q]=1;as_botHoldAt[q]=at;
+        AS_Message(p,AS_MarineNameS(q)+": holding there");AS_Chatter(q,AS_CH_HOLD);
+        return;
+    }
+    if(as_inv[q][2]<=0 || as_inv[q][2]==AS_IT_WELDER) {AS_Message(p,AS_MarineNameS(q)+" has no item to use");return;}
+    as_mouseDX[q]=PointGetX(at)-PointGetX(mq);as_mouseDY[q]=PointGetY(at)-PointGetY(mq);as_mouseSeen[q]=true;
+    as_aim[q]=ATan2(as_mouseDY[q],as_mouseDX[q]);
+    AS_UseExtra(q);
+}
 
 // ---- chatter (asw_marine_speech.cpp) --------------------------------------------------------
 // AS's 124 spoken lines become a short line of text over the marine. One line at a time for the squad, the next
@@ -336,7 +508,7 @@ void AS_ChatPain (int p, fixed dmg) {
 void AS_ChatReload (int p) {
     int i;point here=UnitGetPosition(as_m[p]);
     for(i=0;i<AS_MAXALIEN;i+=1) {
-        if(as_a[i]!=null && !AS_IsThing(as_aKind[i]) && DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]))<8.0) {AS_Chatter(p,AS_CH_RELOAD);return;}
+        if(as_a[i]!=null && !AS_IsThing(as_aKind[i]) && !as_aHidden[i] && DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]))<8.0) {AS_Chatter(p,AS_CH_RELOAD);return;}
     }
 }
 // A marine falls: its last line, and 0.5 to 1.5 s on the nearest squadmate calls it (asw_marine.cpp 3321, 3381, 3391).
@@ -363,7 +535,7 @@ void AS_ChatterPulse () {
         if(!AS_Person(p) || !as_alive[p] || as_m[p]==null) {continue;}
         here=UnitGetPosition(as_m[p]);
         for(i=0;i<AS_MAXALIEN;i+=1) {
-            if(as_a[i]==null || AS_IsThing(as_aKind[i])) {continue;}
+            if(as_a[i]==null || AS_IsThing(as_aKind[i]) || as_aHidden[i]) {continue;}
             d=DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]));
             if(d>8.0) {continue;}
             fight=true;
@@ -439,7 +611,6 @@ fixed as_autoClickAt;
 int as_autoWireClicks;
 point AS_AutoGate () {
     int d=AS_AutoGateDoor();point pp;
-    if(as_level!=AS_LV_BAY && as_level<AS_LV_SCRIPT) {return as_doorPanel;}
     if(d<0) {return null;}
     if(!AS_IsTech(1)) {
         if(as_aiHackTech==0 && as_drLocked[d]) {AS_OrderTechHack(1,AS_USE_PANEL,d);}
@@ -500,20 +671,24 @@ void AS_AutoTumblers (int i) {
         if(AS_TbDirNow(i,k)!=want) {AS_TumblerClick(1,i,k);}
     }
 }
-// --wipe: 15 s into the first Landing Bay the squad's tech (the autopilot's marine) dies, which restarts the
-// mission; the second time the whole squad dies (MISSION FAILED); the third plays through.
+// --wipe, in the first Landing Bay: 15 s in, the squad's tech (the autopilot's marine) dies, inside AS's 30 s, so the
+// mission restarts; the second time it dies 35 s in, past the 30 s, so MISSION FAILED after a 5.9 s countdown; the
+// third time the whole squad dies (MISSION FAILED); the fourth plays through.
 int as_autoWipeStep;
 fixed as_autoWipeRun= -1.0;
 void AS_AutoWipe () {
-    int q;fixed x;fixed y;
-    if(!as_autoWipe || as_level!=AS_LV_BAY || as_autoWipeStep>=2 || as_autoWipeRun==as_missionStart || as_now-as_missionStart<15.0) {return;}
+    int q;fixed x;fixed y;fixed at=15.0;
+    if(as_autoWipeStep==1) {at=35.0;}
+    if(!as_autoWipe || as_level!=AS_LV_BAY || as_autoWipeStep>=3 || as_autoWipeRun==as_missionStart || as_now-as_missionStart<at) {return;}
     as_autoWipeRun=as_missionStart;
     for(q=1;q<=AS_PLAYERS;q+=1) {
-        if(!AS_Person(q) || !as_alive[q] || (as_autoWipeStep==0 && q!=1)) {continue;}
+        if(!AS_Person(q) || !as_alive[q] || (as_autoWipeStep<=1 && q!=1)) {continue;}
         as_god[q]=false;x=PointGetX(UnitGetPosition(as_m[q]));y=PointGetY(UnitGetPosition(as_m[q]));
         AS_HurtMarineBy(q,1000.0,x,y,0.0,2,0);
     }
-    if(as_autoWipeStep==0) {AS_Log("wipe test: the tech is down");}else {AS_Log("wipe test: the squad is down");}
+    if(as_autoWipeStep==0) {AS_Log("wipe test: the tech is down inside 30 s");}
+    else if(as_autoWipeStep==1) {AS_Log("wipe test: the tech is down past 30 s");}
+    else {AS_Log("wipe test: the squad is down");}
     as_autoWipeStep+=1;
 }
 // Once, early in the first Landing Bay: every key and button a player has, through the functions the input
@@ -641,10 +816,13 @@ point AS_AutoData () {
 }
 // The autopilot's marine 1 is driven by the script; AI marines are added in the briefing (src/Briefing.galaxy).
 void AS_BotsInit () {
+    int p;
     if(as_auto) {as_bot[1]=true;}
     as_botCount=0;
+    for(p=1;p<=AS_PLAYERS;p+=1) {as_botStash[p]= -1;as_botStashSkip[p]= -1;as_botHealWho[p]=0;}
 }
-// A bot left far behind or wedged on a corner rejoins the leader, but only where no human sees it go.
+// A bot wedged on a corner rejoins the leader, but only where no human sees it go: AS's TeleportStuckMarine
+// (asw_marine.cpp 4685). One merely left behind runs to catch up (AS_BotPace); AS never teleports it.
 // Whether q is on some player's screen, at least `margin` inside its edges: the top-down view's footprint on
 // the deck round the point the camera centres on (src/Marine.galaxy AS_VIEW_*), or ahead of a third-person
 // camera. The bottom edge looks down at the deck, so an alien's body shows there before its feet do: no margin.
@@ -696,18 +874,17 @@ bool AS_HumanSees (point q) {
     return false;
 }
 void AS_BotCatchUp (int p, point here) {
-    point lq;point to;bool far;
+    point lq;point to;
     if(as_auto && p==1) {AS_AutoUnstick(here);return;}
     if(as_leader==0 || as_leader==p || as_stage==AS_ST_RIDE) {as_botStuckAt[p]=as_now;return;}
     if(as_botLast[p]==null || DistanceBetweenPoints(here,as_botLast[p])>0.5) {as_botLast[p]=here;as_botStuckAt[p]=as_now;}
     lq=UnitGetPosition(as_m[as_leader]);
-    far=DistanceBetweenPoints(here,lq)>22.0;
-    if(!far && (as_now-as_botStuckAt[p]<6.0 || DistanceBetweenPoints(here,lq)<4.0)) {return;}
+    if(as_now-as_botStuckAt[p]<6.0 || DistanceBetweenPoints(here,lq)<4.0) {return;}
     if(as_crumbN<4) {return;}
     // A point a few steps back along the leader's trail, out of every human's sight.
     to=as_crumb[(as_crumbHead-3+48)%48];
     if(AS_HumanSees(here) || !AS_Free(PointGetX(to),PointGetY(to),AS_MARINE_R)) {return;}
     UnitSetPosition(as_m[p],to,false);as_mvX[p]=0.0;as_mvY[p]=0.0;
     as_botLast[p]=to;as_botStuckAt[p]=as_now;
-    AS_Log("bot "+IntToString(p)+" caught up");
+    AS_Log("bot "+IntToString(p)+" unstuck");
 }

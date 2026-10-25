@@ -10,6 +10,7 @@ GUN_W, GUN_H = 200, 100                  # PrimaryWeapon / SecondaryWeapon at (1
 GUN1_Y, GUN2_Y = 0, 75
 PX, PY = 45, 165                         # MarinePortrait (18, r94)
 RING = 188                               # MarinePortrait_circle_bg 75
+BEZEL = 264                              # the painted housing round the ring (tools/genart.py), centred on it
 BAR_W = 362                              # MarinePortrait_bar_bg 75, run on under three item slots instead of one
 FACE_X, FACE_Y, FACE_R = 95, 95, 68      # MarinePortrait_face 38, 38, radius 27
 CLS_X, CLS_Y, CLS = 98, 125, 55          # MarinePortrait_class_icon 39, 50, 22

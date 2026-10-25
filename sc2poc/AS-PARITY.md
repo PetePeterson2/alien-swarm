@@ -23,17 +23,17 @@ The goal is a port that plays like Alien Swarm in every way, starting with its f
 | System | Match today | Biggest gaps |
 |---|---|---|
 | Weapon numbers | Close | Sentry gun does twice AS's damage; sentries can't be hurt, dismantled or rotated |
-| Combat feel | Partial | No hurt-slow on aliens; instant turning; sideways aim assist on every gun; no clip-ring reticle |
-| Alien stats | Close | Uber too fast; several per-type rules missing |
-| Alien behaviour | Weak | Aliens sense the squad at any range through walls; sleepers are visible and wake on noise; boomer, jumper, buzzer, ranger, mortar, harvester, egg and shieldbug all act differently |
-| Spawning and director | Partial | Onslaught director matches; spawner orders, burrowed starts and timers are missing |
+| Combat feel | Close (Phase 1) | Not yet felt in the client |
+| Alien stats | Close (Phase 2) | Reinforced doors still have a normal door's 1,800 HP |
+| Alien behaviour | Close (Phase 2) | Not yet run in the client; Onslaught's opening packs are missing |
+| Spawning and director | Close | Spawner orders and burrowed starts are in; Landing Bay's hand-written spawners carry no orders |
 | Landing Bay layout | Close in the south, loose in the north | One flat floor; 26% of real floor missing; north halls too narrow; dock and yard too big |
 | Landing Bay script | Close | PDAs rotated by one; invented 40 s control-door force; missing catwalks, jump links and banging door |
 | Cargo Elevator | Invented | Layout, flow, set pieces, ride, alien types and exit are not AS's |
 | Elevations | None | Every floor is flat at one height |
-| Deaths and failure | Weak | No death camera or banner; tech death always restarts; no infested death |
-| Prompts and hints | Partial | Missing lessons, hint priority and the lift's "access denied" pop-up |
-| Squad AI | Partial | Breadcrumb follow with hidden teleports instead of AS's formation |
+| Deaths and failure | Close (Phase 3) | Not yet run in the client |
+| Prompts and hints | Close (Phase 3) | Hints aren't pinned to the world; no Extinguish lesson (marines don't burn here) |
+| Squad AI | Close (Phase 4) | Not yet run in the client; formation slots don't dodge boomer blobs |
 | Marine chatter | Partial (Phase 4) | Barks over the marine on AS's triggers, voiced in each marine's own voice (38 lines a marine, Gemini TTS, `tools/barks.py`), not AS's 124 recorded lines |
 | Lighting and fog | Partial | Orange light in the wrong room; outdoor zones missing in the north block and all of Cargo Elevator |
 | Deima Surface Bridge | Close (traced) | Built 2026-10-24, not yet run in the client; the dropship is a stand-in, its guns scripted |
@@ -145,12 +145,14 @@ Port fixes:
 
 | Skill | AS | Port |
 |---|---|---|
-| All | 128 drones, 1 infinite drone spawner, 17 infinite jumper spawners | Drones, buzzers, parasites, ubers, a ripper, a mortar, a shieldbug (with 3+ players), scaled by player count |
+| All | 128 drones, 1 infinite drone spawner, 17 infinite jumper spawners | Drones, buzzers, ubers, a ripper, a mortar, a shieldbug (with 3+ players), scaled by player count |
 | Normal+ | +11 drones | – |
 | Hard+ | +16 drones | – |
 | Insane | +10 drones, 9 parasites, 2 harvesters, 2 rangers, 3 infinite ranger spawners, 2 mortars, 1 boomer | – |
 
 Below Insane, AS's Cargo Elevator is drones only.
+
+**Parasites (2026-10-24):** the port's own parasites are gone: Cargo Elevator's eggs, the Crew Quarters and Service Shaft parasites, the gallery window burst, the vent blast and the ride's parasite climbers (now drones). Parasites now come only from AS's own spawners, which are all MinSkill 4 (Insane) in Landing Bay, Cargo Elevator and Rydberg Reactor; Deima has none. Below Insane, no early mission infests.
 
 **Difficulty scaling** (the `md` table: health, damage, speed, director) already matches `difficulty.cfg`.
 
@@ -182,14 +184,14 @@ Below Insane, AS's Cargo Elevator is drones only.
 | Alien | AS | Port |
 |---|---|---|
 | Boomer | Inflates when a marine is within 200 u (a 40% roll each second), then bursts into 1 to 8 blobs: 55 damage, radius 240, fuse 2.5 to 3.4 s. Killed before inflating, it bursts with nothing | Instant 30-damage burst plus 5 blobs on every death |
-| Jumper | Jumps only when the predicted landing point is 512 to 1,024 u away; the jump does no damage; 2 to 6 s cooldown | 1.8 to 4 cell pounces that do damage |
+| Jumper | Jumps only when the predicted landing point (the marine 2.5 s ahead) is 512 to 1,024 u away and in front of it; the jump does no damage; the cooldown is the flight time plus 2 to 6 s | 1.8 to 4 cell pounces that do damage |
 | Uber | Half a drone's speed (about 169 u/s), 15 damage; shotguns ×0.6 and lasers ×0.5 armour | Speed 2.9 cells/s, 18 damage, no armour |
 | Xenomite | 15-damage kamikaze; dies after 60 s | 5-damage biter |
 | Shieldbug | Front shield takes 0% except blasts; shield up and down states; knockdown 500/300; can't be hurt until engaged; never gibs; reach 100 u | ±70° front ×0.1 |
 | Buzzer | Bite 15×dt at most once per 1.5 s, with a screen blur 0.6×(1+md/10); charges and bounces; dies when frozen; burns 30 s at 5 with no ×3 | 8 damage per 0.8 s |
 | Ranger | 3-shot volley, 12 damage each (not difficulty-scaled), 425 u/s, every 4 s; steps back when hit; no keep-distance | Keeps distance, single shots |
 | Mortar | 3 shells, 50 damage, radius 220, fuse 3 s after landing, range 1,500, no line of sight needed, no ground ring | Shows a ground ring, other numbers differ |
-| Harvester | Lays a xenomite every 1 s up to 5, range 1,500, no line of sight; flees; 4 to 6 xenomites on death; touch 5 | Different cadence, doesn't flee |
+| Harvester | Lays a xenomite 1 s into each cycle, up to 6 alive (the SDK; this note said 5), range 1,500, no line of sight; flees within 960 u; 4 to 6 xenomites on death; touch 5 every 0.6 s | Different cadence, doesn't flee |
 | Egg | 50 HP; opens at 120 u, or a 10% chance per check within 450; hatches in 3 to 6 s; burnable | 30 HP, hatches in 0.7 s |
 | Alien goo | 100 HP, hurt only by fire, dissolves under 10, spreads fire, 10 acid per second on touch | Biomass 600 HP |
 | Explosive barrel | 4 HP (3+0.45(md−1)), 200 damage radius 160, radius 80 against marines | 30 HP |
@@ -198,7 +200,7 @@ Below Insane, AS's Cargo Elevator is drones only.
 - AS spawners give orders: MoveTo a target, IgnoringMarines, and SpreadThenHibernate.
 - Spawners can start burrowed, with an unburrow window.
 - Onslaught opens with a shieldbug and parasite packs.
-- Doors take dents. Reinforced doors have 2,400 HP, and a falling door crushes what is under it.
+- Doors take dents. Reinforced doors have 2,400 HP, and a falling door crushes what is under it (1,000 damage; marines only on Hard and up).
 - An infested marine's death releases 3 to 5 parasites.
 
 **Port-only alien behaviour:**
@@ -222,17 +224,17 @@ All 38 items' clips, reserves, reloads, damage, skill steps, unlock levels, clas
 **Items (high):**
 - AS sentries have 300 HP, aliens target them, and they blow up for 150 damage over 400 u.
 - Hold E dismantles a sentry back into a weapon with its ammo, and a quick E rotates it.
-- The sentry gun fires every 0.1 s at 10×difficulty. The port's every 0.0625 s at 12.8 is twice AS's damage.
-- The freeze sentry also does 25 damage; the port's does none.
+- The sentry gun fires every 0.08 s for a flat 10: the skill-scaled damage is computed and thrown away (`asw_sentry_top.cpp:473-481`). This note said every 0.1 s at 10×difficulty.
+- The freeze sentry does 1 damage and 0.4 freeze a shot (`asw_sentry_top_icer.cpp:54-56`). This note said 25 damage.
 
 **Medium:**
 - **Friendly fire:** AS uses full damage × difficulty with an armour-absorption ramp. The port uses a flat 50%.
 - **The rifle grenade:** AS's flies straight at 1,000 u/s. The port's lobs to the cursor.
-- **Electric armour:** fully absorbs claws in AS; the port cuts them ×0.25.
+- **Electric armour:** AS cuts claws ×0.25 too (`asw_marine.cpp:1150-1185`); this note said it fully absorbs them. What the port lacked was the 20 shock back at the attacker and the 5 to everything within 160 u on use.
 - **Heal beacon:** the low-health boost is 1+3(1−hp) in AS and 1+(1−hp) in the port. The heal gun's cure is spread over the clip in AS.
 - **Reloading and switching:** a roll cancels a reload in AS. Switching guns takes 0.5 s, not 0.3. Slow-downs after firing are per gun.
 - **Rounding:** the medical gun and launcher rates are rounded to 1/16 s without rescaling heal or damage.
-- **Hacking skill:** AS has one; the port doesn't.
+- **Hacking skill:** AS has the code, but no marine profile has hacking points, so every tech hacks at 2.0 (`asw_marine_skills.cpp:40, 86, 255-256`). Nothing to port.
 
 **Low:** triangular spread, no camera shake on the shotgun and railgun, a low-ammo click, chainsaw reach 30 u, hornet ±35° radius 50, mine spacing, and the rest in `parity-weapons.md`.
 
@@ -262,7 +264,7 @@ The port has none of this.
 - Three-hit melee combo (2a, 2b, 2c; 2c has a 70 u hull).
 - Stumbles at most every 2 s, and the shieldbug knocks marines down.
 - A heartbeat under 60% health, suit sparks under 65% and 35%, and a directional damage indicator.
-- A 0.2× slow-motion for 1.8 s on each objective update.
+- AS has a 0.2× objective slow-motion for 1.8 s in its code, but never sets its end time, so it never plays. The port leaves it out.
 - Stims slow the whole game to 0.35×, not just aliens.
 - Rolling gives no parasite immunity, and the roll is an animated dive.
 - The mouse wheel cycles weapons in AS; the port zooms.
@@ -270,7 +272,7 @@ The port has none of this.
 
 ### 6. Squad AI
 
-- **Formation** (high): AS keeps three formation slots, including a rear guard at (−120, 0) facing back. It aims at the leader's position 0.3 s ahead and catches up at ×1.1 to ×1.75 speed, with no teleport. The port follows breadcrumbs and teleports hidden bots.
+- **Formation** (high): AS keeps three formation slots, including a rear guard at (−120, 0) facing back. It aims at the leader's position 0.3 s ahead and catches up at ×1.1 to ×1.75 speed. The only teleport is `TeleportStuckMarine` for a wedged marine (`asw_marine.cpp:4685`); this note said there was none. The port followed breadcrumbs and teleported hidden bots.
 - **Items** (medium):
   - Bots pick up ammo and use ammo bags.
   - Medics heal with the heal gun from 65% up to 85%.
@@ -336,6 +338,8 @@ The phases are ordered so that the shared systems come first: they change both l
 
 These are the open items in `AS-COMBAT.md`'s "Still proposed", plus the weapons audit.
 
+**Status (2026-10-24): done, built, not yet run in the client.** The hurt-slow, staggers and no push; turning at 600/300°/s; aim assist on the prototype rifle and autogun only; the clip-ring reticle (`AS_ReticlePulse`, `ASFxRet*` meshes); sentries at 300 HP with AS's gun rate and the freeze sentry's 1 damage; friendly fire with AS's absorption ramp; the beacon's 1+3(1−hp); the 0.5 s switch; and the infestation tick from the marine's own spot. The Hacking skill needed nothing (section 4). Also from section 5: the wheel swaps weapons, SHIFT walks, and the damage indicator shows where a hit came from.
+
 ### Phase 2: alien behaviour (both levels)
 
 1. **Senses:** sight 768 and swarm sense 576 through walls, doubled for long-range spawners, widened on a new enemy, and lost past 2,000. Replace the any-range nearest-marine search with a line-of-sight check.
@@ -343,6 +347,15 @@ These are the open items in `AS-COMBAT.md`'s "Still proposed", plus the weapons 
 3. **Per-type rewrites** to the table in section 3: boomer, jumper, uber, xenomite, shieldbug, buzzer, ranger, mortar, harvester, egg, goo and barrel.
 4. **Spawner orders** (MoveTo, IgnoringMarines, SpreadThenHibernate), burrowed starts, Onslaught's opening packs, door dents and crush, and the infested death.
 5. **Port-only behaviour** off by default: the ripper, waking on gunfire, keep-distance, the mortar ring, the story director and damage numbers.
+
+**Status (2026-10-24): done, built, not yet run in the client.**
+- Senses, sleep (opacity, so a sleeper can still be shot as AS allows, and wakes when hit), burrowing, and every per-type rewrite in section 3's table are in `src/Aliens.galaxy`.
+- Spawner orders 1 to 3 and the long-range flag come from the traced levels (`tools/astrace.py`). Landing Bay's hand-written spawners in `tools/landingbay.py` carry no orders, so they default to plain.
+- Door dents, shots and blasts on doors, and the crush are in `src/Doors.galaxy`.
+- The port-only behaviour sits behind a new EXTRAS toggle in the briefing, off by default; damage numbers follow it.
+- **Not done:**
+  - Onslaught's opening shieldbug and parasite packs: the SDK pass didn't find where they're set.
+  - Reinforced doors aren't told apart, so every door has 1,800 HP.
 
 ### Phase 3: deaths, failure and prompts
 
@@ -352,11 +365,35 @@ These are the open items in `AS-COMBAT.md`'s "Still proposed", plus the weapons 
 4. Hints: combat priority, world-pinned hints, the missing lessons, scored fail advice and info-message pop-ups.
 5. The scanner sounds, the objective slow-motion beat, game-wide stim slow, and weapon cycling on the wheel.
 
+**Status (2026-10-24): done, built, not yet run in the client.**
+- The tech rule: restart within 30 s, otherwise a 5.9 s countdown to failure.
+- The death scene (`src/Moments.galaxy`), the green infestation overlay with its blinking "- INFESTED -", and the infested death.
+- Hints:
+  - The Priority Bumper: 90 for 5 s after a hurt within 3.75 cells, holding back lessons under 90.
+  - The new lessons, with AS's priorities: Killed By Infestation, Watch Scanner, Activate Panel, Destroy Door, Heal Other, Aim Sentry, Get Ammo and Give Ammo.
+  - The shieldbug's "flank it" lesson at 600 turned.
+- Fail advice is scored (`src/Campaign.galaxy`): 12 of AS's 19 tips, each cooling for 3 missions after it's given. The ignored-item, wasted-heal, lighting and slow-progress tips have nothing in the port to count.
+- The scanner's warning beep and idle ping follow `asw_hud_minimap.cpp`'s sweep (stock SC2 beeps, at fixed pitch). The stim slows the whole game. The objective beat is left out because AS never plays it (section 5).
+- **Not done:**
+  - Hints pinned to the world.
+  - The Extinguish lesson: marines here can't catch fire.
+  - The lift's access-denied pop-up keeps the titled message the Cargo Elevator rebuild gave it.
+
 ### Phase 4: squad AI
 
 1. AS's formation: three slots with a rear guard, leader prediction, catch-up speeds and no teleporting.
 2. Bots pick up and share ammo, medics heal, and bots don't use their own medkits.
 3. The hotbar keys and the single-marine order.
+
+**Status (2026-10-24): done, built, not yet run in the client.** All of this is in `src/Bots.galaxy`.
+- **Formation:** AS's three slots, laid round the leader's spot 0.3 s ahead and moved only after the leader goes 0.5 cells. Each bot watches its slot's way, and catches up at AS's 1.10 + 0.65(d²−400)/1800² pace.
+- **Teleports:** the out-of-sight catch-up teleport is gone. Only the stuck teleport is left, as AS's `TeleportStuckMarine`.
+- **Ammo:** a bot looks for an ammo stash within 4.8 cells every second, leaving one alone for 15 s if it can't reach it. Every 2 s, a bot carrying a satchel deploys it for a person who is out, or failing that for a dry bot.
+- **Medics:** an AI medic heals from 65% to 85% with its heal gun.
+- **Port-only, now behind EXTRAS:** bots using their own medkits, and the dry-gun scrounge.
+- **Keys:** 2 to 4 have that squadmate use its offhand item at the cursor. SHIFT+2 to 4 sends it to hold there.
+- **Chatter:** barks over the marine on AS's triggers, with the team timer, cooldowns and chances (16 kinds). Since 2026-10-25 each line is also said aloud in the speaking marine's own voice (`tools/barks.py`: Gemini TTS, one take a marine cut at its pauses, checked by a blind transcription; `assets/barks/`).
+- **Not done:** formation slots don't steer round boomer blobs, and there's no heal-beacon formation.
 4. Chatter: barks on AS's triggers, in the form decided in Phase 0.
 
 ### Phase 5: Landing Bay
@@ -493,6 +530,6 @@ Both done missions run on the scripted-mission data (`STATUS.md`). What they do 
 ## Decisions needed
 
 1. **Map layout.** Separate regions with real heights (recommended), or keep one flat map and fake steps with ramps and props.
-2. **Port-only additions.** Turn them off by default with an option to keep them (recommended), or delete them outright. The list: the story director, the ripper, waking on gunfire, keep-distance, the mortar ring, damage numbers, the Cargo Elevator inventions and the Landing Bay control-door force.
+2. **Port-only additions.** Turn them off by default with an option to keep them (recommended), or delete them outright. The list: the story director, the ripper, waking on gunfire, keep-distance, the mortar ring, damage numbers, the Cargo Elevator inventions and the Landing Bay control-door force. Settled in part: Cargo Elevator's invented parasite sources were deleted outright (user's call, 2026-10-24).
 3. **Chatter.** Text barks, SC2 voice lines or new recordings.
 4. **A short squad.** AS's lift needs four marines. With fewer players, bots fill the squad, so the check counts bots.

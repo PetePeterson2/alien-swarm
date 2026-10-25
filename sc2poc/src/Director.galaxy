@@ -137,11 +137,12 @@ int AS_AwakeDrones () {
 
 // ---- the cycle -------------------------------------------------------------
 // The story director (no Onslaught) runs on Normal and up while the mission lets it (as_director,
-// cleared for the lift ride, the transit-car hold and the end); Onslaught always runs AS's own.
+// cleared for the lift ride, the transit-car hold and the end), and only with the briefing's EXTRAS on: it is the
+// port's own. Onslaught always runs AS's own.
 bool AS_DirStory () {return !as_onslaught;}
 bool AS_DirectorRuns () {
     if(as_onslaught) {return true;}
-    return as_director && as_skill>=2 && !as_demo;
+    return as_director && as_skill>=2 && !as_demo && as_extras;
 }
 fixed AS_DirHordeGap () {
     if(AS_DirStory()) {return RandomFixed(75.0,100.0);}
@@ -259,7 +260,7 @@ void AS_DevSpawn (int p, int kind) {
     point at=AS_AimPoint(p);int i;
     if(kind==0) {AS_StartHorde();return;}
     if(AS_Solid(PointGetX(at),PointGetY(at))) {at=PointWithOffsetPolar(UnitGetPosition(as_m[p]),3.0,as_aim[p]);}
-    i=AS_SpawnNear(kind,PointGetX(at),PointGetY(at),true);
+    as_devKind=true;i=AS_SpawnNear(kind,PointGetX(at),PointGetY(at),true);as_devKind=false;
     if(i>=0) {AS_Message(p,"Spawned "+as_kindName[kind]);}
 }
 bool AS_HordeActive () {return as_hordeLeftN>0;}

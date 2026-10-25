@@ -95,6 +95,8 @@ ONESHOTS = [
 # whenever anyone stood on the platform and the rooms outside showed through them.
 LIFT_MODELS = {'ESeg', 'ESegIn', 'ESegOut', 'EGateLeaf', 'EPlatform', 'EVoid', 'EBridge', 'EScreenR', 'EScreenG'}
 FX_UNITS = ['Tracer', 'Arc', 'Flash', 'Burst', 'Flame', 'Smoke', 'Ring', 'Splat1', 'Splat2', 'SplatGlow1', 'SplatGlow2', 'Scorch', 'Anchor']
+# The crosshair's clip ring and its fast-reload window arcs (tools/fx.py): swapped in on one unit per marine.
+FX_UNITS += ['Ret%02d' % n for n in range(25)] + ['RetWin6', 'RetWin9', 'RetWin12']
 
 
 def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units=()):
@@ -215,7 +217,12 @@ def build(files, hull_models, props, kit_models=(), runtime_props=(), mesh_units
     for name in FX_UNITS:
         m = child(cat['Model'], 'CModel', id='ASFx' + name + 'Model', parent='Doodad')
         child(m, 'Model', value='Derelict\\Fx\\' + name + '.m3')
-        unit('ASFx' + name, 'ASFx' + name + 'Model', 1.0, 0)
+        a = unit('ASFx' + name, 'ASFx' + name + 'Model', 1.0, 0)
+        # A crosshair is its own marine's player's alone: owned by that player and drawn for no one else.
+        if name.startswith('Ret'):
+            for v in a.findall('VisibleTo'):
+                if v.get('index') != 'Self':
+                    v.set('value', '0')
     for ident, model, scale, life in ONESHOTS:
         a = child(cat['Actor'], 'CActorModel', id=ident, parent='ModelAnimationStyleOneShot')
         child(a, 'Model', value=model); child(a, 'Scale', value=scale)
