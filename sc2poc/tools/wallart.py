@@ -8,6 +8,8 @@ alarm lamps. Drawn from scratch with NumPy.
 
 A bay is two map units wide by the wall's 2.5 height (512 x 640 px); row 0 is the top.
 """
+import math
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -444,6 +446,152 @@ def tex_machine(seed=31, size=512):
     return _img(a)
 
 
+# ---- SynTek Residential (asi-jac4-residential: res_metalwall001a/b, concretefloor051c on its walls) ----
+def _panels(a, x_step, y0, y1, seed, inset=14, depth=0.6, lite=1.15):
+    """Framed panels between y0 and y1, x_step wide: a dark groove round each with a lit lower-right lip, a slight
+    bulge in the middle (pressed sheet), a riveted corner each side."""
+    for x in range(0, WW, x_step):
+        x0, x1 = x + inset, x + x_step - inset
+        a[y0:y1, x0 - 3:x0] *= depth; a[y0:y1, x1:x1 + 3] *= depth
+        a[y0 - 3:y0, x0:x1] *= depth; a[y1:y1 + 3, x0:x1] *= depth
+        a[y0:y1, x1 - 2:x1] *= lite; a[y1 - 2:y1, x0:x1] *= lite
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        bulge = 1 + 0.05 * np.sin((xx - x0) / max(1, x1 - x0) * math.pi) * np.sin((yy - y0) / max(1, y1 - y0) * math.pi)
+        a[y0:y1, x0:x1] *= bulge[..., None]
+        _rivets(a, [(x0 + 10, y0 + 10), (x1 - 10, y0 + 10), (x0 + 10, y1 - 10), (x1 - 10, y1 - 10)], (150, 160, 158), 3)
+
+
+def wall_seagreen(seed=250, tone=(116, 160, 150), stripe=(214, 150, 74)):
+    """res_metalwall001a: SynTek's housing blocks, pale sea-green pressed-steel panels two to a bay in a frame
+    of flat bars, a worn orange band low down, a dark rubbed kick plate; damp grime run down from every ledge."""
+    a = _wall_base(seed, tone, 256)
+    U1, M0, L1 = int(WH * 0.05), int(WH * 0.62), int(WH * 0.88)
+    a[:U1] *= 0.5; a[U1 - 3:U1] *= 1.6
+    _panels(a, 256, U1 + 18, M0 - 8, seed)
+    # The frame's flat bars: a vertical one between the panels, a little darker, each with its bolt line.
+    for x in range(0, WW, 256):
+        a[:, max(0, x - 10):x + 10] *= 0.86
+        _rivets(a, [(x + 0, y) for y in range(U1 + 30, M0, 60)], (130, 146, 142), 3)
+    _band(a, M0, M0 + 34, stripe, seed + 5, worn=0.35)
+    _panels(a, 256, M0 + 42, L1 - 6, seed + 1)
+    _kick(a, L1, seed + 2)
+    a = _weather(a, seed + 3, 70, 0.04)
+    return _img(a), None
+
+
+def wall_seadark(seed=260):
+    """res_metalwall001b: the same panels in dark gunmetal, where the block's service runs and back rooms are."""
+    a = _wall_base(seed, (76, 82, 84), 256)
+    U1, M0, L1 = int(WH * 0.05), int(WH * 0.62), int(WH * 0.88)
+    a[:U1] *= 0.55; a[U1 - 3:U1] *= 1.7
+    _panels(a, 256, U1 + 18, L1 - 8, seed, depth=0.55, lite=1.3)
+    for x in range(0, WW, 256):
+        a[:, max(0, x - 10):x + 10] *= 0.8
+    a[M0:M0 + 6] *= 0.6
+    _kick(a, L1, seed + 2)
+    a = _weather(a, seed + 3, 60, 0.045)
+    return _img(a), None
+
+
+def wall_whitetile(seed=270):
+    """concretefloor051c on the offices' and mall's walls: glazed white tiles a quarter unit square in grey grout,
+    a few a shade off or cracked, grime gathered low and a steel skirting."""
+    r = np.random.default_rng(seed)
+    a = np.zeros((WH, WW, 3)) + np.array((206, 210, 208), float)
+    a *= (0.95 + 0.06 * _noise(0, 40, seed, 3, (WH, WW)))[..., None]
+    T = 64
+    L1 = int(WH * 0.9)
+    for ty in range(0, L1, T):
+        for tx in range(0, WW, T):
+            a[ty:ty + T, tx:tx + T] *= r.uniform(0.93, 1.04)
+            if r.random() < 0.05:
+                y = ty + int(r.integers(8, T - 8))
+                a[y:y + 1, tx + 4:tx + T - 10] *= 0.7
+    yy, xx = np.mgrid[0:WH, 0:WW]
+    g = (xx % T < 3) | (yy % T < 3)
+    a[g] = a[g] * 0.55 + np.array((60, 62, 60)) * 0.1
+    gloss = np.clip(1 - np.abs((xx % T) - (yy % T) - 8) / 10.0, 0, 1) * ((xx % T) > 6) * ((yy % T) > 6)
+    a *= (1 + 0.06 * gloss)[..., None]
+    a[L1:] = np.array((96, 100, 102)) * (0.9 + 0.2 * _noise(0, 20, seed + 4, 3, (WH - L1, WW)))[..., None]
+    a[L1:L1 + 3] *= 0.5
+    foot = np.clip((yy - WH * 0.6) / (WH * 0.3), 0, 1) * _noise(0, 30, seed + 5, 3, (WH, WW))
+    a *= (1 - 0.25 * foot)[..., None]
+    a = _weather(a, seed + 3, 40, 0.025)
+    return _img(a), None
+
+
+SHOPS = [('PHARMACY', (40, 190, 120)), ('NOODLES', (230, 120, 50)), ('SYNTEK STORE', (60, 150, 230)), ('BAR', (220, 60, 90)),
+         ('TOOLS', (230, 190, 60)), ('MED', (90, 220, 200))]
+
+
+def wall_shop(seed=280, shop=0):
+    """The mall's shopfronts: a lit sign box over a dark window full of shelves, a steel frame and a shutter
+    rail, white tile beside it."""
+    a = np.asarray(wall_whitetile(seed)[0]).astype(float)
+    emis = np.zeros((WH, WW, 3))
+    name, col = SHOPS[shop % len(SHOPS)]
+    x0, x1 = 36, WW - 36
+    sy0, sy1 = int(WH * 0.08), int(WH * 0.2)
+    wy0, wy1 = int(WH * 0.26), int(WH * 0.84)
+    a[sy0 - 8:wy1 + 8, x0 - 10:x1 + 10] = (52, 56, 58)
+    # Sign: the colour behind white letters, lit.
+    sign = np.array(col, float) * 0.85
+    a[sy0:sy1, x0:x1] = sign; emis[sy0:sy1, x0:x1] = sign * 0.55
+    _label(a, name, x0, x1, sy0, sy1, (250, 250, 240), 44)
+    _label(emis, name, x0, x1, sy0, sy1, (200, 200, 190), 44)
+    # Window: dark glass, shelves of goods in muted colours behind, a glare streak.
+    r = np.random.default_rng(seed + shop)
+    win = np.zeros((wy1 - wy0, x1 - x0, 3)) + np.array((22, 28, 32))
+    for sh in range(4):
+        y = 30 + sh * ((wy1 - wy0 - 40) // 4)
+        win[y:y + 6] = (60, 62, 60)
+        x = 10
+        while x < x1 - x0 - 30:
+            w = int(r.integers(14, 34)); h = int(r.integers(20, 60))
+            c = np.array(r.choice([(150, 60, 50), (60, 110, 150), (200, 180, 90), (90, 140, 80), (180, 180, 170)]), float) * r.uniform(0.35, 0.6)
+            win[max(0, y - h):y, x:x + w] = c
+            x += w + int(r.integers(4, 14))
+    yy, xx = np.mgrid[0:wy1 - wy0, 0:x1 - x0]
+    glare = np.clip(1 - np.abs(((xx + yy * 0.7) % 260) - 70) / 18, 0, 1) * 0.25
+    win = win * 0.8 + glare[..., None] * np.array((150, 170, 175))
+    a[wy0:wy1, x0:x1] = win
+    emis[wy0:wy1, x0:x1] = win * 0.25 + np.array(col) * 0.05
+    # The shutter rail under the sign and the steel frame's mullions.
+    a[wy0 - 10:wy0, x0:x1] = (90, 94, 96); a[wy0 - 10:wy0 - 8, x0:x1] *= 1.3
+    for x in (x0, (x0 + x1) // 2, x1):
+        a[wy0:wy1, x - 4:x + 4] = (70, 74, 76)
+    a = _weather(a, seed + 3, 30, 0.03)
+    return _img(a), _img(emis)
+
+
+def wall_housing(seed=290, unit=4):
+    """The block's flats along a corridor: a recessed apartment door with its number and a lit keypad, a small
+    frosted window beside it, on the sea-green panels and orange band."""
+    a = np.asarray(wall_seagreen(seed)[0]).astype(float)
+    emis = np.zeros((WH, WW, 3))
+    dx0, dx1, dy0, dy1 = 70, 250, int(WH * 0.12), int(WH * 0.88)
+    a[dy0 - 10:dy1, dx0 - 10:dx1 + 10] = (58, 66, 66)
+    door = np.array((150, 156, 150), float) * (0.85 + 0.2 * _noise(0, 20, seed + 6, 3, (dy1 - dy0, dx1 - dx0)))[..., None]
+    a[dy0:dy1, dx0:dx1] = door
+    a[dy0:dy1, (dx0 + dx1) // 2 - 2:(dx0 + dx1) // 2 + 2] *= 0.5
+    a[dy0 + 60:dy0 + 66, dx0 + 12:dx1 - 12] *= 0.6
+    _label(a, '%d%02d' % (2 + seed % 3, unit), dx0 + 20, dx1 - 20, dy0 + 14, dy0 + 56, (40, 46, 46), 34)
+    # Keypad: a small lit green screen on the frame.
+    a[int(WH * 0.45):int(WH * 0.52), dx1 + 16:dx1 + 40] = (30, 160, 90); emis[int(WH * 0.45):int(WH * 0.52), dx1 + 16:dx1 + 40] = (20, 140, 70)
+    # Frosted window, the flat's light behind it.
+    wx0, wx1, wy0, wy1 = 320, 470, int(WH * 0.16), int(WH * 0.44)
+    a[wy0 - 8:wy1 + 8, wx0 - 8:wx1 + 8] = (70, 78, 78)
+    lit = unit % 3 != 0
+    glass = np.array((200, 196, 170) if lit else (70, 84, 90), float) * (0.85 + 0.2 * _noise(0, 16, seed + 7, 3, (wy1 - wy0, wx1 - wx0)))[..., None]
+    a[wy0:wy1, wx0:wx1] = glass
+    a[wy0:wy1, (wx0 + wx1) // 2 - 3:(wx0 + wx1) // 2 + 3] = (70, 78, 78)
+    if lit:
+        emis[wy0:wy1, wx0:wx1] = glass * 0.5
+    a = _weather(a, seed + 3, 30, 0.03)
+    return _img(a), _img(emis)
+
+
+
 # tools/level.py KIT_WALLS names -> the bay drawn for it.
 WALLS = {'wall_plain0': ('clean', 100), 'wall_plain1': ('colony', 101), 'wall_pipes2': ('pipes', 102), 'wall_vent3': ('vent', 103),
          'wall_screen4': ('screen', 104), 'wall_light5': ('light', 105), 'wall_alarm6': ('alarm', 106)}
@@ -457,6 +605,12 @@ def textures():
     out['cap_snow'] = (tex_cap_snow(), None)
     out['wall_bluestripe'] = wall_bluestripe()
     out['wall_rust'] = wall_rust()
+    out['wall_seagreen'] = wall_seagreen()
+    out['wall_seadark'] = wall_seadark()
+    out['wall_whitetile'] = wall_whitetile()
+    for k in range(3):
+        out['wall_shop%d' % k] = wall_shop(280 + k, k * 2 + (k > 0))
+    out['wall_housing'] = wall_housing()
     out['wall_trim'] = (tex_trim(), None)
     out['cap'] = (tex_cap(), None)
     out['machine_top'] = (tex_machine(), None)

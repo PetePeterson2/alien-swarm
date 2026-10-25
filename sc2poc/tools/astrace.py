@@ -8,6 +8,7 @@ level cells from it, and keeps only rectangles of its own (rooms, cuts, the miss
     t = Trace('asi-jac2-deima', cx0, cy0, W, H)    cells of 80 units, cell (0, 0) at 80-unit cell (cx0, cy0)
     t.HEIGHTS                                       the fit tools/heights.py samples floor heights with
     t.deck()                                        bool[H, W]: walkable floor
+    t.walls(pct)                                    bool[H, W]: walled at chest height over pct percent of the cell
     t.below(z)                                      bool[H, W]: nothing up-facing at z or above (the drop)
     t.at(hx, hy), t.rect(box)                       Hammer points and boxes in level cells
 
@@ -106,6 +107,13 @@ class Trace:
         self.walk_z = self._crop(_halve(d['walk_z'], np.nanmedian))
         self.walk_pct = self._crop(_halve(d['walk_pct'], np.nanmean))
         self.top_z = self._crop(_halve(d['top_z'], np.nanmax))
+        self.wall_pct = self._crop(_halve(d['wall_pct'], np.nanmean)) if 'wall_pct' in d else np.zeros((H, W))
+        # The walls in 10-unit pixels, 8 to a cell, south row first.
+        self.wall_px = np.zeros((H * 8, W * 8), bool)
+        if 'wall_px' in d:
+            px = d['wall_px']
+            ys, xs = slice(max(0, cy0 * 8), min(px.shape[0], (cy0 + H) * 8)), slice(max(0, cx0 * 8), min(px.shape[1], (cx0 + W) * 8))
+            self.wall_px[ys.start - cy0 * 8:ys.stop - cy0 * 8, xs.start - cx0 * 8:xs.stop - cx0 * 8] = px[ys, xs]
         self.entities = d['entities']
 
     def _crop(self, a):
@@ -121,6 +129,30 @@ class Trace:
         with np.errstate(invalid='ignore'):
             m = (np.nan_to_num(self.walk_pct) >= pct) & ~np.isnan(self.walk_z) & (self.walk_z >= zmin) & (self.walk_z <= zmax)
         return components(m, smallest)
+
+    def walls(self, pct=10):
+        """Cells a solid brush stands in at chest height over at least `pct` percent of the cell (tools/asextract.py
+        wall_pct): the rooms' walls, which the floor alone does not show where they are detail brushes."""
+        return np.nan_to_num(self.wall_pct) >= pct
+
+    def open_deck(self, pct=50, smallest=12):
+        """The deck without the floor the walls stand on: a cell is deck when at least `pct` percent of it is walkable
+        and not walled (detail blocks the floor runs on under, and the clips along the walls, go)."""
+        free = np.nan_to_num(self.walk_pct) - np.nan_to_num(self.wall_pct)
+        return components(self.deck(pct, smallest) & (free >= pct), smallest)
+
+    def partitions(self, deck, fill=6):
+        """Deck cells a thin wall crosses with deck on both sides of it: a band of wall pixels `fill` of 8 long across
+        the cell, east-west with deck north and south, or north-south with deck east and west. These are the walls
+        between rooms, too thin to take half a cell, that the port makes a cell of hull."""
+        H, W = deck.shape
+        b = self.wall_px[:H * 8, :W * 8].reshape(H, 8, W, 8)
+        across = b.sum(3).max(1) >= fill            # a pixel row nearly full: a wall running east-west
+        along = b.sum(1).max(2) >= fill             # a pixel column nearly full: north-south
+        d = np.pad(deck, 1)
+        ns = d[:-2, 1:-1] & d[2:, 1:-1]
+        ew = d[1:-1, :-2] & d[1:-1, 2:]
+        return deck & ((across & ns) | (along & ew))
 
     def below(self, z):
         """Cells where the highest up-facing surface lies below z, or there is none at all inside the map's floor."""

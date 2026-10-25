@@ -23,7 +23,7 @@ bool[@W@][@H@] as_kitNear;        // hull cell within five of the deck: gets a c
 bool[@W@][@H@] as_kitEdge;        // collision cell touching the deck: gets a pathing blocker
 bool[@W@][@H@] as_doorCell;        // a door's cells: the kit lays no pathing blocker there, the door does its own (Doors)
 bool[@W@][@H@] as_kitFloorDone;   // scratch: the cell has its floor plating
-string[16] as_kitPanels;        // per kind: the wall panels it draws from, one digit each
+string[32] as_kitPanels;        // per kind: the wall panels it draws from, one digit each
 int as_kitWalls;
 int as_kitTiles;
 int as_kitCaps;
@@ -77,8 +77,8 @@ actor[96] as_kitPropA;
 fixed[96] as_kitPropRot;
 fixed as_kitPropTurn = 0.0;
 
-// A deck row's room kind, or a kind's wall panel: one character, 0-9 then a-f (tools/heights.py KIND_CHARS).
-int AS_CharIdx (string c) {return StringFind("0123456789abcdef",c,c_stringCase)-1;}
+// A deck row's room kind, or a kind's wall panel: one character, 0-9 then a-u without m, o (tools/heights.py KIND_CHARS).
+int AS_CharIdx (string c) {return StringFind("0123456789abcdefghijklnpqrstu",c,c_stringCase)-1;}
 void AS_DeckRow (int y, string s) {
     int x;string c;
     for(x=0;x<AS_W;x+=1) {

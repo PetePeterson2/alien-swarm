@@ -56,10 +56,12 @@ def _conflicts(occ_mask, occ_key, mask, key):
 
 
 def _shifts(level, base):
-    """Whole-level lifts to try: none, then each of its most common heights moved onto the base height."""
+    """Whole-level lifts to try: none, then each of its most common heights moved onto the base height; none that
+    takes a pit's floor below SC2's lowest terrain or a gallery over its highest (build.py checks 0 .. 250)."""
     v = level['vert'][level['vmask']]
     u, n = np.unique(np.rint(v * Q) / Q, return_counts=True)
     out = [0.0] + [base - h for h in u[np.argsort(-n)][:6]]
+    out = [s for s in out if v.min() + s >= 0.0 and v.max() + s < 250.0]
     return list(dict.fromkeys(round(s, 6) for s in out))
 
 
@@ -112,7 +114,13 @@ def pack(levels, base=8.0, min_size=(0, 0), clash=0, sizes=None):
     for MW, MH in sizes:
         if tried_fail.get(MW, 0) >= MH:
             continue
-        got = place(levels, MW, MH, base, clash=clash)
+        # Biggest first, bottom-left, as a rule; when that leaves no room, the levels in their own (campaign) order
+        # and in reverse, which can fit where the rule does not.
+        got = None
+        for order in (None, list(range(len(levels))), list(range(len(levels)))[::-1]):
+            got = place(levels, MW, MH, base, order=order, clash=clash)
+            if got is not None:
+                break
         if got is None:
             tried_fail[MW] = max(tried_fail.get(MW, 0), MH)
             continue

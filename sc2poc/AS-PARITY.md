@@ -38,6 +38,7 @@ The goal is a port that plays like Alien Swarm in every way, starting with its f
 | Lighting and fog | Partial | Orange light in the wrong room; outdoor zones missing in the north block and all of Cargo Elevator |
 | Deima Surface Bridge | Close (traced) | Built 2026-10-24, not yet run in the client; the dropship is a stand-in, its guns scripted |
 | Rydberg Reactor | Close (traced) | Built 2026-10-24, not yet run in the client; the exit doors open after a fixed 32 s, not AS's animation |
+| SynTek Residential | Close (traced) | Built 2026-10-24, not yet run in the client; no grub sacs, the fire extinguishers are scenery |
 
 ## The deltas
 
@@ -392,13 +393,18 @@ The next missions after Cargo Elevator are traced from their maps from the start
 
 1. **Deima Surface Bridge** (`tools/deima.py`): done 2026-10-24.
 2. **Rydberg Reactor** (`tools/rydberg.py`): done 2026-10-24.
-3. **Residential, Sewer Junction and Timor Station:** to do. Each is a module like the two above. The pack already has room for all three (`tools/pack.py --campaign`), and Timor Station gives up 2.6% of its floor vertices there.
+3. **SynTek Residential** (`tools/residential.py`): done 2026-10-24.
+4. **Sewer Junction and Timor Station:** to do. Each is a module like the ones above. The pack already has room for all three (`tools/pack.py --campaign`), and Timor Station gives up 2.6% of its floor vertices there.
 
 Both done missions run on the scripted-mission data (`STATUS.md`). What they do differently from AS:
 - **Deima:** the dropship is a stand-in model on path nodes, and its turrets are scripted.
 - **Rydberg:**
   - The north doors open on a fixed delay rather than AS's mover animation.
   - The reactor core is a prop rising out of a well opened for it; AS's fall volumes there lie under the floor.
+- **Residential:**
+  - AS's grub sacs, which burst into grubs as a marine passes, are left out. The grubs themselves sleep where AS places them.
+  - The office windows are a door kind that gives way when a marine comes up or a drone swipes. AS's break to any damage.
+  - The elevator's second mortarbug template is left out.
 
 **Status:** both are built and checked offline. The autopilot run in the client is still to do.
 

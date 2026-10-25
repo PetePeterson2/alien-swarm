@@ -47,6 +47,7 @@ int AS_SpawnAlien (int kind, fixed x, fixed y, bool awake) {
         if(kind==AS_JUMPER) {ActorSend(libNtve_gf_MainActorofUnit(as_a[i]),"SetTintColor 255,190,150");}
     }
     if(kind==AS_BIOMASS) {as_bioCount+=1;}
+    AS_HiveReset(i);
     return i;
 }
 // Every alien's position, once a step, for the many tests that only need x and y.
@@ -171,6 +172,7 @@ void AS_HurtAlien (int i, fixed dmg, int kind, int p, fixed fromX, fixed fromY) 
         }
     }
     if(as_aKind[i]==AS_BIOMASS && kind!=1) {dmg*=0.05;}
+    if(as_aKind[i]==AS_BIOMASS && kind==1) {AS_HiveLit(i);}
     as_aHp[i]-=dmg;as_aLastDmg[i]=dmg;
     if(as_aKind[i]!=AS_BARREL) {
         if(turned && kind!=1) {AS_HitFlash(i,4);AS_TagAdd(i,p,dmg,4);}
@@ -193,6 +195,7 @@ void AS_KillAlien (int i, int p, int kind) {
     if(k==AS_BIOMASS) {as_bioCount=MaxI(0,as_bioCount-1);}
     if(as_aParent[i]>=0 && as_aParent[i]<AS_MAXALIEN) {as_aChildren[as_aParent[i]]=MaxI(0,as_aChildren[as_aParent[i]]-1);}
     if(p>=1 && p<=AS_PLAYERS && !AS_IsThing(k)) {as_kills[p]+=1;AS_KillEvent(p,k,kind);}
+    AS_HiveGone(i,k);
     // A barrel goes up: a blast of its own, and the kills are the shooter's.
     if(k==AS_BARREL) {
         j=0;if(p>=1 && p<=AS_PLAYERS) {j=as_kills[p];}

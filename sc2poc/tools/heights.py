@@ -34,7 +34,9 @@ SNAP = 8.0             # real heights are snapped to 8 units: AS's plateaus sit 
 PLATEAU = 16.0         # cells joined within this many Hammer units of a plateau's first cell are one flat floor
                        # (less than AS's 18-unit step: grates, trims and sampling noise, not steps)
 QUANTUM = 1 / 64.0     # heights in map units are kept to this
-KIND_CHARS = '0123456789abcdef'  # deck rows: a room kind's index into tools/level.py KIT_KINDS, one character
+# Deck rows: a room kind's index into tools/level.py KIT_KINDS, one character (src/Kit.galaxy AS_CharIdx); the rows'
+# other letters (# hull, m machinery, o open, v void, w window) are left out.
+KIND_CHARS = '0123456789abcdefghijklnpqrstu'
 FLOORISH = set(KIND_CHARS + 'ov')  # deck rows: room kinds, the open drop and the lift void constrain the terrain
 MERGE = 28.0           # Hammer units: neighbouring floors closer than this are one floor (AS's real steps are 40 and up)
 SCRAP = 8              # a plateau of fewer cells joins the neighbour it shares most edge with
@@ -144,7 +146,11 @@ def level_heights(level, rows, floor_level):
         have = ~np.isnan(raw)
         if have.any():
             raw = _dilate(np.nan_to_num(raw), have)
-            raw = _merge(_plateaus(_mode_filter(raw, deck), deck), deck)
+            raw = _merge(_plateaus(_mode_filter(raw, deck), deck), deck, level.get('MERGE', MERGE))
+            # A level may set a few floors by hand (HEIGHT_SET: (x0, y0, x1, y1), Hammer z), where the trace has no
+            # floor the squad can reach (a stair AS climbs that the flood never crossed).
+            for (x0, y0, x1, y1), hz in level.get('HEIGHT_SET', []):
+                raw[y0:y1, x0:x1] = np.where(deck[y0:y1, x0:x1], hz, raw[y0:y1, x0:x1])
             z = floor_level + (raw - level.get('DECK_Z', DECK_Z)) / UNITS
     z = np.round(z / QUANTUM) * QUANTUM
     # Deck heights spread into the hull, the lowest where two meet.
@@ -152,7 +158,25 @@ def level_heights(level, rows, floor_level):
     # The open night is the pit, far below every deck.
     drop_cells = np.array([[c == 'o' for c in row] for row in rows])
     z[drop_cells] = np.round((floor_level - DROP) / QUANTUM) * QUANTUM
-    vert, vmask, flat = _vertices(z, floorish, drop_cells, deck)
+    # A lift's drop (VOID_DEPTH, map units): the shaft runs on down past the deck, so its cells lie that far below the
+    # deck beside them and the walls are seen going down into the haze (tools/elevator.py lays the haze over them).
+    low = drop_cells
+    if level.get('VOID_DEPTH'):
+        void_cells = np.array([[c == 'v' for c in row] for row in rows])
+        z[void_cells] = np.round((z[void_cells] - level['VOID_DEPTH']) / QUANTUM) * QUANTUM
+        low = drop_cells | void_cells
+    vert, vmask, flat = _vertices(z, floorish, low, deck)
+    # Flights of several cells (FLIGHTS: (x0, y0, x1, y1), the way up 'N', 'E', 'S' or 'W', Hammer z at the foot and
+    # the head): their vertices rise evenly across the rectangle, so a big climb (a mall's gallery) is a long stair
+    # rather than one cell as steep as a wall. The cells at the foot and head floors already hold those heights.
+    for (x0, y0, x1, y1), way, lo, hi in level.get('FLIGHTS', []):
+        zl = floor_level + (lo - level.get('DECK_Z', DECK_Z)) / UNITS
+        zh = floor_level + (hi - level.get('DECK_Z', DECK_Z)) / UNITS
+        for vy in range(y0, y1 + 1):
+            for vx in range(x0, x1 + 1):
+                f = {'N': (vy - y0) / (y1 - y0), 'S': (y1 - vy) / (y1 - y0), 'E': (vx - x0) / (x1 - x0), 'W': (x1 - vx) / (x1 - x0)}[way]
+                vert[vy, vx] = np.round((zl + (zh - zl) * f) / QUANTUM) * QUANTUM
+                vmask[vy, vx] = True
     corners = np.stack([vert[:-1, :-1], vert[:-1, 1:], vert[1:, :-1], vert[1:, 1:]])
     tilted = corners.max(0) - corners.min(0) > 1e-3
     slope = deck & tilted
@@ -294,7 +318,7 @@ def _components(z, mask):
     return lab, comps
 
 
-def _merge(z, mask):
+def _merge(z, mask, merge=MERGE):
     """Plateaus that are not real levels join a neighbour, smallest first, until none is left: one within MERGE
     of a neighbour at least its size takes that one's height; a scrap of floor, or a sliver one cell across,
     takes the height of the neighbour it shares the longest edge with."""
@@ -314,7 +338,7 @@ def _merge(z, mask):
             if not edges:
                 continue
             zk = z[cells[0]]
-            near = [j for j in edges if abs(z[comps[j][0]] - zk) < MERGE and len(comps[j]) >= len(cells)]
+            near = [j for j in edges if abs(z[comps[j][0]] - zk) < merge and len(comps[j]) >= len(cells)]
             if near:
                 to = max(near, key=lambda j: (edges[j], len(comps[j])))
             elif len(cells) < SCRAP or (len(cells) <= SLIVER_MAX and thin > SLIVER * len(cells)):

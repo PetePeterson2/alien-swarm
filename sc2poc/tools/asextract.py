@@ -2,6 +2,7 @@
 
     py tools/asextract.py              every campaign map in the Steam install
     py tools/asextract.py asi-jac1-landingbay_01
+    py tools/asextract.py --walls [map ...]    add only the chest-height walls to maps already extracted
 
 For each map it writes:
 * the floor, rasterised from the BSP's up-facing faces (ramps by their planes, displacements as quads),
@@ -10,6 +11,8 @@ For each map it writes:
   and the walkable fraction;
 * the gameplay entities (spawners, triggers, doors, buttons, logic, paths, lights, templates ...) with
   their keys, world boxes and output connections;
+* the walls: how much of each cell a solid brush fills at chest height, and where, in 10-unit pixels (detail walls
+  stand on the floor, so the floor alone does not show them);
 * the stair and railing props.
 
 Only numbers and names go into the files; nothing of Valve's is shipped in the SC2 map.
@@ -137,6 +140,114 @@ def cells(z, walk, x0, y1):
     return top.astype(np.int16), walkz.astype(np.int16), frac.astype(np.uint8), y0
 
 
+# What stands at chest height: world brushes (detail walls among them, which the floor runs on under), glass and
+# player clips; of the brush entities only breakable glass and walls (doors, movers, blockers and triggers come and go).
+SOLID = 0x1 | 0x2 | 0x10000        # CONTENTS_SOLID, CONTENTS_WINDOW, CONTENTS_PLAYERCLIP
+WALL_MODELS = ('func_breakable', 'func_breakable_surf', 'func_wall')
+CHEST = 48
+
+
+def wall_raster(b, z, x0, y1):
+    """bool per raster pixel: a solid brush at chest height over the floor there (over the nearest floor within
+    three pixels where the pixel has none, as under a world wall)."""
+    H, W = z.shape
+    brushes = b._arr(18, np.dtype([('side', '<i4'), ('n', '<i4'), ('contents', '<i4')]))
+    sides = b._arr(19, np.dtype([('plane', '<u2'), ('tex', '<i2'), ('disp', '<i2'), ('bevel', '<i2')]))
+    nodes = b._arr(5, np.dtype([('plane', '<i4'), ('kids', '<i4', 2), ('mins', '<i2', 3), ('maxs', '<i2', 3), ('rest', 'u1', 8)]))
+    assert b.lumps[10][2] == 1
+    leafs = b._arr(10, np.dtype([('contents', '<i4'), ('cluster', '<i2'), ('flags', '<i2'), ('mins', '<i2', 3), ('maxs', '<i2', 3),
+                                 ('lf', '<u2'), ('nlf', '<u2'), ('lb', '<u2'), ('nlb', '<u2'), ('water', '<i2'), ('pad', '<i2')]))
+    leafbrush = b._arr(17, np.dtype('<u2'))
+    # Each model's brushes, by its node tree.
+    owner = {}
+    keep = {0} | {int(e['model'][1:]) for e in b.entities if e.get('classname') in WALL_MODELS and e.get('model', '').startswith('*')}
+    morg = b.model_origin()
+    for mi in sorted(keep):
+        stack = [int(b.models[mi]['headnode'])]
+        while stack:
+            n = stack.pop()
+            if n < 0:
+                lf = leafs[-1 - n]
+                for k in leafbrush[lf['lb']:lf['lb'] + lf['nlb']]:
+                    owner.setdefault(int(k), mi)
+                continue
+            stack += [int(c) for c in nodes[n]['kids']]
+    # The floor under each pixel: the lowest top within two pixels (the raster takes a drawn wall or window head's top
+    # for the floor where it has one), carried three pixels out over pixels with none.
+    import warnings
+    with np.errstate(all='ignore'), warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        p = np.pad(z, 2, constant_values=np.nan)
+        zf = np.nanmin(np.stack([p[dy:dy + H, dx:dx + W] for dy in range(5) for dx in range(5)]), 0)
+        for _ in range(3):
+            p = np.pad(zf, 1, constant_values=np.nan)
+            nb = np.nanmax(np.stack([p[:-2, 1:-1], p[2:, 1:-1], p[1:-1, :-2], p[1:-1, 2:]]), 0)
+            zf = np.where(np.isnan(zf), nb, zf)
+    wall = np.zeros((H, W), bool)
+    pn, pd = b.planes['n'].astype(np.float64), b.planes['d'].astype(np.float64)
+    for bi, mi in owner.items():
+        br = brushes[bi]
+        if not br['contents'] & SOLID:
+            continue
+        sp = sides['plane'][br['side']:br['side'] + br['n']]
+        n, d = pn[sp], pd[sp] + n_dot(pn[sp], morg[mi])
+        lo, hi = np.full(3, -1e9), np.full(3, 1e9)
+        for k in range(len(sp)):
+            ax = np.argmax(np.abs(n[k]))
+            if abs(n[k][ax]) > 0.999:
+                if n[k][ax] > 0:
+                    hi[ax] = min(hi[ax], d[k] / n[k][ax])
+                else:
+                    lo[ax] = max(lo[ax], d[k] / n[k][ax])
+        if (hi - lo > 1e8).any() or hi[2] - lo[2] < 24:
+            continue
+        px0, px1 = max(0, int((lo[0] - x0) / PX) - 1), min(W, int(np.ceil((hi[0] - x0) / PX)) + 1)
+        py0, py1 = max(0, int((y1 - hi[1]) / PX) - 1), min(H, int(np.ceil((y1 - lo[1]) / PX)) + 1)
+        if px0 >= px1 or py0 >= py1:
+            continue
+        yy, xx = np.mgrid[py0:py1, px0:px1]
+        pts = np.stack([x0 + (xx + 0.5) * PX, y1 - (yy + 0.5) * PX, zf[py0:py1, px0:px1] + CHEST], -1)
+        # Half a pixel's grace sideways, so glass and walls thinner than a pixel still cross the pixel centres.
+        slack = 0.5 + PX * 0.5 * np.hypot(n[:, 0], n[:, 1])
+        inside = ~np.isnan(pts[..., 2]) & (np.einsum('hwc,kc->hwk', np.nan_to_num(pts), n) - d <= slack).all(-1)
+        wall[py0:py1, px0:px1] |= inside
+    return wall
+
+
+def n_dot(n, o):
+    return n @ o
+
+
+def wall_cells(wall):
+    """40-unit cells, south row first: the percentage of each cell walled at chest height."""
+    k = CELL // PX
+    H, W = wall.shape[0] // k, wall.shape[1] // k
+    ww = wall[:H * k, :W * k][::-1].reshape(H, k, W, k).transpose(0, 2, 1, 3).reshape(H, W, k * k)
+    return (ww.mean(-1) * 100).round().astype(np.uint8)
+
+
+def wall_pixels(wall):
+    """The raster cropped to the cells and flipped south row first (as the cells are), packed 8 pixels a byte."""
+    k = CELL // PX
+    H, W = wall.shape[0] // k, wall.shape[1] // k
+    return np.packbits(wall[:H * k, :W * k][::-1], axis=1)
+
+
+def add_walls(name):
+    """Put the chest-height walls (wall_pct, wall_px) into a map's extracted data, leaving the rest of it as it is."""
+    b = BSP(MAPS_DIR / (name + '.bsp'))
+    z, x0, y1 = floor_raster(b)
+    wall = wall_raster(b, z, x0, y1)
+    pct = wall_cells(wall)
+    path = OUT / (name + '.json')
+    d = json.loads(path.read_text(encoding='utf-8'))
+    assert pct.shape == (d['h'], d['w']) and abs(float(x0) - d['x0']) < 1e-6
+    d['wall_pct'] = pack_grid(pct, 'u1')
+    d['wall_px'] = pack_grid(wall_pixels(wall), 'u1')
+    path.write_text(json.dumps(d, separators=(',', ':')), encoding='utf-8')
+    return pct
+
+
 def entity_table(b):
     out = []
     for e in b.entities:
@@ -166,6 +277,7 @@ def extract(name):
     z, x0, y1 = floor_raster(b)
     walk, seeds = walkable(b, z, x0, y1)
     top, walkz, frac, y0 = cells(z, walk, x0, y1)
+    wall = wall_raster(b, z, x0, y1)
     H, W = top.shape
     props = [{'model': m.rsplit('/', 1)[-1], 'origin': [round(v, 1) for v in o], 'yaw': round(a[1], 1)}
              for o, a, m in b.static_props if any(k in m for k in KEEP_PROPS)]
@@ -176,6 +288,7 @@ def extract(name):
         'walkable_cells80': round(float(walk.sum()) * PX * PX / 6400, 1),
         'seeds': seeds,
         'top_z': pack_grid(top, '<i2'), 'walk_z': pack_grid(walkz, '<i2'), 'walk_pct': pack_grid(frac, 'u1'),
+        'wall_pct': pack_grid(wall_cells(wall), 'u1'), 'wall_px': pack_grid(wall_pixels(wall), 'u1'),
         'entities': entity_table(b),
         'props': props,
     }
@@ -191,12 +304,21 @@ def load(name):
     d['top_z'] = unpack_grid(d['top_z'], '<i2', shape).astype(float)
     d['walk_z'] = unpack_grid(d['walk_z'], '<i2', shape).astype(float)
     d['walk_pct'] = unpack_grid(d['walk_pct'], 'u1', shape)
+    if 'wall_pct' in d:
+        d['wall_pct'] = unpack_grid(d['wall_pct'], 'u1', shape)
+        k = CELL // PX
+        d['wall_px'] = np.unpackbits(unpack_grid(d['wall_px'], 'u1', (d['h'] * k, -(-d['w'] * k // 8))), axis=1)[:, :d['w'] * k].astype(bool)
     for k in ('top_z', 'walk_z'):
         d[k][d[k] == -32768] = np.nan
     return d
 
 
 def main():
+    if sys.argv[1:2] == ['--walls']:
+        for name in sys.argv[2:] or CAMPAIGN:
+            pct = add_walls(name)
+            print('%-28s walls in %d of %d cells' % (name, int((pct >= 20).sum()), pct.size))
+        return
     names = sys.argv[1:] or CAMPAIGN
     for name in names:
         d = extract(name)

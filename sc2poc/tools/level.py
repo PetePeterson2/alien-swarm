@@ -261,6 +261,7 @@ def clutter(floor, room):
     keep = _mission_points()
     taken = set(); out = []
     for i, (name, (x0, y0, x1, y1), kind) in enumerate(AREAS):
+        kind = DRESS.get(kind, kind)
         if kind not in ('bay', 'cargo', 'reactor', 'mess') or x1 - x0 < 7 or y1 - y0 < 7:
             continue
         cells = [(x, y) for y in range(y0, y1) for x in range(x0, x1) if floor[y, x] and room[y, x] == i]
@@ -429,16 +430,23 @@ def hull_meshes(floor, room):
 # steps. Ceiling and cap tiles are 4x4, 2x2 and 1x1, origin at their south-west
 # corner, uv'd from world position mod 4 so the three sizes join without seams.
 KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive',
-             'wall_window', 'wall_concrete', 'wall_red', 'wall_bluestripe', 'wall_rust']
+             'wall_window', 'wall_concrete', 'wall_red', 'wall_bluestripe', 'wall_rust',
+             'wall_seagreen', 'wall_seadark', 'wall_whitetile', 'wall_shop0', 'wall_shop1', 'wall_shop2', 'wall_housing']
 # Room kinds as the script numbers them, and the wall panels each draws from (indexes into KIT_WALLS).
 # A lift cell (the elevator platform and its bridges) gets no ceiling; the camera looks down the shaft.
 # Past the lift: a colony's open ground under the sky and the catwalks and bridges over its drop (no ceiling over
 # either, src/Kit.galaxy AS_KIND_SURFACE, AS_KIND_BRIDGE), a plant's industrial decks and its reactor core.
-KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift', 'surface', 'bridge', 'plant', 'core', 'works']
+# SynTek's residential block: its sea-green halls, white-tiled offices, flats and the mall's shopfronts.
+KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift', 'surface', 'bridge', 'plant', 'core', 'works',
+             'colony', 'office', 'housing', 'mall']
 KIT_PANELS = {'bay': [0, 0, 2, 5, 3, 6], 'hall': [0, 2, 3, 1, 5, 2], 'duct': [2, 3, 2, 1], 'mess': [1, 1, 4, 5, 0],
               'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7], 'lift': [0],
               'surface': [10, 10, 9, 10, 5, 10], 'bridge': [10, 2, 10, 10], 'plant': [2, 3, 2, 6, 5, 1], 'core': [11, 4, 11, 5, 11, 6],
-              'works': [11, 12, 11, 2, 12, 5, 11]}
+              'works': [11, 12, 11, 2, 12, 5, 11], 'colony': [13, 13, 14, 5, 13, 4], 'office': [15, 13, 4, 15, 5, 15],
+              'housing': [19, 13, 19, 14, 5, 19, 13], 'mall': [16, 15, 17, 13, 18, 5, 15]}
+# The residential kinds dress as the ship's rooms nearest them (clutter, decals, girders): the halls as passages,
+# the offices as labs, the flats as crew quarters, the mall as a store.
+DRESS = {'colony': 'hall', 'office': 'lab', 'housing': 'mess', 'mall': 'cargo'}
 
 
 def _lit(x, y):
@@ -804,7 +812,8 @@ def decal_spots(floor, room, solid, seed=7):
     corridor = ('hall', 'duct')
 
     def kind(x, y):
-        return kind_at(room, x, y) if 0 <= x < W and 0 <= y < H and floor[y, x] and not in_void(x, y) else None
+        k = kind_at(room, x, y) if 0 <= x < W and 0 <= y < H and floor[y, x] and not in_void(x, y) else None
+        return DRESS.get(k, k)
 
     def door(a, b):
         return a and b and a != b and 'lift' not in (a, b) and 'hive' not in (a, b) and ((a in corridor) != (b in corridor))
@@ -934,6 +943,7 @@ def decal_spots(floor, room, solid, seed=7):
             spots.append((shaft, lx, ly, 0.0))
     # An overhead girder across most big rooms, wall top to wall top, between the camera and the deck as AS's are.
     for name, (x0, y0, x1, y1), k in AREAS:
+        k = DRESS.get(k, k)
         if k not in ('bay', 'cargo', 'reactor') or x1 - x0 < 8 or y1 - y0 < 8 or rng.random() < 0.25:
             continue
         if (x1 - x0) >= (y1 - y0) or rng.random() < 0.3:
@@ -1053,7 +1063,8 @@ TEXTURES = ['BraxisAlphaDarkPlates', 'BraxisAlphaPlates', 'CastanarGrating', 'Br
             'BraxisAlphaWreckedPlates', 'AvernusPanels', 'BraxisAlphaMesh', 'CharSponge']
 DARK, PLATES, GRATE, RUST, WRECK, PANEL, MESH, ORGANIC = range(8)
 ROOM_FLOOR = {'lift': GRATE, 'void': DARK, 'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK,
-              'surface': PLATES, 'bridge': GRATE, 'plant': DARK, 'core': DARK, 'works': DARK}
+              'surface': PLATES, 'bridge': GRATE, 'plant': DARK, 'core': DARK, 'works': DARK,
+              'colony': PLATES, 'office': PANEL, 'housing': PLATES, 'mall': PANEL}
 
 
 def terrain_masks(floor, room):

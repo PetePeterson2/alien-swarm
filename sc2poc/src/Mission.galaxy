@@ -124,6 +124,7 @@ void AS_SetCell (int x0, int y0, int x1, int y1, bool solid) {
 const int AS_LV_SCRIPT = 2;      // the first mission that runs on its data alone (DEIMA SURFACE BRIDGE)
 const int AS_LV_DEIMA = 2;
 const int AS_LV_RYDBERG = 3;
+const int AS_LV_RESIDENTIAL = 4;
 string[5] as_objName;
 int[5] as_objState;              // 0 hidden, 1 active, 2 done
 int as_objCount = 4;
@@ -1250,6 +1251,7 @@ void AS_GenInit () {
     as_genShip="";as_genShipNext=0.0;as_genFlashEnd=0.0;as_lineN=0;as_lineUntil=0.0;as_weldWatch="";
     for(k=0;k<as_objCount;k+=1) {if(as_objShown[k]) {as_objState[k]=1;}}
     AS_MissionPopulate();
+    AS_HiveEquip();
     AS_GenMark();
     AS_Log("mission start "+as_levelTitle[as_level]+", marines "+IntToString(AS_Humans())+", bots "+IntToString(as_botCount));
 }
@@ -1326,7 +1328,7 @@ void AS_Lightning () {
 // Every step of a scripted mission: snow under the sky, the storm's flash fading, the dropship's turrets.
 void AS_GenPulse () {
     int m;int t;fixed x;fixed y;fixed ang;
-    AS_SnowPulse();AS_WeldWatchPulse();
+    AS_SnowPulse();AS_WeldWatchPulse();AS_HivePulse();
     if(as_genFlashEnd>0.0 && as_now>=as_genFlashEnd) {as_genFlashEnd=0.0;GameSetLighting(as_lightId[as_light],0.5);}
     if(as_genShip=="") {return;}
     m=AS_MoverNamed(as_genShip);

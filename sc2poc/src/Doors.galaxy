@@ -5,6 +5,8 @@
 //   panel    locked until a tech hacks its door panel (src/Use.galaxy)
 //   bash     locked for good: it only opens when the swarm breaks it down
 //   jammed   never opens
+//   glass    an office window (func_breakable): a pane in a frame that shatters for good when a marine comes
+//            up to it or a drone swipes it, or the mission opens it
 // Welds: a door's seal is seconds of welding out of 10 (totalsealtime). Any seal
 // at all locks it shut; the welder adds seal with its primary fire and cuts it
 // with its secondary, at 0.6 s a second, or the best Engineering aura of a marine
@@ -22,7 +24,7 @@ int[24] as_drX0;
 int[24] as_drY0;
 int[24] as_drX1;
 int[24] as_drY1;
-int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed, 4 gap (a ramp runs out over it), 5 block (an unseen barrier), 6 hover (a drop until a ship hovers over it)
+int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed, 4 gap (a ramp runs out over it), 5 block (an unseen barrier), 6 hover (a drop until a ship hovers over it), 7 glass
 bool[24] as_drLocked;
 fixed[24] as_drSeal;
 fixed[24] as_drHp;
@@ -52,6 +54,7 @@ actor[24][48] as_drPlate;
 const int AS_DOOR_GAP = 4;
 const int AS_DOOR_BLOCK = 5;
 const int AS_DOOR_HOVER = 6;
+const int AS_DOOR_GLASS = 7;
 
 fixed AS_DoorCX (int i) {return (IntToFixed(as_drX0[i])+IntToFixed(as_drX1[i]))*0.5;}
 fixed AS_DoorCY (int i) {return (IntToFixed(as_drY0[i])+IntToFixed(as_drY1[i]))*0.5;}
@@ -71,8 +74,13 @@ void AS_Door (string name, int x0, int y0, int x1, int y1, int kind, fixed seal,
     as_drTag[i]=c_textTagNone;as_drTagShown[i]= -1.0;
     for(x=x0;x<x1;x+=1) {for(y=y0;y<y1;y+=1) {as_doorCell[x-as_ox][y-as_oy]=true;}}
     as_drShut[i]=false;
-    if(kind>=AS_DOOR_GAP) {AS_DoorGapBuild(i);AS_DoorShut(i,true);return;}
     if(!as_drAcross[i]) {face=0.0;}
+    if(kind==AS_DOOR_GLASS) {
+        as_drLeaf[i]=AS_Piece("ASEGlass",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
+        UnitSetScale(as_drLeaf[i],AS_DoorWidth(i)*50.0,100.0,100.0);
+        AS_DoorShut(i,true);return;
+    }
+    if(kind>=AS_DOOR_GAP) {AS_DoorGapBuild(i);AS_DoorShut(i,true);return;}
     as_drLeaf[i]=AS_Piece("ASEDoorAS",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
     UnitSetScale(as_drLeaf[i],AS_DoorWidth(i)*50.0,100.0,100.0);
     as_drSeam[i]=AS_Piece("ASEDoorSeam",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
@@ -189,6 +197,10 @@ void AS_DoorGapPulse (int i) {
 void AS_DoorPulseAll () {
     int i;fixed t;fixed w;fixed cx;fixed cy;bool want;
     for(i=0;i<as_drN;i+=1) {
+        if(as_drKind[i]==AS_DOOR_GLASS) {
+            if(!as_drBroken[i] && (!as_drLocked[i] || AS_MarineNearDoor(i,1.6))) {AS_DoorShatter(i);}
+            continue;
+        }
         if(as_drKind[i]>=AS_DOOR_GAP) {
             // Once opened a gap or block stays open; the ramp runs out over two seconds.
             if(as_drLocked[i] || as_drOpen[i]>=1.0) {continue;}
@@ -242,6 +254,7 @@ void AS_DoorTagPulse (int i) {
 // A drone's swipe at a shut door: 30, less as the weld grows.
 void AS_DoorHit (int i, fixed dmg, fixed fromX, fixed fromY) {
     fixed before=as_drHp[i];
+    if(as_drKind[i]==AS_DOOR_GLASS && !as_drBroken[i]) {AS_DoorShatter(i);return;}
     if(as_drBroken[i] || as_drOpen[i]>0.45 || as_drKind[i]>=3) {return;}
     dmg*=1.0-(as_drSeal[i]/AS_SEAL_FULL)*0.6;
     as_drHp[i]-=dmg;
@@ -272,6 +285,18 @@ void AS_DoorBreak (int i) {
     AS_Log("door broken: "+as_drName[i]);
     AS_AllMsg("<c val=\"FF6050\">Door breached!</c>");
     AS_MissionDoorBroken(as_drName[i]);
+}
+// A window gives way: the pane gone, glass and sparks blown out, the crash, a shudder; open for good.
+void AS_DoorShatter (int i) {
+    fixed cx=AS_DoorCX(i);fixed cy=AS_DoorCY(i);int k;
+    as_drBroken[i]=true;as_drLocked[i]=false;as_drOpen[i]=1.0;
+    if(as_drLeaf[i]!=null) {UnitRemove(as_drLeaf[i]);as_drLeaf[i]=null;}
+    AS_DoorShut(i,false);
+    AS_Burst(cx,cy,1.2,1.4,"200,230,255",3);AS_Flash(cx,cy,1.2,1.8,"220,240,255");
+    for(k=0;k<5;k+=1) {AS_Fx("ASFxSpark",cx+RandomFixed(-1.0,1.0),cy+RandomFixed(-1.0,1.0),RandomFixed(0.4,1.6),RandomFixed(0.0,360.0));}
+    AS_Sound("Doodad_SecurityGateDiagonalImpact",cx,cy,100.0,0.0);
+    AS_ShakeAll(0.12,0.3);
+    AS_Log("window broke: "+as_drName[i]);
 }
 int AS_DoorNamed (string name) {
     int i;

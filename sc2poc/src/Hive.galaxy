@@ -1,0 +1,140 @@
+// =====================================================================
+// HIVES: the eggs and growths a mission counts (SynTek Residential, Sewer Junction B5).
+//   asw_objective_kill_eggs   an objective keyed 'eggs' is done once no egg is left;
+//   asw_objective_destroy_goo one keyed 'goo' once no biomass is: each one's name shows
+//                             how many are gone (AS's "Destroy the alien eggs 3/26")
+//   asw_egg templates         a level's eggs in numbered groups, k of n picked at random
+//                             at the start (logic_case PickRandomShuffle): AS_HivePick
+//   asw_alien_goo outputs     a named egg or growth fires "broken:<name>" as it goes
+//                             (OnGooDestroyed, an egg's OnDestroyed), a named growth
+//                             "ignite:<name>" the first time it catches fire (OnIgnite)
+//   asw_equip_req             a weapon the mission needs (Residential's flamer): issued
+//                             to the squad if nobody chose it at the briefing
+// The autopilot's waypoints wait 7: burn and shoot out what is left within 9 of the waypoint and in sight of it.
+// =====================================================================
+string[96] as_hvName;                  // an egg's or growth's name, "" none
+bool[96] as_hvLit;                     // a named growth has caught fire once
+string as_hvPicked;                    // the egg groups picked, "|n|" each
+int as_hvNeed;                         // the weapon the mission needs (asw_equip_req), 0 none
+int[5] as_hvTotal;                     // a counting objective's eggs or growths at the start
+string[5] as_hvBase;                   // and its name without the count
+int as_hvFoe;                          // the autopilot's egg or growth at a wait-7 waypoint, -1 none
+
+// The level's data starts here: nothing picked, needed or counted yet.
+void AS_HiveStart () {
+    int k;
+    as_hvPicked="|";as_hvNeed=0;as_hvFoe= -1;
+    for(k=0;k<5;k+=1) {as_hvTotal[k]=0;as_hvBase[k]="";}
+}
+// k of groups 1..n, at random.
+void AS_HivePick (int n, int k) {
+    int g;int left=n;
+    for(g=1;g<=n;g+=1) {
+        if(RandomInt(1,left)<=k) {as_hvPicked=as_hvPicked+IntToString(g)+"|";k-=1;}
+        left-=1;
+    }
+    AS_Log("egg groups picked: "+as_hvPicked);
+}
+bool AS_HivePicked (int g) {return StringFind(as_hvPicked,"|"+IntToString(g)+"|",c_stringCase)>0;}
+void AS_HiveName (int i, string name) {if(i>=0) {as_hvName[i]=name;}}
+void AS_HiveNeed (int it) {as_hvNeed=it;}
+// A slot taken by a new alien: no name of the last one's.
+void AS_HiveReset (int i) {as_hvName[i]="";as_hvLit[i]=false;}
+void AS_HiveLit (int i) {
+    if(as_hvLit[i] || as_hvName[i]=="") {return;}
+    as_hvLit[i]=true;AS_Fire("ignite:"+as_hvName[i]);
+}
+void AS_HiveGone (int i, int k) {
+    if((k==AS_EGG || k==AS_BIOMASS) && as_hvName[i]!="") {AS_Fire("broken:"+as_hvName[i]);}
+}
+int AS_HiveLeft (int kind) {
+    int i;int n=0;
+    for(i=0;i<AS_MAXALIEN;i+=1) {if(as_a[i]!=null && as_aKind[i]==kind) {n+=1;}}
+    return n;
+}
+// Every step of a scripted mission: the counting objectives' names, and done when nothing is left.
+void AS_HivePulse () {
+    int k;int kind;int left;
+    for(k=0;k<as_objCount-1;k+=1) {
+        if(as_objKey[k]=="eggs") {kind=AS_EGG;}
+        else if(as_objKey[k]=="goo") {kind=AS_BIOMASS;}
+        else {continue;}
+        if(as_objState[k]==2) {continue;}
+        if(as_hvBase[k]=="") {as_hvBase[k]=as_objName[k];}
+        left=AS_HiveLeft(kind);as_hvTotal[k]=MaxI(as_hvTotal[k],left);
+        as_objName[k]=as_hvBase[k]+" ("+IntToString(as_hvTotal[k]-left)+"/"+IntToString(as_hvTotal[k])+")";
+        if(left==0 && as_hvTotal[k]>0) {AS_GenComplete(as_objKey[k]);}
+    }
+}
+// The mission's weapon, if nobody brought it: the first AI marine's second gun (the autopilot's own on its runs),
+// else the first marine's.
+void AS_HiveEquip () {
+    int p;int to=0;int it=as_hvNeed;
+    if(it<=0) {return;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p)) {continue;}
+        if(as_inv[p][0]==it || as_inv[p][1]==it) {return;}
+        if(to==0 || (as_bot[p] && !as_bot[to] && !(as_auto && to==1))) {to=p;}
+    }
+    if(as_auto && AS_Person(1)) {to=1;}
+    if(to==0) {return;}
+    as_inv[to][1]=it;as_mag[to][it]=as_it[it].mag;as_reserve[to][it]=as_it[it].reserve;as_alt[to][it]=as_it[it].altAmmo;
+    if(as_hand[to]==1) {as_slot[to]=it;}
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(AS_Person(p)) {AS_Message(p,"<c val=\"FFD24A\">"+as_it[it].title+" issued</c>  -  the growth only burns");}
+    }
+    AS_Log("issued "+as_it[it].title+" to p"+IntToString(to));
+}
+
+// ---- the autopilot at a wait-7 waypoint ----------------------------------
+// In sight up to a cell short of it: a growth may stand in its own wall of goo, an egg against a wall.
+bool AS_HiveSight (fixed x0, fixed y0, fixed x1, fixed y1) {
+    fixed d=SquareRoot((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0));fixed f=MaxF(0.0,(d-1.0)/MaxF(d,0.01));
+    return AS_LineClear(x0,y0,x0+(x1-x0)*f,y0+(y1-y0)*f);
+}
+// The egg or growth nearest the marine within 9 of the waypoint, on its floor and in sight of it, -1 none (the mall's
+// gallery stands over the mall floor across an open drop, so in sight but not in reach).
+int AS_HiveNear (point to) {
+    int i;int best= -1;fixed bd=1000.0;fixed d;point here=UnitGetPosition(as_m[1]);
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]==null || (as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS)) {continue;}
+        if(DistanceBetweenPoints(Point(as_aX[i],as_aY[i]),to)>9.0) {continue;}
+        if(AbsF(AS_CellZ(as_aX[i],as_aY[i])-AS_CellZ(PointGetX(to),PointGetY(to)))>1.0) {continue;}
+        if(!AS_HiveSight(PointGetX(to),PointGetY(to),as_aX[i],as_aY[i])) {continue;}
+        d=DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]));
+        if(d<bd) {bd=d;best=i;}
+    }
+    return best;
+}
+bool AS_AutoHiveDone (point to) {
+    as_hvFoe=AS_HiveNear(to);
+    return as_hvFoe<0;
+}
+// Where to stand: eggs are shot from beyond their reach, growths burnt from close in.
+point AS_AutoHive (point to) {
+    int i=as_hvFoe;point here=UnitGetPosition(as_m[1]);point q;fixed d;fixed keep=5.2;fixed ang;
+    if(i<0 || as_a[i]==null) {return to;}
+    q=Point(as_aX[i],as_aY[i]);
+    if(as_aKind[i]==AS_BIOMASS) {keep=as_aRadius[i]+1.4;}
+    d=DistanceBetweenPoints(here,q);
+    if(d<=keep && AS_HiveSight(PointGetX(here),PointGetY(here),PointGetX(q),PointGetY(q))) {return null;}
+    ang=AngleBetweenPoints(q,here);
+    return AS_BotWay(here,Point(PointGetX(q)+Cos(ang)*keep*0.9,PointGetY(q)+Sin(ang)*keep*0.9));
+}
+// Its target while on the job, when nothing living is close: the growth with the flamer in hand, an egg with the
+// first gun. -1 leaves it to AS_BotFoe.
+int AS_AutoHiveFoe (int p) {
+    int i=as_hvFoe;int j;int h;point here;
+    if(!(as_auto && p==1) || !as_autoTask || as_routeAt>=as_routeN || as_routeWait[as_routeAt]!=7) {return -1;}
+    if(i<0 || as_a[i]==null) {return -1;}
+    here=UnitGetPosition(as_m[1]);
+    for(j=0;j<AS_MAXALIEN;j+=1) {
+        if(as_a[j]!=null && !AS_IsThing(as_aKind[j]) && DistanceBetweenPoints(here,Point(as_aX[j],as_aY[j]))<6.0) {return -1;}
+    }
+    h=0;
+    if(as_aKind[i]==AS_BIOMASS && as_inv[1][1]==AS_IT_FLAMER) {h=1;}
+    if(as_aKind[i]==AS_BIOMASS && as_inv[1][0]==AS_IT_FLAMER) {h=0;}
+    if(as_hand[1]!=h) {AS_SelectHand(1,h);}
+    if(DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i]))>11.0) {return -1;}
+    return i;
+}

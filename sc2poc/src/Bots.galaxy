@@ -117,6 +117,7 @@ point AS_RouteGoal () {
         if(as_routeWait[as_routeAt]==4 && !AS_AutoDataDone()) {return AS_AutoData();}
         if(as_routeWait[as_routeAt]==5 && !AS_AutoButtonDone(to)) {return AS_AutoButton(to);}
         if(as_routeWait[as_routeAt]==6 && !AS_AutoWayOpen(to)) {return null;}
+        if(as_routeWait[as_routeAt]==7 && !AS_AutoHiveDone(to)) {return AS_AutoHive(to);}
         as_extraHeld[1]=false;as_autoTask=false;
         as_routeAt+=1;AS_Log("route waypoint "+IntToString(as_routeAt)+"/"+IntToString(as_routeN));
         if(as_routeAt>=as_routeN) {return to;}
@@ -143,7 +144,8 @@ fixed AS_BotSight (int p) {
     return 8.0;
 }
 int AS_BotFoe (int p) {
-    int i;int best= -1;fixed bd=AS_BotSight(p);fixed d;point here=UnitGetPosition(as_m[p]);point q;
+    int i=AS_AutoHiveFoe(p);int best= -1;fixed bd=AS_BotSight(p);fixed d;point here=UnitGetPosition(as_m[p]);point q;
+    if(i>=0) {return i;}
     for(i=0;i<AS_MAXALIEN;i+=1) {
         if(as_a[i]==null || as_aKind[i]==AS_BIOMASS || as_aKind[i]==AS_BARREL) {continue;}
         if(as_aKind[i]==AS_EGG) {d=DistanceBetweenPoints(here,UnitGetPosition(as_a[i]))+4.0;}

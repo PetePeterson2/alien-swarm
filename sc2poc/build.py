@@ -24,6 +24,7 @@ import mpyq
 import numpy as np
 from tools import alien, marine, basemap, level as L, shipkit, fx, catalog, elevator, hudart, hudlayout, uiart, heights
 from tools import pack as packer
+from tools import colony
 
 NAME = 'AlienPOC'
 TITLE = 'Halcyon Drift'
@@ -31,7 +32,7 @@ WIPE = False
 AUTO_SKILL, AUTO_ONSLAUGHT, AUTO_PROF = 2, False, 3
 MARINES = ['sarge', 'wildcat', 'faith', 'crash', 'jaeger', 'wolfe', 'bastille', 'vegas']
 REFERENCE_SOUNDS = Path.home() / 'OneDrive/Documents/sc2map/doodad-royale/reference/catalog/Sound.txt'
-MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Bots',
+MODULES = ['State', 'Kit', 'Level', 'Fx', 'Marine', 'Weapons', 'Aliens', 'Objects', 'Doors', 'Director', 'Use', 'HackUI', 'Mission', 'Bots', 'Hive',
            'Progress', 'HUD', 'Hints', 'Briefing', 'Campaign', 'Main']
 SEATS = 4
 # The campaign in order, after Alien Swarm's Jacob's Rest: the level's module (tools/<name>.py), its title,
@@ -43,7 +44,9 @@ LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII // SYNTEK LANDING BAY 7',
           ('deima', 'DEIMA SURFACE BRIDGE', 'DEIMA // COLONY SURFACE, NIGHT SIDE',
            'Blow the infested pipeline and cross the bridge to the reactor. Press H for controls.', 150),
           ('rydberg', 'RYDBERG REACTOR', 'DEIMA // RYDBERG POWER PLANT',
-           'Bring the colony reactor back online and get out through the north doors. Press H for controls.', 180)]
+           'Bring the colony reactor back online and get out through the north doors. Press H for controls.', 180),
+          ('residential', 'SYNTEK RESIDENTIAL', 'DEIMA // SYNTEK RESIDENTIAL BLOCK',
+           'Destroy the eggs, burn out the biomass and get to the elevators. Press H for controls.', 150)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 
@@ -235,11 +238,22 @@ def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
         out.append('    as_roomX0[%d]=%d.0;as_roomY0[%d]=%d.0;as_roomX1[%d]=%d.0;as_roomY1[%d]=%d.0;as_roomKind[%d]="%s";as_roomName[%d]="%s";'
                    % (i, x0, i, y0, i, x1, i, y1, i, kind, i, name))
     out.append('    as_roomCount=%d;' % len(L.AREAS))
-    for x, y in L.EGGS:
-        out.append('    AS_SpawnAlien(AS_EGG,%.2f,%.2f,false);' % at(x, y))
-    for x, y, r in L.BIOMASS:
+    # Eggs (x, y), or (x, y, group, name): group one of AS's egg templates (EGG_PICK (n, k) picks k of groups 1..n at
+    # the start, 0 none), name what its going fires (src/Hive.galaxy). Biomass (x, y, r), or (x, y, r, name).
+    out.append('    AS_HiveStart();')
+    if hasattr(L, 'EGG_PICK'):
+        out.append('    AS_HivePick(%d,%d);' % L.EGG_PICK)
+    for x, y, *more in L.EGGS:
+        group, name = (list(more) + [0, ''])[:2]
+        spawn = 'i=AS_SpawnAlien(AS_EGG,%.2f,%.2f,false);' % at(x, y) + ('AS_HiveName(i,"%s");' % name if name else '')
+        out.append('    if(AS_HivePicked(%d)) {%s}' % (group, spawn) if group else '    ' + spawn)
+    for x, y, r, *name in L.BIOMASS:
         x, y = at(x, y)
         out.append('    i=AS_SpawnAlien(AS_BIOMASS,%.2f,%.2f,false);if(i>=0) {as_aRadius[i]=%.2f;}' % (x, y, r))
+        if name:
+            out.append('    AS_HiveName(i,"%s");' % name[0])
+    if getattr(L, 'EQUIP_REQ', None):
+        out.append('    AS_HiveNeed(%s);' % L.EQUIP_REQ)
         out.append('    AS_Creep(%.2f,%.2f,%.2f);' % (x, y, r + 1.5))
     for x, y, r in getattr(L, 'CREEP', [(43.0, 67.0, 9.0), (36.0, 70.0, 3.0), (50.0, 70.0, 3.0), (75.0, 63.0, 4.0), (81.0, 66.0, 3.0), (60.0, 65.0, 2.5)]):
         out.append('    AS_Creep(%.2f,%.2f,%.2f);' % (at(x, y) + (r,)))
@@ -324,7 +338,7 @@ def mission_galaxy(n):
             out.append('    AS_GenObjective("%s","%s",%s,%.2f,%.2f);' % (key, name, 'true' if shown else 'false', mx, my))
     for name, (x, y), label, powered in getattr(L, 'BUTTONS', []):
         out.append('    AS_Button("%s",%.2f,%.2f,"%s",%s);' % ((name,) + at(x, y) + (label, 'true' if powered else 'false')))
-    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3, 'gap': 4, 'block': 5, 'hover': 6}
+    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3, 'gap': 4, 'block': 5, 'hover': 6, 'glass': 7}
     for name, r, kind, seal, panel in getattr(L, 'DOORS', []):
         x0, y0, x1, y1 = rect(r)
         px, py = at(*panel) if panel else (0.0, 0.0)
@@ -612,6 +626,7 @@ def compose(qa, demo=False, auto=False, start=-1):
         if L.LIFT is not None:
             pieces.update(elevator.meshes(L.LIFT, L.BRIDGE_IN, L.BRIDGE_OUT, L.VOID, L.DOOR))
         pieces.update(elevator.door_meshes())
+        pieces.update(colony.meshes())
         report.append('%s %dx%d at %d,%d, lifted %+.2f, %d slope cells'
                       % (name, L.W, L.H, places[n][0], places[n][1], places[n][2], hts[n]['slope'].sum()))
     report.append('map %dx%d' % (W, H))
@@ -654,10 +669,11 @@ def compose(qa, demo=False, auto=False, start=-1):
     models.update(L.shaft_pieces())
     textures = shipkit.hull_textures()
     textures.update(elevator.textures())
+    textures.update(colony.textures())
     from tools import deckart
     textures.update(deckart.sign_textures(signs))
     from tools import deckart
-    shipkit.pack_textures(files, textures, {**shipkit.multiply_textures(), **deckart.paint_textures(paint)})
+    shipkit.pack_textures(files, textures, {**shipkit.multiply_textures(), **deckart.paint_textures(paint), **colony.multiply_textures()})
     emissive = {k for k, (d, e) in textures.items() if e is not None}
     for name, model in sorted(models.items()):
         files['Base.SC2Assets/Derelict/%s.m3' % name] = shipkit.write_m3(name, model.export(emissive))

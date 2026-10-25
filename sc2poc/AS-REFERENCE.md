@@ -139,3 +139,29 @@ Not played: taken from the installed maps (`asi-jac2-deima`, `asi-jac3-rydberg`)
 - The plant's lights by colour.
 - The lighting goes to POWER RESTORED when the reactor comes online.
 - The exit room is walled off from the turbine hall except for its great doors, as AS's `exit_ceiling` brush outlines it.
+
+## SynTek Residential (2026-10-25)
+
+Not played: taken from the installed map (`asi-jac4-residential`) through `tools/asextract.py` (now with the BSP's solid brushes rastered at chest height, `wall_pct`/`wall_px`, since its offices' glass and partitions are detail brushes the floor alone does not show) and `tools/astrace.py`, and from its materials in the VPKs, which were looked at for palette and pattern only.
+
+**What AS has.**
+- SynTek's residential block on Deima: an entrance and security hall, a lobby with a walkway up behind its desk, a hallway to the offices, a mall with a gallery along its west side, living quarters, a bathhouse, the vents behind them and the elevator lobby. A small yard behind the lobby lies open to the snow (`snowfloor006a`).
+- Materials, by the area they cover:
+  - `concretefloor051a` (28%): green-grey cast tiles through the halls, quarters and elevators.
+  - `res_metalwall001a` (27%): the block's walls, pale sea-green pressed-steel panels in a flat-bar frame with a worn orange band low down; `res_metalwall001b` is the same in dark gunmetal.
+  - `metalwall045a` (16%): the vents' ductwork, floors and walls.
+  - `concretefloor051c`: glazed white tiles, on the offices' and mall's walls as much as on their floors; `concretefloor051d` is the damp green version with tread-pressed panels.
+  - `greymetalfloor2` in the mall, `swarm_grillefloorbsp` on the lobby and gallery, `concretefloor050a` dark slabs, `brickfloor001a`.
+  - The office glass: `func_breakable` windows `window_01` to `window_15` (`swarm_glassdistortion`). The west office has no door at all; you go in through its glass.
+- Stairs are props (`stairs_160_top`, `stairs01_128noends`, `stairs01_64noends`) whose clip brushes read as wall in the raster; the gallery is 216 units over the mall floor.
+- The flow (`Objective_KillEggs`, `Objective_BurnGoo`, `Objective_Escape`): 26 eggs (22 placed, and two of four office templates picked at random), eight growths that only fire burns (`asw_equip_req` issues a flamer), the mall's walls of goo (`blocker_1`, `blocker_2`) gone once their growth burns, Door1 on the gallery behind a 2x5 two-wire panel (hack level 6). Once both counts are done the elevator buttons power up; calling the car brings alarms and waves for a minute before its doors open.
+
+**What the port took.**
+- The traced floor (`open_deck` less the thin `partitions` that part rooms) on real heights with the plateau merge. Stair flights where AS's stair props stand: the gallery's south-west flights off the hallway, its north flight down to the mall, and the lobby's flight up to the walkway.
+- Egg groups picked at random at the start, named eggs and growths firing `broken:`/`ignite:` events, the counting objectives showing "(gone/total)", the flamer issued when nobody brought one (`src/Hive.galaxy`).
+- The office windows as a new door kind, glass (`src/Doors.galaxy` kind 7, `tools/colony.py` `EGlass`): a pane in a steel frame that shatters for good when a marine comes up to it or a drone swipes it.
+- New art:
+  - Walls: `wall_seagreen` and `wall_seadark` (res_metalwall001a/b), `wall_whitetile` (051c on walls), `wall_shop0..2` (the mall's lit shopfronts), `wall_housing` (a flat's door, number, keypad and frosted window on the sea-green panels).
+  - Floors: `floor_whitetile`, `floor_mosstile`, `floor_slab`, with the existing green-grey tile (`floor_plantconc`, the same 051a), grey plate and grille.
+  - Room kinds `colony`, `office`, `housing` and `mall`, which dress as the ship's halls, labs, crew rooms and stores.
+- Not ported: the grub sacs, the fire extinguishers' physics, the laser scanner, and the second elevator mortarbug template (`template_morter_elev1`).

@@ -823,6 +823,52 @@ def floor_coregrate(seed=30, glow=(255, 130, 40)):
     return _img(_finish(_dirt(a, seed + 4, 0.25), seed + 11, 0.04, 900, 2, U)), _img(emis)
 
 
+# ---- SynTek Residential (asi-jac4-residential: concretefloor051c, 051d, 050a) ----
+def _tiles(seed, tone, T, var=0.06, grout=0.55):
+    a = np.zeros((S, S, 3)) + np.array(tone, float)
+    a *= (0.94 + 0.1 * _noise(0, 50, seed, 4, (S, S)))[..., None]
+    r = np.random.default_rng(seed)
+    for py in range(0, S, T):
+        for px in range(0, S, T):
+            a[py:py + T, px:px + T] *= r.uniform(1 - var, 1 + var)
+    yy, xx = np.mgrid[0:S, 0:S]
+    g = (xx % T < 3) | (yy % T < 3)
+    a[g] *= grout
+    a[((xx % T == 3) | (yy % T == 3)) & ~g] *= 1.08
+    return a
+
+
+def floor_whitetile(seed=31):
+    """concretefloor051c: the offices' pale tiles, half a unit square, grey grout, scuffed paths and a few cracked."""
+    a = _tiles(seed, (184, 188, 184), U // 2, 0.04)
+    a = _scratches(a, seed + 3, 50, 0.85, (10, 50))
+    a = _wear(a, seed + 2, 0.18)
+    return _img(_finish(_dirt(a, seed + 4, 0.22), seed + 9, 0.035, 900, 4, U // 2, 0.16))
+
+
+def floor_mosstile(seed=32):
+    """concretefloor051d: the same tiles gone green with damp, every other one a tread-pressed panel, moss and
+    mould spreading along the grout."""
+    T = U // 2
+    a = _tiles(seed, (120, 138, 116), T, 0.07, 0.5)
+    yy, xx = np.mgrid[0:S, 0:S]
+    tread = ((xx // T + yy // T) % 2 == 0)
+    dots = (((xx % 16) - 8) ** 2 + ((yy % 16) - 8) ** 2 < 10) & tread
+    a[dots] *= 1.12
+    moss = np.clip((_noise(0, 70, seed + 6, 5, (S, S)) - 0.45) * 3, 0, 1)
+    a = a * (1 - 0.35 * moss[..., None]) + np.array((70, 96, 58))[None, None] * 0.35 * moss[..., None]
+    return _img(_finish(_dirt(a, seed + 4, 0.3), seed + 9, 0.04, 1100, 6, T, 0.22))
+
+
+def floor_slab(seed=33):
+    """concretefloor050a: the block's service floors, dark grey cast slabs a unit square, hairline joints."""
+    a = _tiles(seed, (112, 112, 106), U, 0.05, 0.6)
+    a = _scratches(a, seed + 3, 30, 0.9)
+    a = _wear(a, seed + 2, 0.25)
+    return _img(_finish(_dirt(a, seed + 4, 0.25), seed + 9, 0.045, 1300, 6, U, 0.2))
+
+
+
 FLOORS = {
     'floor_concrete': lambda: (floor_concrete(), None),
     'floor_mgrate': lambda: (floor_mgrate(), None),
@@ -845,6 +891,9 @@ FLOORS = {
     'floor_bridgedeck': lambda: (floor_bridgedeck(), None),
     'floor_plantconc': lambda: (floor_plantconc(), None),
     'floor_coregrate': lambda: floor_coregrate(),
+    'floor_whitetile': lambda: (floor_whitetile(), None),
+    'floor_mosstile': lambda: (floor_mosstile(), None),
+    'floor_slab': lambda: (floor_slab(), None),
 }
 
 # Each room kind's floor (tools/level.py KIT_KINDS): the main plating, the second plating mixed
@@ -863,6 +912,10 @@ KIND_FLOORS = {
     'plant': ('floor_brown', 'floor_plate2', 'floor_grate'),
     'core': ('floor_reactor', 'floor_coregrate', 'floor_grate_blue'),
     'works': ('floor_plantconc', 'floor_coregrate', 'floor_hatch'),
+    'colony': ('floor_plantconc', 'floor_slab', 'floor_grille'),
+    'office': ('floor_whitetile', 'floor_mosstile', 'floor_grille'),
+    'housing': ('floor_plantconc', 'floor_grille', 'floor_slab'),
+    'mall': ('floor_tile', 'floor_whitetile', 'floor_grille'),
 }
 
 DECALS = {

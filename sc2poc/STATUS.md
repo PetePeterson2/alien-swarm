@@ -1,6 +1,6 @@
 # Halcyon Drift: Alien Swarm combat proof of concept (work in progress)
 
-**Status (2026-10-24): four missions in the campaign: Landing Bay (after Alien Swarm's first mission, with its briefing, hacking, death rules, difficulty, hints and progression), Cargo Elevator, and Jacob's Rest's next two, Deima Surface Bridge and Rydberg Reactor, traced from the real maps. The newest work is in the last section; the early sections below are kept as history.**
+**Status (2026-10-24): five missions in the campaign: Landing Bay (after Alien Swarm's first mission, with its briefing, hacking, death rules, difficulty, hints and progression), Cargo Elevator, and Jacob's Rest's next three, Deima Surface Bridge, Rydberg Reactor and SynTek Residential, traced from the real maps. The newest work is in the last section; the early sections below are kept as history.**
 
 ## Done
 
@@ -513,3 +513,26 @@ Still to check in the client: both missions end to end on the autopilot (`-Auto`
 - the gap plates and the dropship's flight;
 - the exit doors' wait and the reactor's glow;
 - snow and lightning under SC2's lights.
+
+## Mission 5: SynTek Residential (2026-10-24)
+
+Jacob's Rest's fourth mission, traced from `asi-jac4-residential` as Deima and Rydberg were (`tools/residential.py`, in `build.py` LEVELS after Rydberg Reactor). Built and checked offline (`py build.py`, `--qa`: type and bounds checks pass; map 240x256, Residential at 151,72). Not yet run in the client.
+
+- **Layout:** the walkable floor less the thin walls that part its rooms. The extractor now rasters the BSP's solid brushes at chest height (`wall_pct`, `wall_px`), since the offices' glass and partitions are detail brushes the floor alone does not show (`tools/astrace.py` `partitions`).
+- **Heights:** the streets and offices at -56, the lobby's walkway a short flight up, and the mall's gallery 216 higher. The gallery stands over the mall behind a strip of the drop (pit skirts and a railing). Its three stairs are long flights (`FLIGHTS`, new in `tools/heights.py`, with `HEIGHT_SET` for the floors the trace could not reach). 51 slope cells.
+- **The flow** (`src/Hive.galaxy`, new):
+  - Destroy the 26 eggs: 22 laid round the block, plus two of the offices' four egg groups picked at random at the start.
+  - Burn out the eight growths. The flamer is issued if nobody brought one (`asw_equip_req`).
+  - The objectives count down "(gone/total)". Named eggs and growths fire `broken:` and `ignite:` events: lighting the mall's growth wakes the mall, and burning it takes down its walls of goo.
+  - Once both counts are done the elevator has power. The call brings the lights down, an alarm, and waves from every side for a minute until the car opens.
+  - The autopilot's wait 7 burns and shoots out whatever is left within 9 cells and in sight.
+- **Glass** (`src/Doors.galaxy` kind 7, `tools/colony.py` `EGlass`): the office windows are panes in steel frames. They shatter for good when a marine comes up to one or a drone swipes it. The west office, which has no door, is entered through its glass.
+- **New art** (`tools/wallart.py`, `tools/deckart.py`):
+  - walls: sea-green and gunmetal pressed panels with a worn orange band, white tile, three lit shopfronts, and flats with a door, number and keypad;
+  - floors: white tile, mossy tread tile and dark slabs;
+  - room kinds `colony`, `office`, `housing` and `mall`, which dress as the ship's halls, labs, crew rooms and stores.
+- **Packing** (`tools/pack.py`): when biggest-first fails, the levels are tried in campaign order and in reverse. No lift may take a level's pit floor below 0 or a gallery over 250.
+- **Route:** `tools/routeplan.py` now also checks that every egg and growth lies within reach of a wait-7 stop on its own floor (`unswept`). Its clearance is 0.45, so one-cell ducts plan. The route has 80 legs, none blocked and no egg out of reach. Door1's panel is AS's 2x5 two-wire one.
+- **Render:** `dist/scene-residential.png`.
+
+Still to check in the client: the mission end to end on the autopilot (`-Auto`) with no script errors and 0 kit leaks, and by hand the glass, the goo walls and the elevator's hold.
