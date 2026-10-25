@@ -524,6 +524,26 @@ bool AS_OnScreen (point q, fixed margin) {
     }
     return false;
 }
+// The autopilot leads, so nobody's trail can fetch it: pinned on a corner for 4 s with somewhere to go, it steps
+// to the free spot within a cell that is nearest its goal, and logs where it was caught (autopilot runs, 2026-10-24).
+void AS_AutoUnstick (point here) {
+    point goal=as_botGoalPt[1];point best=null;point q;fixed bd=1000.0;fixed d;int k;int r;string fr="inside a wall";
+    if(as_botLast[1]==null || DistanceBetweenPoints(here,as_botLast[1])>0.3) {as_botLast[1]=here;as_botStuckAt[1]=as_now;return;}
+    if(goal==null || as_using[1]>=0 || as_stage==AS_ST_RIDE || DistanceBetweenPoints(here,goal)<1.0) {as_botStuckAt[1]=as_now;return;}
+    if(as_now-as_botStuckAt[1]<4.0) {return;}
+    for(r=1;r<=4;r+=1) {
+        for(k=0;k<16;k+=1) {
+            q=PointWithOffsetPolar(here,0.25*IntToFixed(r),22.5*IntToFixed(k));
+            d=DistanceBetweenPoints(q,goal);
+            if(d<bd && AS_Free(PointGetX(q),PointGetY(q),AS_MARINE_R+0.05)) {bd=d;best=q;}
+        }
+    }
+    as_botStuckAt[1]=as_now;
+    if(AS_Free(PointGetX(here),PointGetY(here),AS_MARINE_R)) {fr="free";}
+    AS_Log("autopilot pinned at "+FixedToString(PointGetX(here)-as_oxF,3)+","+FixedToString(PointGetY(here)-as_oyF,3)+" ("+fr+"), waypoint "+IntToString(as_routeAt+1));
+    if(best==null) {return;}
+    UnitSetPosition(as_m[1],best,false);as_mvX[1]=0.0;as_mvY[1]=0.0;as_botLast[1]=best;
+}
 bool AS_HumanSees (point q) {
     int h;point hq;
     for(h=1;h<=AS_PLAYERS;h+=1) {
@@ -535,6 +555,7 @@ bool AS_HumanSees (point q) {
 }
 void AS_BotCatchUp (int p, point here) {
     point lq;point to;bool far;
+    if(as_auto && p==1) {AS_AutoUnstick(here);return;}
     if(as_leader==0 || as_leader==p || as_stage==AS_ST_RIDE) {as_botStuckAt[p]=as_now;return;}
     if(as_botLast[p]==null || DistanceBetweenPoints(here,as_botLast[p])>0.5) {as_botLast[p]=here;as_botStuckAt[p]=as_now;}
     lq=UnitGetPosition(as_m[as_leader]);
