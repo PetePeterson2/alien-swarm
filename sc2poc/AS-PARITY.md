@@ -444,8 +444,9 @@ Both done missions run on the scripted-mission data (`STATUS.md`). What they do 
   - The tunnel is rock beyond its mouth from the start. One charge going up brings it down; AS counts four breakables.
   - The tunnel's growth stands on the mouth's flanks rather than over it.
   - The PDW, shotgun and rifle pickups have no item in the port.
+  - The catwalk bridge, the channel walks and the turbine catwalk are one cell wide, as in AS, and aliens spawn in them or sleep at their ends. An alien standing in one of them can hold the autopilot marine in place. `AS_AutoUnstick` (`src/Bots.galaxy`, fcbe94f) steps it free after 4 s pinned. Before that commit, a build of the commits alone sat at the bridge (run 5ba7b412cc34).
 
-**Status:** both are built and checked offline. The autopilot run in the client is still to do.
+**Status:** both are built and checked offline, and both play to the end in the client. The full-campaign autopilot run (a8346278852d) and a Sewer-only run (29ace728390a) of the working tree, and runs of the commits alone (Sewer f2d4f2b5d4eb in 265.1 s, SynTek Residential c6fd5b44417c in 399.6 s), finished with 0 kit leaks. The commits-alone runs raised one script error, an unknown button sound, which 7f55f00 replaced; no run has been made since that fix.
 
 ## What SC2 can't match exactly
 
