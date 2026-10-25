@@ -198,9 +198,36 @@ def tex_pipeline(w=256, h=256, seed=61):
     return _img(a), None
 
 
+def tex_core(w=256, h=512, seed=67):
+    """Rydberg's reactor core (the glowing column down its well in asi-jac3-rydberg): a pale steel housing in
+    banded courses, tall slit windows round it and a ring of light at each course showing the cold blue-white
+    fire inside, brighter toward the top where the coolant boils off it (u round the column, v down it)."""
+    n = _noise(0, 30, seed, 4, (h, w))
+    a = np.array((120, 128, 138), float)[None, None] * (0.75 + 0.4 * n[..., None])
+    yy, xx = np.mgrid[0:h, 0:w]
+    hot = np.array((150, 220, 255), float)
+    up = (1.0 - yy / h)[..., None]
+    v = yy % 128
+    slit = ((xx % 32) >= 9) & ((xx % 32) < 23) & (v > 20) & (v < 108)
+    ring = (v >= 14) & (v < 20)
+    lit = slit | ring
+    flick = 0.75 + 0.25 * _noise(0, 12, seed + 3, 3, (h, w))[..., None]
+    glow = hot[None, None] * (0.55 + 0.45 * up) * flick
+    emis = np.where(lit[..., None], glow, 0.0)
+    a = np.where(lit[..., None], glow * 0.85, a)
+    # The courses: a heavy steel band every 128 px with bolts, lit along its top edge.
+    band = v < 12
+    a[band] = np.array((150, 154, 158)) * (0.85 + 0.3 * n[band][:, None])
+    a[(v >= 12) & (v < 14)] *= 0.4
+    a[v < 2] *= 1.3
+    a[band & (xx % 32 == 16)] = (200, 200, 190)
+    return _img(a), _img(emis)
+
+
 def textures():
     """name -> (diffuse, emissive or None)."""
     return {'pit_floor': tex_pit_floor(), 'pit_skirt': tex_pit_skirt(), 'pit_steel': tex_pit_steel(), 'pit_pipeline': tex_pipeline(),
+            'pit_core': tex_core(),
             'stair_tread': tex_stair_tread(), 'stair_riser': tex_stair_riser(), 'stair_stringer': tex_stair_stringer()}
 
 
@@ -211,6 +238,7 @@ ADDED = {
     'pit_glow_r': lambda: tex_pit_glow((255, 64, 40)),
     'pit_glow_p': lambda: tex_pit_glow((255, 96, 196)),
     'pit_pool': tex_pit_pool,
+    'pit_glow_c': lambda: tex_pit_glow((120, 200, 255)),
 }
 
 
@@ -322,6 +350,34 @@ def _mainpipe(m, length=4.0, n=20):
     _beam(m, key, (0, -MAIN_R * 0.95, MAIN_Z - MAIN_R * 0.6), (0, MAIN_R * 0.95, MAIN_Z - MAIN_R * 0.6), 0.32)
 
 
+CORE_R, CORE_H = 1.25, 9.6                 # the reactor core's radius and its top over the pit floor: it rises out of its well
+
+
+def _core(m, n=16):
+    """KPitCore: the reactor's core standing up its well from the pit floor, origin at its foot: the banded column,
+    a ring of coolant pipes round its foot, a lit cap and the halo of its glow."""
+    from tools.shipkit import UNLIT, ADD
+    key = ('pit_core', False, 0)
+    for i in range(n):
+        t0, t1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+        p0 = (CORE_R * math.cos(t0), CORE_R * math.sin(t0)); p1 = (CORE_R * math.cos(t1), CORE_R * math.sin(t1))
+        m.quad(key, (p0[0], p0[1], 0.0), (p1[0], p1[1], 0.0), (p1[0], p1[1], CORE_H), (p0[0], p0[1], CORE_H),
+               [(i / n * 4, 1), ((i + 1) / n * 4, 1), ((i + 1) / n * 4, 0), (i / n * 4, 0)])
+        # The cap: a steel rim and the open top glowing.
+        m.quad(('pit_steel', False, 0), (p0[0], p0[1], CORE_H), (p1[0], p1[1], CORE_H),
+               (p1[0] * 0.8, p1[1] * 0.8, CORE_H + 0.12), (p0[0] * 0.8, p0[1] * 0.8, CORE_H + 0.12), [(0, 1), (1, 1), (1, 0), (0, 0)])
+        m.poly(('pit_glow_c', False, UNLIT, ADD), [(0, 0, CORE_H + 0.1), (p0[0] * 0.8, p0[1] * 0.8, CORE_H + 0.12), (p1[0] * 0.8, p1[1] * 0.8, CORE_H + 0.12)],
+               [(0.5, 0.5), (0.5 + 0.4 * math.cos(t0), 0.5 + 0.4 * math.sin(t0)), (0.5 + 0.4 * math.cos(t1), 0.5 + 0.4 * math.sin(t1))])
+    steel = ('pit_steel', False, 0)
+    for k in range(6):
+        t = 2 * math.pi * k / 6
+        c, s_ = math.cos(t), math.sin(t)
+        _beam(m, steel, (c * CORE_R, s_ * CORE_R, 6.2), (c * 1.9, s_ * 1.9, 5.6), 0.16)
+    _glow(m, 'pit_glow_c', 0, 0, CORE_H + 0.4, 2.2)
+    _glow(m, 'pit_glow_c', 0, 0, CORE_H * 0.55, 2.4)
+    _glow(m, 'pit_glow_c', 0, 0, 0.8, 3.2)
+
+
 def skirt_pieces(out):
     """KSkirt (the deck to the north at turn 0, a plane from the pit floor up to its edge), KSkirt1 (the deck off
     the north-east corner), KSkirt3 (the deck on the north and east): one cell, origin at its centre, a rise of 1,
@@ -366,6 +422,7 @@ def pieces(out):
                            uv((k * 7) % 4 * 1.0 + k * 0.37, (k * 5) % 4 * 1.0 + k * 0.61))
     skirt_pieces(out)
     _mainpipe(out.setdefault('KPitMain', ShipModel('KPitMain', (0, 0, 0))))
+    _core(out.setdefault('KPitCore', ShipModel('KPitCore', (0, 0, 0))))
     for name, glow in (('KPitTowerR', 'pit_glow_r'), ('KPitTowerW', 'pit_glow_w'), ('KPitTowerP', 'pit_glow_p')):
         m = out[name] = ShipModel(name, (0, 0, 0)); _tower(m, glow)
     m = out['KPitGirder'] = ShipModel('KPitGirder', (0, 0, 0)); _girder(m)

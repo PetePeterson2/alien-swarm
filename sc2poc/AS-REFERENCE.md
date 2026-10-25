@@ -87,3 +87,55 @@ Notes from playing the Steam game's first two missions (`asi-jac1-landingbay_01`
 - **The colony's look:** pale concrete slabs and galvanised grating (concretefloor050a, metalgrate012a), pale wall panels outlined in worn yellow, fat red flanged pipes, yellow perforated girders on the walls and overhead, hazard chevrons round hatches, WATCH YOUR STEP at the stairs, blood and paper where the crew fell, near-black beyond the playable space, pink neon along the dock's edges, a sodium-orange pump room, and Cargo Elevator's walkway lit orange from below (ce-01).
 - **Life:** dust in the air and motes lit by the laser, steam from grates and pipes, flickering and sparking lamps and consoles, turning fan shadows, smoke after blasts.
 - **The AI squad** only fights what a player can see (or what is at its elbow), as AS's marines back the player up.
+
+## Deima Surface Bridge and Rydberg Reactor (2026-10-24)
+
+Not played: taken from the installed maps (`asi-jac2-deima`, `asi-jac3-rydberg`) through `tools/asextract.py` and `tools/astrace.py`, and from their materials in the VPKs (looked at for palette and pattern only; nothing of Valve's is shipped). Captures of the other missions are still to do.
+
+**Deima: what AS has.**
+- The colony surface at night in a snowstorm, on catwalks and streets above a chasm. The main pipeline runs along the chasm, and the long pipeline bridge crosses it to the reactor.
+- Floors:
+  - `blendconcsnow001b`: grey poured slabs (`concretefloor050a`) with snow packed into the joints.
+  - `blendmetalsnow002a`: diamond tread (`metalfloor011a`) under snow.
+  - `snowfloor001a`: drifts.
+  - The bridge and catwalks are dark steel grating on riveted beams.
+- Walls: `metalwall008c`, red-painted corrugated panels between grey posts.
+- Lights: cyan floods (140,215,205), pale-blue big lamps (137,214,218), red lamps strung along the bridge (175,41,27) and one sodium yellow.
+- The flow: the gate hack, the bridge ramp button, the detonator that blows the pipeline and the wreckage blocking the pump station, then the dropship hovering over the last gap.
+
+**Deima: what the port took.**
+- The traced floor, with every drop opened into the blue-fogged pit and one-cell railings left as railings.
+- The pipeline as pit pieces (`KPitMain`) along the chasm.
+- New art:
+  - `floor_snowcrete`, `floor_snowplate`, `floor_bridgedeck`.
+  - `wall_red`.
+  - Snowed roofs on the hull tops (`cap_snow`, the `KR` caps).
+- The lights by colour.
+- The script's order, with these door kinds:
+  - the ramp as a gap whose plates slide out;
+  - the wreckage as an unseen block;
+  - the dropship's deck as a hover gap.
+- The commander's lines are paraphrased and the crew's mail is invented.
+
+**Rydberg: what AS has.**
+- An indoor power plant lit sodium orange, with orange interior fog. The squad works north from the loading dock through pump halls and coolant galleries to reactor control, hacks its door, and brings the reactor online. The airlock then opens on the turbine hall, and the north doors take their time opening while the swarm comes.
+- Floors:
+  - `concretefloor051`: green-grey cast tiles.
+  - `metalgrate014`: dark slatted grating.
+  - `metalfloor012a`.
+- Walls:
+  - `concretewall082a`: pale board-formed concrete with a slate-blue band.
+  - `metalwall059a`: rust-orange primer plate.
+- Sign: `reactorcontrolsign`, white on navy.
+- Heights: the plant floor is at 608, the turbine hall a step lower at 544, and reactor control is raised to 760.
+- The drops: AS's `asw_trigger_fall` volumes mostly lie under real floor (the gallery's and the shaft's sit 100 to 300 units below it). They are not holes in the walkway.
+
+**Rydberg: what the port took.**
+- The traced floor, opening only where no floor stands over a fall volume, and the reactor core's well beside reactor control.
+- New art:
+  - `floor_plantconc`, and `floor_coregrate` with amber light coming up through its slats.
+  - `wall_bluestripe`, `wall_rust`.
+  - The reactor core (`KPitCore`): a banded column with blue-white slits, rising out of its well.
+- The plant's lights by colour.
+- The lighting goes to POWER RESTORED when the reactor comes online.
+- The exit room is walled off from the turbine hall except for its great doors, as AS's `exit_ceiling` brush outlines it.

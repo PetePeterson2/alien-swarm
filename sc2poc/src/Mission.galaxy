@@ -1309,6 +1309,8 @@ bool AS_GenAction (string act, string arg) {
     }
     if(act=="lightning") {AS_Lightning();return true;}
     if(act=="shipguns") {as_genShip=arg;return true;}
+    // The level's lighting preset by number (src/Main.galaxy as_lightId), eased in: the power back on.
+    if(act=="lights") {as_light=StringToInt(arg);GameSetLighting(as_lightId[as_light],3.0);AS_Log("lights: "+as_lightId[as_light]);return true;}
     return false;
 }
 // The storm: the sky flashes white-blue over the whole level for a moment, and the thunder follows.

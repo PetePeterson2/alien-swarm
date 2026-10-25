@@ -1,6 +1,6 @@
 # Halcyon Drift: Alien Swarm combat proof of concept (work in progress)
 
-**Status (2026-10-23): two missions play in the client, Landing Bay (after Alien Swarm's first mission, with its briefing, hacking, death rules, difficulty, hints and progression) and Cargo Elevator. The newest work is in the last section; the early sections below are kept as history.**
+**Status (2026-10-24): four missions in the campaign: Landing Bay (after Alien Swarm's first mission, with its briefing, hacking, death rules, difficulty, hints and progression), Cargo Elevator, and Jacob's Rest's next two, Deima Surface Bridge and Rydberg Reactor, traced from the real maps. The newest work is in the last section; the early sections below are kept as history.**
 
 ## Done
 
@@ -469,3 +469,47 @@ The foundations of `AS-PARITY.md`'s plan. Built and checked offline (`py build.p
 The whole campaign (`py tools/pack.py --campaign --png dist/campaign-pack.png`): its seven maps as port levels need 113,403 cells side by side, against SC2's 65,536. They do not fit without clashes. Letting later levels give way where floors clash (the best of 12 placement orders), all seven fit in 256x256: Deima, Rydberg, Residential and Sewer Junction keep every floor vertex; Timor Station loses 2.6% of them (worst 2.7 units off), Landing Bay 12.6% (1.9 units) and Landing Bay 2 15.1% (2.7 units). The way to get those back is rotating or mirroring levels in the pack (changes the view), trimming hull margins, or a second map for the last missions.
 
 Run in the client (2026-10-24, `-Auto`): the whole campaign completes with no script errors, the kit reports 0 leaks and 0 shut cells, and Landing Bay's stairs show (a north flight with its nosing, a side flight and a corner plate seen by the wire-panel door). Still to check by hand (`.\launch.ps1 -QA`): units walking the stairs, the camera over the steps, plating and walls flush with the floor, the dropship and effects at the right heights, the minimap, and Landing Bay working at its new origin (x 114).
+
+## Missions 3 and 4: Deima Surface Bridge and Rydberg Reactor (2026-10-24)
+
+Jacob's Rest's second and third missions, built the way Landing Bay was: each laid out from its map's own floor, heights, entities and triggers (`tools/asdata/<map>.json`), one module each (`tools/deima.py`, `tools/rydberg.py`), in `build.py` LEVELS after Cargo Elevator. Built and checked offline (`py build.py`, `--qa`: type and bounds checks pass; the pack still fits, map 232x240 with Deima at 0,0 and Rydberg at 0,112). Not yet run in the client.
+
+- **Traced levels** (`tools/astrace.py`): a level crops its map's 40-unit floor cells to 80-unit port cells (median height, mean walkable fraction), keeps walkable pieces of 12 cells and up, and reads lights, spawners and entities straight from the extractor's tables. Spawners are every one the map can start, set down on the nearest deck cell.
+- **Heights** run through `tools/heights.py` as Landing Bay's do, plateau merge and all. Deima keeps its streets, catwalks and bridge on a few floors, with 480 slope cells of stair flights. Rydberg has eight floors over 118 slope cells: the plant at 608, the turbine hall a step down at 544, and reactor control up at 760.
+- **Scripted missions** (`src/Mission.galaxy` SCRIPTED MISSIONS, from `AS_LV_SCRIPT` on) run on their data alone:
+  - objectives by key with marker spots (`OBJECTIVES`), the briefing's objectives, text and tech rule (`DESCRIPTION`, `NEEDS_TECH`);
+  - mail from mail 4 on (`MAILS`) and buttons (`BUTTONS`, powered or not);
+  - actions `complete`, `show`, `open`, `power`, `notech`, `boom x,y`, `lightning`, `shipguns` and `lights`;
+  - events `pressed:`, `hackstart:` and `hacked:`.
+
+  New door kinds (`src/Doors.galaxy`): `gap`, a ramp whose plates slide out over the drop; `block`, an unseen barrier; and `hover`, a drop crossed once a ship hangs over it. The autopilot's route has two new waits: 5, press the button by it; 6, wait for the door, gap or ramp by it to open.
+- **Deima** (`tools/deima.py`): the colony surface at night in a snowstorm, the whole level outdoors.
+  - The drops open into the blue-fogged pit (`tools/pitart.py`), and one-cell hull strips (AS's railings) are kept as railings.
+  - The main pipeline (`KPitMain`) runs along the chasm beside the long pipeline bridge.
+  - The flow: hack the gate, extend the ramp, set off the charges (the pipeline blows and the wreckage clears), hack the bridge gate, cross under the dropship's guns, and step off onto its hovering deck to the reactor entrance. Lightning flashes every 15 to 20 s.
+  - New art: snowed concrete and tread plate, the bridge's grating deck, red colony walls, and snowed roofs on the hull tops (`KR` caps).
+- **Rydberg** (`tools/rydberg.py`): the power plant, indoors.
+  - The flow: from the loading dock through the pump halls and coolant galleries; hack the reactor control door while rangers come over the railings; start the reactor (the lighting goes to POWER RESTORED); open the airlock; cross the turbine hall; and hold while the north doors grind open (32 s), with boomers, drones and buzzers coming.
+  - AS's fall volumes lie under real floor, so only the reactor core's well and floorless gaps are opened. The exit room is walled off but for its doors.
+  - New art: a works kind (`floor_plantconc`, `floor_coregrate` lit amber from below, `wall_bluestripe`, `wall_rust`), and the reactor core (`KPitCore`) rising out of its well beside the control room.
+- **Capacities raised** for the bigger levels:
+
+  | Item | New limit |
+  |---|---|
+  | Kit actors | 16,384 |
+  | Kit units | 4,096 |
+  | Lamps | 160 |
+  | Spawners | 192 |
+  | Triggers | 96 |
+  | Tracts | 384 |
+  | Pending actions | 64 |
+  | Outputs | 256 |
+  | Route points | 96 |
+  | Door blockers | 48 cells |
+
+- **Renders:** `dist/scene-deima.png`, `dist/scene-rydberg.png` (`py tools/preview_scene.py deima|rydberg x,y,aim ...`).
+
+Still to check in the client: both missions end to end on the autopilot (`-Auto`) with no script errors and 0 kit leaks. Also check by hand:
+- the gap plates and the dropship's flight;
+- the exit doors' wait and the reactor's glow;
+- snow and lightning under SC2's lights.

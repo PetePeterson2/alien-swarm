@@ -290,6 +290,57 @@ def wall_red(seed=220):
     return _img(a), None
 
 
+def wall_bluestripe(seed=230):
+    """Rydberg's halls (concretewall082a): pale board-formed concrete, the planks' grain running across, a broad
+    slate-blue band at head height with a pale pinstripe, a dark plinth stained by the floor's wash."""
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    n = _noise(0, 60, seed, 4, (WH, WW)); f = _noise(0, 4, seed + 1, 2, (WH, WW))
+    a = np.array((176, 178, 172), float)[None, None] * (0.86 + 0.14 * n[..., None] + 0.05 * f[..., None])
+    # Boards: a hairline every 40 px and a wood grain streaking each.
+    grain = _noise(0, 3, seed + 2, 2, (WH, WW)) * 0.5 + 0.5 * np.sin(xx / 9.0 + _noise(0, 30, seed + 5, 2, (WH, WW)) * 8)
+    a *= (0.95 + 0.06 * grain[..., None])
+    for y in range(0, WH, 40):
+        a[y:y + 2] *= 0.7
+    y0, y1 = int(WH * 0.2), int(WH * 0.36)
+    blue = np.array((62, 88, 108), float)
+    worn = np.clip((_noise(0, 16, seed + 7, 3, (WH, WW)) - 0.68) * 4, 0, 1)
+    band = blue[None, None] * (0.85 + 0.25 * n[y0:y1, :, None])
+    a[y0:y1] = band * (1 - worn[y0:y1, :, None]) + a[y0:y1] * worn[y0:y1, :, None]
+    a[y1 + 10:y1 + 16] = np.array((196, 200, 198)) * 0.95
+    for x in range(0, WW, 256):
+        a[:, max(0, x - 1):x + 2] *= 0.55
+    for x in range(64, WW, 128):
+        for y in (WH // 2, int(WH * 0.72)):
+            a[y - 4:y + 4, x - 4:x + 4] *= 0.5
+    a[int(WH * 0.88):] = a[int(WH * 0.88):] * 0.5 + np.array((50, 52, 50)) * 0.2
+    a = _weather(a, seed + 3, 70, 0.04)
+    return _img(a), None
+
+
+def wall_rust(seed=240):
+    """Rydberg's machinery bays (metalwall059a): heavy steel plate in orange primer gone to rust, welded seams,
+    drips of rust under every bolt row, a hazard-striped kick plate."""
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    n = _noise(0, 40, seed, 4, (WH, WW))
+    a = np.array((166, 78, 44), float)[None, None] * (0.8 + 0.35 * n[..., None])
+    rust = np.clip((_noise(0, 22, seed + 1, 4, (WH, WW)) - 0.55) * 3, 0, 1)
+    a = a * (1 - rust[..., None]) + np.array((92, 52, 34))[None, None] * (0.8 + 0.4 * n[..., None]) * rust[..., None]
+    for x in range(0, WW, 256):
+        a[:, max(0, x - 3):x + 3] *= 0.45
+        a[:, x + 3:x + 5] *= 1.2
+    for y in (int(WH * 0.12), int(WH * 0.55)):
+        a[y - 3:y + 3] *= 0.45
+        _rivets(a, [(x, y + 14) for x in range(20, WW, 40)], (150, 92, 60), 3)
+        # rust run down from the bolts
+        r = np.random.default_rng(seed + y)
+        for x in range(20, WW, 40):
+            ln = int(r.integers(30, 90))
+            a[y + 18:y + 18 + ln, x - 1:x + 2] *= 0.75
+    _hazard(a, 0, WW, int(WH * 0.86), WH, seed + 4)
+    a = _weather(a, seed + 3, 50, 0.045)
+    return _img(a), None
+
+
 def tex_cap_snow(seed=6, size=512):
     """A colony roof under snow, as the camera sees Deima's buildings: drifted snow, the roof's seams and a vent box
     showing dark through it, grey where the wind has scoured it thin."""
@@ -404,6 +455,8 @@ def textures():
     out['wall_concrete'] = wall_concrete()
     out['wall_red'] = wall_red()
     out['cap_snow'] = (tex_cap_snow(), None)
+    out['wall_bluestripe'] = wall_bluestripe()
+    out['wall_rust'] = wall_rust()
     out['wall_trim'] = (tex_trim(), None)
     out['cap'] = (tex_cap(), None)
     out['machine_top'] = (tex_machine(), None)

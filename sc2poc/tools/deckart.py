@@ -779,6 +779,50 @@ def floor_bridgedeck(seed=28):
     return _img(_finish(a, seed + 9, 0.03, 500, 1, U, 0.15))
 
 
+# ---- Rydberg's plant (asi-jac3-rydberg: concretefloor051, metalgrate014, metalfloor012a) ----
+def floor_plantconc(seed=29):
+    """concretefloor051: the plant's floors, green-grey cast tiles half a unit square in dark grout, each its own
+    shade, oil and coolant stains spreading from the machinery."""
+    a = np.asarray(floor_concrete(seed, (128, 136, 124)), float)
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:S, 0:S]
+    T = U // 2
+    for py in range(0, S, T):
+        for px in range(0, S, T):
+            a[py:py + T, px:px + T] *= r.uniform(0.92, 1.07)
+    g = (xx % T < 3) | (yy % T < 3)
+    a[g] *= 0.5
+    a[((xx % T == 3) | (yy % T == 3)) & ~g] *= 1.1
+    # Coolant: green-blue tide marks where it has pooled and dried.
+    w = np.clip((_noise(0, 80, seed + 6, 4, (S, S)) - 0.6) * 3, 0, 1)
+    a = a * (1 - 0.25 * w[..., None]) + np.array((70, 96, 90))[None, None] * 0.25 * w[..., None]
+    return _img(_finish(_dirt(a, seed + 4, 0.3), seed + 9, 0.04, 1200, 6, T, 0.18))
+
+
+def floor_coregrate(seed=30, glow=(255, 130, 40)):
+    """metalgrate014: heavy dark grating, a panel a unit square of close slats in a riveted frame, the plant's
+    amber work light coming up through the slats from the pipe runs beneath."""
+    base = np.array((70, 72, 74), float)
+    n = _noise(0, 40, seed, 4, (S, S))
+    a = base[None, None] * (0.82 + 0.3 * n[..., None])
+    yy, xx = np.mgrid[0:S, 0:S]
+    lx, ly = xx % U, yy % U
+    frame = (lx < 16) | (lx >= U - 16) | (ly < 16) | (ly >= U - 16)
+    slot = ~frame & ((ly % 12) >= 7) & (lx > 26) & (lx < U - 26)
+    hot = np.array(glow, float)[None, None] * (0.08 + 0.4 * _noise(0, 130, seed + 9, 3, (S, S))[..., None] ** 2)
+    a[slot] = hot[slot] * 0.35 + 8
+    t = (ly % 12) / 7.0
+    shade = np.where(slot, 1.0, 0.8 + 0.4 * np.sin(np.clip(t, 0, 1) * math.pi))
+    a *= shade[..., None]
+    a[frame] = np.array((96, 96, 94)) * (0.85 + 0.3 * n[frame][:, None])
+    a[(lx >= 14) & (lx < 16) | (ly >= 14) & (ly < 16)] *= 0.5
+    a = _bolts(a, [(x + px, y + py) for px in (0, U) for py in (0, U) for x, y in ((8, 8), (U - 9, 8), (8, U - 9), (U - 9, U - 9))],
+               (128, 126, 120), 4)
+    a = _wear(a, seed + 2, 0.3)
+    emis = np.zeros((S, S, 3)); emis[slot] = hot[slot] * 0.8
+    return _img(_finish(_dirt(a, seed + 4, 0.25), seed + 11, 0.04, 900, 2, U)), _img(emis)
+
+
 FLOORS = {
     'floor_concrete': lambda: (floor_concrete(), None),
     'floor_mgrate': lambda: (floor_mgrate(), None),
@@ -799,6 +843,8 @@ FLOORS = {
     'floor_snowcrete': lambda: (floor_snowcrete(), None),
     'floor_snowplate': lambda: (floor_snowplate(), None),
     'floor_bridgedeck': lambda: (floor_bridgedeck(), None),
+    'floor_plantconc': lambda: (floor_plantconc(), None),
+    'floor_coregrate': lambda: floor_coregrate(),
 }
 
 # Each room kind's floor (tools/level.py KIT_KINDS): the main plating, the second plating mixed
@@ -815,7 +861,8 @@ KIND_FLOORS = {
     'surface': ('floor_snowcrete', 'floor_snowplate', 'floor_snowcrete'),
     'bridge': ('floor_bridgedeck', 'floor_snowplate', 'floor_bridgedeck'),
     'plant': ('floor_brown', 'floor_plate2', 'floor_grate'),
-    'core': ('floor_reactor', 'floor_plate2', 'floor_grate_blue'),
+    'core': ('floor_reactor', 'floor_coregrate', 'floor_grate_blue'),
+    'works': ('floor_plantconc', 'floor_coregrate', 'floor_hatch'),
 }
 
 DECALS = {

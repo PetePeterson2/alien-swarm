@@ -429,15 +429,16 @@ def hull_meshes(floor, room):
 # steps. Ceiling and cap tiles are 4x4, 2x2 and 1x1, origin at their south-west
 # corner, uv'd from world position mod 4 so the three sizes join without seams.
 KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive',
-             'wall_window', 'wall_concrete', 'wall_red']
+             'wall_window', 'wall_concrete', 'wall_red', 'wall_bluestripe', 'wall_rust']
 # Room kinds as the script numbers them, and the wall panels each draws from (indexes into KIT_WALLS).
 # A lift cell (the elevator platform and its bridges) gets no ceiling; the camera looks down the shaft.
 # Past the lift: a colony's open ground under the sky and the catwalks and bridges over its drop (no ceiling over
 # either, src/Kit.galaxy AS_KIND_SURFACE, AS_KIND_BRIDGE), a plant's industrial decks and its reactor core.
-KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift', 'surface', 'bridge', 'plant', 'core']
+KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift', 'surface', 'bridge', 'plant', 'core', 'works']
 KIT_PANELS = {'bay': [0, 0, 2, 5, 3, 6], 'hall': [0, 2, 3, 1, 5, 2], 'duct': [2, 3, 2, 1], 'mess': [1, 1, 4, 5, 0],
               'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7], 'lift': [0],
-              'surface': [10, 10, 9, 10, 5, 10], 'bridge': [10, 2, 10, 10], 'plant': [2, 3, 2, 6, 5, 1], 'core': [2, 4, 5, 2, 6]}
+              'surface': [10, 10, 9, 10, 5, 10], 'bridge': [10, 2, 10, 10], 'plant': [2, 3, 2, 6, 5, 1], 'core': [11, 4, 11, 5, 11, 6],
+              'works': [11, 12, 11, 2, 12, 5, 11]}
 
 
 def _lit(x, y):
@@ -1052,7 +1053,7 @@ TEXTURES = ['BraxisAlphaDarkPlates', 'BraxisAlphaPlates', 'CastanarGrating', 'Br
             'BraxisAlphaWreckedPlates', 'AvernusPanels', 'BraxisAlphaMesh', 'CharSponge']
 DARK, PLATES, GRATE, RUST, WRECK, PANEL, MESH, ORGANIC = range(8)
 ROOM_FLOOR = {'lift': GRATE, 'void': DARK, 'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK,
-              'surface': PLATES, 'bridge': GRATE, 'plant': DARK, 'core': DARK}
+              'surface': PLATES, 'bridge': GRATE, 'plant': DARK, 'core': DARK, 'works': DARK}
 
 
 def terrain_masks(floor, room):

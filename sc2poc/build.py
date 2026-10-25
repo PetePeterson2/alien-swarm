@@ -41,7 +41,9 @@ LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII // SYNTEK LANDING BAY 7',
           ('cargo', 'CARGO ELEVATOR', 'VEREON XII // CARGO ELEVATOR',
            'Take the freight elevator down to the colony. Press H for controls.', 170),
           ('deima', 'DEIMA SURFACE BRIDGE', 'DEIMA // COLONY SURFACE, NIGHT SIDE',
-           'Blow the infested pipeline and cross the bridge to the reactor. Press H for controls.', 150)]
+           'Blow the infested pipeline and cross the bridge to the reactor. Press H for controls.', 150),
+          ('rydberg', 'RYDBERG REACTOR', 'DEIMA // RYDBERG POWER PLANT',
+           'Bring the colony reactor back online and get out through the north doors. Press H for controls.', 180)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 

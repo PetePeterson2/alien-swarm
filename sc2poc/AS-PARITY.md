@@ -1,6 +1,6 @@
 # Alien Swarm parity: deltas and plan, 2026-10-24
 
-The goal is a port that plays like Alien Swarm in every way on its two levels, Landing Bay (`asi-jac1-landingbay_01`) and Cargo Elevator (`asi-jac1-landingbay_02`). This note lists where the port differs from AS today and lays out a phased plan to close the gaps.
+The goal is a port that plays like Alien Swarm in every way, starting with its first two levels, Landing Bay (`asi-jac1-landingbay_01`) and Cargo Elevator (`asi-jac1-landingbay_02`). Deima Surface Bridge and Rydberg Reactor followed on 2026-10-24 (Phase 8). This note lists where the port differs from AS today and lays out a phased plan to close the gaps.
 
 **Sources:**
 - The SDK in `../AlienSwarm/src/game/{server,client,shared}/swarm/`.
@@ -36,6 +36,8 @@ The goal is a port that plays like Alien Swarm in every way on its two levels, L
 | Squad AI | Partial | Breadcrumb follow with hidden teleports instead of AS's formation |
 | Marine chatter | None | AS has 124 chatter types |
 | Lighting and fog | Partial | Orange light in the wrong room; outdoor zones missing in the north block and all of Cargo Elevator |
+| Deima Surface Bridge | Close (traced) | Built 2026-10-24, not yet run in the client; the dropship is a stand-in, its guns scripted |
+| Rydberg Reactor | Close (traced) | Built 2026-10-24, not yet run in the client; the exit doors open after a fixed 32 s, not AS's animation |
 
 ## The deltas
 
@@ -383,6 +385,22 @@ These are the open items in `AS-COMBAT.md`'s "Still proposed", plus the weapons 
 2. Overlay checks like `lb01-overlay.png` for both levels after each layout change.
 3. Autopilot runs on each skill level, logging alien counts by type and time to finish, compared with AS's totals.
 4. Side-by-side play against the recorded demos (`lb_run1.dem`, `ce_run1.dem`, `combat1.dem`).
+
+### Phase 8: the rest of Jacob's Rest
+
+The next missions after Cargo Elevator are traced from their maps from the start, so they need no rebuild: their layout, heights, spawners, triggers, doors and objectives are the extractor's.
+
+1. **Deima Surface Bridge** (`tools/deima.py`): done 2026-10-24.
+2. **Rydberg Reactor** (`tools/rydberg.py`): done 2026-10-24.
+3. **Residential, Sewer Junction and Timor Station:** to do. Each is a module like the two above. The pack already has room for all three (`tools/pack.py --campaign`), and Timor Station gives up 2.6% of its floor vertices there.
+
+Both done missions run on the scripted-mission data (`STATUS.md`). What they do differently from AS:
+- **Deima:** the dropship is a stand-in model on path nodes, and its turrets are scripted.
+- **Rydberg:**
+  - The north doors open on a fixed delay rather than AS's mover animation.
+  - The reactor core is a prop rising out of a well opened for it; AS's fall volumes there lie under the floor.
+
+**Status:** both are built and checked offline. The autopilot run in the client is still to do.
 
 ## What SC2 can't match exactly
 
