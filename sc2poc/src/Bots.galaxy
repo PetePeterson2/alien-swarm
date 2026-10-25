@@ -101,6 +101,35 @@ point AS_BotGoal (int p) {
     return AS_TrailPoint(here);
 }
 bool as_autoTask;                       // the autopilot is busy at a waypoint's job (a welder, a door)
+// The watchdog on every leg: a waypoint not reached in 60 s is logged every 30 s with where the marine is, where it is
+// going and the nearest door, so a stall names its cause; a plain leg (no job) still not done at 150 s ends with the
+// marine set down on the waypoint, logged as forced (a fault to fix, but the run goes on). The hive jobs have their own
+// (AS_HiveWatch); the other jobs wait on the level (a lift, a door's timer) and are only logged.
+int as_awAt= -1;                        // the waypoint it is watching
+fixed as_awSince;
+fixed as_awLogAt;
+void AS_AutoWatch (point here, point to) {
+    int i;int best= -1;fixed bd=4.0;fixed d;string dr="none";
+    if(as_routeAt!=as_awAt) {as_awAt=as_routeAt;as_awSince=as_now;as_awLogAt=as_now+60.0;return;}
+    if(as_routeWait[as_routeAt]==0 && as_now-as_awSince>=150.0 && AS_Free(PointGetX(to),PointGetY(to),0.35)) {
+        AS_Log("autopilot forced: set down on waypoint "+IntToString(as_routeAt+1)+" after 150 s, from "
+            +FixedToString(PointGetX(here)-as_oxF,1)+","+FixedToString(PointGetY(here)-as_oyF,1));
+        UnitSetPosition(as_m[1],to,false);as_mvX[1]=0.0;as_mvY[1]=0.0;as_botLast[1]=to;as_awSince=as_now;
+        return;
+    }
+    if(as_now<as_awLogAt) {return;}
+    as_awLogAt=as_now+30.0;
+    for(i=0;i<as_drN;i+=1) {
+        d=DistanceBetweenPoints(here,Point(AS_DoorCX(i),AS_DoorCY(i)));
+        if(d<bd) {bd=d;best=i;}
+    }
+    if(best>=0) {
+        dr="kind "+IntToString(as_drKind[best])+" "+FixedToString(bd,1)+" off, hp "+FixedToString(as_drHp[best],0)+", open "+FixedToString(as_drOpen[best],2);
+        if(!AS_DoorCanOpen(best)) {dr=dr+", can't open";}
+    }
+    AS_Log("autopilot stalled: waypoint "+IntToString(as_routeAt+1)+" (wait "+IntToString(as_routeWait[as_routeAt])+"); marine at "
+        +FixedToString(PointGetX(here)-as_oxF,1)+","+FixedToString(PointGetY(here)-as_oyF,1)+", "+FixedToString(DistanceBetweenPoints(here,to),1)+" off; nearest door "+dr);
+}
 point AS_RouteGoal () {
     point here=UnitGetPosition(as_m[1]);point to;
     AS_AutoMail();
@@ -108,6 +137,7 @@ point AS_RouteGoal () {
     // Past the last waypoint, hold it: the swarm shoves an idle marine off the transit platform.
     to=Point(as_routeX[MinI(as_routeAt,as_routeN-1)],as_routeY[MinI(as_routeAt,as_routeN-1)]);
     if(as_routeAt>=as_routeN) {return to;}
+    AS_AutoWatch(here,to);
     // Once at a waypoint with a job, stay on the job wherever it leads (a welder, a panel, a terminal).
     if(DistanceBetweenPoints(here,to)<0.9 || (as_routeWait[as_routeAt]>0 && as_autoTask)) {
         if(as_routeWait[as_routeAt]>0) {as_autoTask=true;}
@@ -162,6 +192,18 @@ int AS_BotFoe (int p) {
     }
     return best;
 }
+// The autopilot's marine shoots down an auto door dented shut in front of it, as a player would: below a third of its
+// health a door never opens again (AS_DoorCanOpen), and the swarm massed behind SynTek Residential's Door10 held the
+// route there for 1,400 s (run 8b762a2cecdf).
+int AS_AutoDoorFoe (int p) {
+    int i;point here=UnitGetPosition(as_m[p]);
+    if(!(as_auto && p==1)) {return -1;}
+    for(i=0;i<as_drN;i+=1) {
+        if(as_drKind[i]!=0 || as_drBroken[i] || as_drLeaf[i]==null || !as_drShut[i] || as_drLocked[i] || as_drSeal[i]>0.0 || AS_DoorCanOpen(i)) {continue;}
+        if(DistanceBetweenPoints(here,Point(AS_DoorCX(i),AS_DoorCY(i)))<3.0) {return i;}
+    }
+    return -1;
+}
 void AS_BotPulse (int p) {
     point here;point goal;fixed dx;fixed dy;fixed d;int q;point oq;fixed sx=0.0;fixed sy=0.0;int f;int was;fixed ang;int w;
     if(!as_bot[p] || !as_alive[p]) {return;}
@@ -201,6 +243,11 @@ void AS_BotPulse (int p) {
         as_mouseDX[p]=Cos(ang)*d;as_mouseDY[p]=Sin(ang)*d;as_trigger[p]=as_now>=as_botFireAt[p] || d<2.5;
         // AS closes the error by a tenth a 0.1 s think; this loop steps every 1/16 s.
         if(as_trigger[p]) {as_botAimErr[p]*=0.936;}
+    }
+    else if(AS_AutoDoorFoe(p)>=0) {
+        f=AS_AutoDoorFoe(p);
+        if(as_hand[p]!=0) {AS_SelectHand(p,0);}
+        as_mouseDX[p]=AS_DoorCX(f)-PointGetX(here);as_mouseDY[p]=AS_DoorCY(f)-PointGetY(here);as_trigger[p]=true;
     }
     else {
         as_trigger[p]=false;

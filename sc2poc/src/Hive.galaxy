@@ -24,11 +24,20 @@ int as_hvNeed;                         // the weapon the mission needs (asw_equi
 int[5] as_hvTotal;                     // a counting objective's eggs or growths at the start
 string[5] as_hvBase;                   // and its name without the count
 int as_hvFoe;                          // the autopilot's egg or growth at a wait-7 waypoint, -1 none
+int as_hvJobStop;                      // the waypoint and target its job is on (AS_AutoHiveDone), -1 none
+int as_hvJobFoe;
+fixed as_hvJobAt;                      // when it started on them
+fixed as_hvLogAt;                      // the watchdog's next log line
+int as_hvHeld;                         // the living alien it last held back for, -1 none
+point as_hvSpot;                       // where it stands for its target (AS_HiveSpot), null none chosen
+int as_hvSpotFoe;
+int as_hvForced;                       // targets the watchdog cleared this level
 
 // The level's data starts here: nothing picked, needed or counted yet.
 void AS_HiveStart () {
     int k;
     as_hvPicked="|";as_hvNeed=0;as_hvFoe= -1;
+    as_hvJobStop= -1;as_hvJobFoe= -1;as_hvHeld= -1;as_hvSpot=null;as_hvSpotFoe= -1;as_hvForced=0;
     for(k=0;k<5;k+=1) {as_hvTotal[k]=0;as_hvBase[k]="";}
 }
 // k of groups 1..n, at random.
@@ -120,20 +129,67 @@ int AS_HiveNear (point to) {
     }
     return best;
 }
+string AS_HiveAt (fixed x, fixed y) {return FixedToString(x-as_oxF,1)+","+FixedToString(y-as_oyF,1);}
+// The watchdog: a job that gets no further with its target is written to the log every 10 s from 20 s on (the target,
+// where the marine stands, whether it sees it, what it held back for), stops holding back for the living after 30 s
+// (AS_AutoHiveFoe), and at 90 s clears the target and logs it as forced. A forced line is a fault to fix (a run with one
+// is not clean), but the run still reaches the end, where every stall before this one held it for good.
+void AS_HiveWatch (point to) {
+    int i=as_hvFoe;point here=UnitGetPosition(as_m[1]);fixed t=as_now-as_hvJobAt;string held="nothing";string sight="no";string spot="none";
+    if(i<0 || as_a[i]==null) {return;}
+    if(t>=90.0) {
+        as_hvForced+=1;
+        AS_Log("autopilot forced: kind "+IntToString(as_aKind[i])+" at "+AS_HiveAt(as_aX[i],as_aY[i])+", waypoint "+IntToString(as_routeAt+1)+", after 90 s");
+        AS_KillAlien(i,1,0);as_hvJobFoe= -2;
+        return;
+    }
+    if(t<20.0 || as_now<as_hvLogAt) {return;}
+    as_hvLogAt=as_now+10.0;
+    if(as_hvHeld>=0 && as_a[as_hvHeld]!=null) {held="kind "+IntToString(as_aKind[as_hvHeld])+" at "+AS_HiveAt(as_aX[as_hvHeld],as_aY[as_hvHeld]);}
+    if(AS_HiveSight(PointGetX(here),PointGetY(here),as_aX[i],as_aY[i])) {sight="yes";}
+    if(as_hvSpot!=null) {spot=AS_HiveAt(PointGetX(as_hvSpot),PointGetY(as_hvSpot));}
+    AS_Log("autopilot job "+IntToString(as_routeAt+1)+": kind "+IntToString(as_aKind[i])+" at "+AS_HiveAt(as_aX[i],as_aY[i])+" hp "+FixedToString(as_aHp[i],0)
+        +" for "+FixedToString(t,0)+" s; marine at "+AS_HiveAt(PointGetX(here),PointGetY(here))+", "+FixedToString(DistanceBetweenPoints(here,Point(as_aX[i],as_aY[i])),1)
+        +" off, sight "+sight+", spot "+spot+", gun "+IntToString(as_slot[1])+", held back by "+held);
+}
 bool AS_AutoHiveDone (point to) {
     as_hvFoe=AS_HiveNear(to);
+    if(as_hvFoe!=as_hvJobFoe || as_routeAt!=as_hvJobStop) {as_hvJobFoe=as_hvFoe;as_hvJobStop=as_routeAt;as_hvJobAt=as_now;as_hvLogAt=as_now+20.0;}
+    AS_HiveWatch(to);
     return as_hvFoe<0;
 }
-// Where to stand: eggs are shot from beyond their reach (a barrel from beyond its blast), growths burnt from close in.
+// Where to stand for target q: of the open spots round it on its floor, within reach and in sight of it, the one
+// nearest the marine (three rings, 16 spots each); with none, on the waypoint's own line to it, which AS_HiveNear found
+// in sight. A spot taken towards the marine instead stood it in reach but round a corner from an egg the waypoint sees,
+// firing into the wall (SynTek Residential's vents, 400 and 570 s, runs 838575830e63 and c9beda5f8dd7).
+point AS_HiveSpot (point q, point to, fixed keep, point here) {
+    int k;int n;fixed r;fixed a;fixed x;fixed y;fixed d;fixed bd=1000.0;point best=null;fixed qz=AS_CellZ(PointGetX(q),PointGetY(q));
+    for(n=0;n<3;n+=1) {
+        r=MaxF(1.3,keep*(0.9-0.25*IntToFixed(n)));
+        for(k=0;k<16;k+=1) {
+            a=22.5*IntToFixed(k);x=PointGetX(q)+Cos(a)*r;y=PointGetY(q)+Sin(a)*r;
+            if(!AS_Free(x,y,0.35) || AbsF(AS_CellZ(x,y)-qz)>1.0 || !AS_HiveSight(x,y,PointGetX(q),PointGetY(q))) {continue;}
+            d=DistanceBetweenPoints(here,Point(x,y));
+            if(d<bd) {bd=d;best=Point(x,y);}
+        }
+    }
+    if(best!=null) {return best;}
+    a=AngleBetweenPoints(q,to);r=MinF(keep*0.9,DistanceBetweenPoints(q,to));
+    return Point(PointGetX(q)+Cos(a)*r,PointGetY(q)+Sin(a)*r);
+}
+// Where to go: eggs are shot from beyond their reach (a barrel from beyond its blast), growths burnt from close in. A
+// marine stops walking 0.35 short of where it is sent, and round a tight corner that can still be out of sight, so the
+// last bit is a step onto the spot.
 point AS_AutoHive (point to) {
-    int i=as_hvFoe;point here=UnitGetPosition(as_m[1]);point q;fixed d;fixed keep=5.2;fixed ang;
+    int i=as_hvFoe;point here=UnitGetPosition(as_m[1]);point q;point s;fixed keep=5.2;
     if(i<0 || as_a[i]==null) {return to;}
     q=Point(as_aX[i],as_aY[i]);
     if(as_aKind[i]==AS_BIOMASS) {keep=as_aRadius[i]+1.4;}
-    d=DistanceBetweenPoints(here,q);
-    if(d<=keep && AS_HiveSight(PointGetX(here),PointGetY(here),PointGetX(q),PointGetY(q))) {return null;}
-    ang=AngleBetweenPoints(q,here);
-    return AS_BotWay(here,Point(PointGetX(q)+Cos(ang)*keep*0.9,PointGetY(q)+Sin(ang)*keep*0.9));
+    if(DistanceBetweenPoints(here,q)<=keep && AS_HiveSight(PointGetX(here),PointGetY(here),PointGetX(q),PointGetY(q))) {return null;}
+    if(as_hvSpotFoe!=i || as_hvSpot==null) {as_hvSpot=AS_HiveSpot(q,to,keep,here);as_hvSpotFoe=i;}
+    s=as_hvSpot;
+    if(DistanceBetweenPoints(here,s)<0.5) {UnitSetPosition(as_m[1],s,false);as_mvX[1]=0.0;as_mvY[1]=0.0;as_botLast[1]=s;return null;}
+    return AS_BotWay(here,s);
 }
 // Its target while on the job, when nothing living is close: the growth with the flamer in hand, an egg with the
 // first gun. -1 leaves it to AS_BotFoe.
@@ -143,9 +199,14 @@ int AS_AutoHiveFoe (int p) {
     if(i<0 || as_a[i]==null) {return -1;}
     here=UnitGetPosition(as_m[1]);
     // Only one it can see: an alien asleep in the next room is never shot (AS_BotFoe wants a clear line), so counting
-    // it held the job for good (SynTek Residential's first office, a build of the commits alone, 2026-10-25).
+    // it held the job for good (SynTek Residential's first office, a build of the commits alone, 2026-10-25). After
+    // 30 s on one target it no longer holds back (AS_HiveWatch).
+    as_hvHeld= -1;
     for(j=0;j<AS_MAXALIEN;j+=1) {
-        if(as_a[j]!=null && !AS_IsThing(as_aKind[j]) && DistanceBetweenPoints(here,Point(as_aX[j],as_aY[j]))<6.0 && AS_LineClear(PointGetX(here),PointGetY(here),as_aX[j],as_aY[j])) {return -1;}
+        if(as_a[j]!=null && !AS_IsThing(as_aKind[j]) && DistanceBetweenPoints(here,Point(as_aX[j],as_aY[j]))<6.0 && AS_LineClear(PointGetX(here),PointGetY(here),as_aX[j],as_aY[j])) {
+            as_hvHeld=j;
+            if(as_now-as_hvJobAt<30.0) {return -1;}
+        }
     }
     h=0;
     if(as_aKind[i]==AS_BIOMASS && as_inv[1][1]==AS_IT_FLAMER) {h=1;}
