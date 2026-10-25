@@ -48,7 +48,9 @@ LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII // SYNTEK LANDING BAY 7',
           ('residential', 'SYNTEK RESIDENTIAL', 'DEIMA // SYNTEK RESIDENTIAL BLOCK',
            'Destroy the eggs, burn out the biomass and get to the elevators. Press H for controls.', 150),
           ('sewer', 'SEWER JUNCTION B5', 'DEIMA // SEWER JUNCTION B5',
-           'Bring down the tunnel the swarm comes up, destroy the eggs and get out to the surface. Press H for controls.', 180)]
+           'Bring down the tunnel the swarm comes up, destroy the eggs and get out to the surface. Press H for controls.', 180),
+          ('timor', 'TIMOR STATION', 'DEIMA // TIMOR STATION',
+           'Get the warhead into the nest, arm it, and get out before it goes. Press H for controls.', 265)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 

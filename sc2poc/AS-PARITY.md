@@ -459,7 +459,7 @@ The next missions after Cargo Elevator are traced from their maps from the start
 2. **Rydberg Reactor** (`tools/rydberg.py`): done 2026-10-24.
 3. **SynTek Residential** (`tools/residential.py`): done 2026-10-24.
 4. **Sewer Junction B5** (`tools/sewer.py`): done 2026-10-25.
-5. **Timor Station:** to do. It will be a module like the ones above. Six levels already need the packer's backtracking search (`tools/pack.py` `search`). In `tools/pack.py --campaign`, Timor Station gives up 2.6% of its floor vertices.
+5. **Timor Station** (`tools/timor.py`): done 2026-10-25. With the six earlier levels pinned where they were packed, Timor Station would not fit whole (its best spot clashed on 501 vertices), so it is cut at five corridors into six pieces that sit apart in the map and are joined by seams (`tools/seams.py`, `src/Seams.galaxy`).
 
 Both done missions run on the scripted-mission data (`STATUS.md`). What they do differently from AS:
 - **Deima:** the dropship is a stand-in model on path nodes, and its turrets are scripted.
@@ -477,6 +477,13 @@ Both done missions run on the scripted-mission data (`STATUS.md`). What they do 
   - The tunnel's growth stands on the mouth's flanks rather than over it.
   - The PDW, shotgun and rifle pickups have no item in the port.
   - The catwalk bridge, the channel walks and the turbine catwalk are one cell wide, as in AS, and aliens spawn in them or sleep at their ends. An alien standing in one of them can hold the autopilot marine in place. `AS_AutoUnstick` (`src/Bots.galaxy`, fcbe94f) steps it free after 4 s pinned. Before that commit, a build of the commits alone sat at the bridge (run 5ba7b412cc34).
+- **Timor Station:**
+  - The level is in six pieces joined by seams. Each piece shows ten cells of corridor past its cut, and where a corridor crosses a cut the squad, the swarm and the camera step to the same spot in the next piece. AS's level is one place.
+  - The mining laser has no item in the port. The rock falls it cuts (rock01..04 in the mine, the barricade before the nest) are cut by a marine standing at them for six seconds.
+  - The lava under the bridge is the campaign's blue-fogged drop.
+  - The warhead's train and its track are not modelled. Its objective follows the growth on the track (`count_goo`) and the terminal, as AS's markers do.
+  - `asw_marines_past_area` has no bounds in the extracted data. It is a rectangle from the station's middle to the dock's edge, and off until the download.
+  - The nest's little turning bridge (`reactor_buttons`) is left out: the deck reaches the terminal without it.
 
 **Status:** both are built and play to the end in the client. A run of the commits with the autopilot's watchdog and its stand-point fix (23f59b5a6adf) finished SynTek Residential in 376.3 s and Sewer Junction B5 in 184.1 s with 0 kit leaks, no script error log and nothing forced. Earlier runs: the watchdog alone (323ac4da55c6, clean; e86277e93965, one egg forced), the full campaign (a8346278852d), Sewer alone (29ace728390a), and the commits alone before the watchdog (Sewer f2d4f2b5d4eb, Residential c6fd5b44417c).
 
