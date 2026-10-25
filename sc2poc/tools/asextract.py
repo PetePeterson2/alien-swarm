@@ -3,6 +3,7 @@
     py tools/asextract.py              every campaign map in the Steam install
     py tools/asextract.py asi-jac1-landingbay_01
     py tools/asextract.py --walls [map ...]    add only the chest-height walls to maps already extracted
+    py tools/asextract.py --mats [map ...]     add only the floor materials to maps already extracted
 
 For each map it writes:
 * the floor, rasterised from the BSP's up-facing faces (ramps by their planes, displacements as quads),
@@ -13,6 +14,7 @@ For each map it writes:
   their keys, world boxes and output connections;
 * the walls: how much of each cell a solid brush fills at chest height, and where, in 10-unit pixels (detail walls
   stand on the floor, so the floor alone does not show them);
+* the floor's material, by kind (FLOOR_MATS: water, grating, snow ...), the commonest in each cell;
 * the stair and railing props.
 
 Only numbers and names go into the files; nothing of Valve's is shipped in the SC2 map.
@@ -50,8 +52,22 @@ def unpack_grid(s, dtype, shape):
     return np.frombuffer(zlib.decompress(base64.b64decode(s)), dtype=dtype).reshape(shape)
 
 
-def floor_raster(b):
-    """(z per pixel or nan, x0, y1): the top up-facing floor at each pixel; ramps follow their planes."""
+# The floor's materials by kind, as numbered in floor_mat: a material's name is matched against each kind's words in
+# turn (water before metal: a sewer's slime and water lie over its grates).
+FLOOR_MATS = [('none', ()), ('concrete', ()), ('water', ('water', 'slime')), ('grate', ('grate', 'grille', 'mesh')),
+              ('metal', ('metal',)), ('snow', ('snow',)), ('tile', ('tile', 'brick'))]
+
+
+def mat_kind(name):
+    for k, (_, words) in enumerate(FLOOR_MATS):
+        if any(w in name for w in words):
+            return k
+    return 1
+
+
+def floor_raster(b, mats=False):
+    """(z per pixel or nan, x0, y1): the top up-facing floor at each pixel; ramps follow their planes. With mats, also
+    the kind of the material showing there (FLOOR_MATS), 0 none."""
     morg = b.model_origin()
     geom = {0} | {int(e['model'][1:]) for e in b.entities if e.get('classname') in GEOM and e.get('model', '').startswith('*')}
     disp = {int(d['mapface']) for d in b.dispinfo}
@@ -62,30 +78,43 @@ def floor_raster(b):
                 or b.face_flags[i] & SURF_NODRAW or b.face_normal[i][2] <= 0.3):
             continue
         p = poly + morg[b.face_model[i]]
-        polys.append((p, b.face_normal[i].astype(np.float64)))
+        polys.append((p, b.face_normal[i].astype(np.float64), mat_kind(name)))
     for q in b.displacement_quads():
         n = np.cross(q[1] - q[0], q[3] - q[0])
         if np.linalg.norm(n) and abs(n[2] / np.linalg.norm(n)) > 0.7:
-            polys.append((q, n / np.linalg.norm(n) * np.sign(n[2])))
-    allp = np.concatenate([p for p, _ in polys])
+            polys.append((q, n / np.linalg.norm(n) * np.sign(n[2]), 1))
+    allp = np.concatenate([p for p, *_ in polys])
     x0, y0 = np.floor(allp[:, :2].min(0) / CELL) * CELL - CELL
     x1, y1 = np.ceil(allp[:, :2].max(0) / CELL) * CELL + CELL
     W, H = int((x1 - x0) / PX), int((y1 - y0) / PX)
     img = Image.new('I', (W, H), 0)
     d = ImageDraw.Draw(img)
     polys.sort(key=lambda pn: pn[0][:, 2].mean())
-    for k, (p, _) in enumerate(polys):
+    for k, (p, *_) in enumerate(polys):
         pts = [((x - x0) / PX, (y1 - y) / PX) for x, y, _ in p]
         d.polygon(pts, fill=k + 1)
     ids = np.array(img, dtype=np.int64)
     # z from the winning face's plane at each pixel centre.
-    planes = np.array([[n[0], n[1], n[2], float(np.dot(n, p[0]))] for p, n in polys])
+    planes = np.array([[n[0], n[1], n[2], float(np.dot(n, p[0]))] for p, n, _ in polys])
     yy, xx = np.mgrid[0:H, 0:W]
     wx, wy = x0 + (xx + 0.5) * PX, y1 - (yy + 0.5) * PX
     pl = planes[np.maximum(ids - 1, 0)]
     z = (pl[..., 3] - pl[..., 0] * wx - pl[..., 1] * wy) / pl[..., 2]
     z[ids == 0] = np.nan
+    if mats:
+        kinds = np.array([0] + [m for *_, m in polys], np.uint8)
+        return z, x0, y1, kinds[ids]
     return z, x0, y1
+
+
+def mat_cells(mat):
+    """40-unit cells, south row first: the commonest material kind among a cell's pixels that have one, 0 none."""
+    k = CELL // PX
+    H, W = mat.shape[0] // k, mat.shape[1] // k
+    mm = mat[:H * k, :W * k][::-1].reshape(H, k, W, k).transpose(0, 2, 1, 3).reshape(H, W, k * k)
+    counts = np.stack([(mm == m).sum(-1) for m in range(len(FLOOR_MATS))], -1)
+    counts[..., 0] = 0
+    return np.where(counts.max(-1) > 0, counts.argmax(-1), 0).astype(np.uint8)
 
 
 def walkable(b, z, x0, y1):
@@ -248,6 +277,19 @@ def add_walls(name):
     return pct
 
 
+def add_mats(name):
+    """Put the floor materials (floor_mat) into a map's extracted data, leaving the rest of it as it is."""
+    b = BSP(MAPS_DIR / (name + '.bsp'))
+    z, x0, y1, mat = floor_raster(b, mats=True)
+    cellm = mat_cells(mat)
+    path = OUT / (name + '.json')
+    d = json.loads(path.read_text(encoding='utf-8'))
+    assert cellm.shape == (d['h'], d['w']) and abs(float(x0) - d['x0']) < 1e-6
+    d['floor_mat'] = pack_grid(cellm, 'u1')
+    path.write_text(json.dumps(d, separators=(',', ':')), encoding='utf-8')
+    return cellm
+
+
 def entity_table(b):
     out = []
     for e in b.entities:
@@ -274,7 +316,7 @@ def entity_table(b):
 
 def extract(name):
     b = BSP(MAPS_DIR / (name + '.bsp'))
-    z, x0, y1 = floor_raster(b)
+    z, x0, y1, mat = floor_raster(b, mats=True)
     walk, seeds = walkable(b, z, x0, y1)
     top, walkz, frac, y0 = cells(z, walk, x0, y1)
     wall = wall_raster(b, z, x0, y1)
@@ -289,6 +331,7 @@ def extract(name):
         'seeds': seeds,
         'top_z': pack_grid(top, '<i2'), 'walk_z': pack_grid(walkz, '<i2'), 'walk_pct': pack_grid(frac, 'u1'),
         'wall_pct': pack_grid(wall_cells(wall), 'u1'), 'wall_px': pack_grid(wall_pixels(wall), 'u1'),
+        'floor_mat': pack_grid(mat_cells(mat), 'u1'),
         'entities': entity_table(b),
         'props': props,
     }
@@ -308,6 +351,8 @@ def load(name):
         d['wall_pct'] = unpack_grid(d['wall_pct'], 'u1', shape)
         k = CELL // PX
         d['wall_px'] = np.unpackbits(unpack_grid(d['wall_px'], 'u1', (d['h'] * k, -(-d['w'] * k // 8))), axis=1)[:, :d['w'] * k].astype(bool)
+    if 'floor_mat' in d:
+        d['floor_mat'] = unpack_grid(d['floor_mat'], 'u1', shape)
     for k in ('top_z', 'walk_z'):
         d[k][d[k] == -32768] = np.nan
     return d
@@ -318,6 +363,11 @@ def main():
         for name in sys.argv[2:] or CAMPAIGN:
             pct = add_walls(name)
             print('%-28s walls in %d of %d cells' % (name, int((pct >= 20).sum()), pct.size))
+        return
+    if sys.argv[1:2] == ['--mats']:
+        for name in sys.argv[2:] or CAMPAIGN:
+            m = add_mats(name)
+            print('%-28s %s' % (name, ', '.join('%s %d' % (FLOOR_MATS[k][0], int((m == k).sum())) for k in range(1, len(FLOOR_MATS)))))
         return
     names = sys.argv[1:] or CAMPAIGN
     for name in names:

@@ -125,6 +125,7 @@ const int AS_LV_SCRIPT = 2;      // the first mission that runs on its data alon
 const int AS_LV_DEIMA = 2;
 const int AS_LV_RYDBERG = 3;
 const int AS_LV_RESIDENTIAL = 4;
+const int AS_LV_SEWER = 5;
 string[5] as_objName;
 int[5] as_objState;              // 0 hidden, 1 active, 2 done
 int as_objCount = 4;
@@ -1298,6 +1299,7 @@ bool AS_GenAction (string act, string arg) {
         return true;
     }
     if(act=="power") {i=AS_ButtonNamed(arg);if(i>=0) {as_btOn[i]=true;}return true;}
+    if(act=="kill") {AS_HiveKill(arg);return true;}
     if(act=="notech") {as_needTech=false;as_techRestartAt=0.0;AS_Log("tech requirement lifted");return true;}
     if(act=="boom") {
         at=StringFind(arg,",",c_stringCase);

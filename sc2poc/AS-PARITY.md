@@ -39,6 +39,7 @@ The goal is a port that plays like Alien Swarm in every way, starting with its f
 | Deima Surface Bridge | Close (traced) | Built 2026-10-24, not yet run in the client; the dropship is a stand-in, its guns scripted |
 | Rydberg Reactor | Close (traced) | Built 2026-10-24, not yet run in the client; the exit doors open after a fixed 32 s, not AS's animation |
 | SynTek Residential | Close (traced) | Built 2026-10-24, not yet run in the client; no grub sacs, the fire extinguishers are scenery |
+| Sewer Junction B5 | Close (traced) | Built 2026-10-25, not yet run in the client; the sumps are drops, the turbine is a button |
 
 ## The deltas
 
@@ -394,7 +395,8 @@ The next missions after Cargo Elevator are traced from their maps from the start
 1. **Deima Surface Bridge** (`tools/deima.py`): done 2026-10-24.
 2. **Rydberg Reactor** (`tools/rydberg.py`): done 2026-10-24.
 3. **SynTek Residential** (`tools/residential.py`): done 2026-10-24.
-4. **Sewer Junction and Timor Station:** to do. Each is a module like the ones above. The pack already has room for all three (`tools/pack.py --campaign`), and Timor Station gives up 2.6% of its floor vertices there.
+4. **Sewer Junction B5** (`tools/sewer.py`): done 2026-10-25.
+5. **Timor Station:** to do. It will be a module like the ones above. Six levels already need the packer's backtracking search (`tools/pack.py` `search`). In `tools/pack.py --campaign`, Timor Station gives up 2.6% of its floor vertices.
 
 Both done missions run on the scripted-mission data (`STATUS.md`). What they do differently from AS:
 - **Deima:** the dropship is a stand-in model on path nodes, and its turrets are scripted.
@@ -405,6 +407,12 @@ Both done missions run on the scripted-mission data (`STATUS.md`). What they do 
   - AS's grub sacs, which burst into grubs as a marine passes, are left out. The grubs themselves sleep where AS places them.
   - The office windows are a door kind that gives way when a marine comes up or a drone swipes. AS's break to any damage.
   - The elevator's second mortarbug template is left out.
+- **Sewer Junction:**
+  - The sumps under the north walkways are a drop. AS's sludge floor down there is walkable, and its route dips into the sump by the turbine, which is decked over here.
+  - The turbine's control is a button rather than a prop to shoot, and the turbine itself is not modelled.
+  - The tunnel is rock beyond its mouth from the start. One charge going up brings it down; AS counts four breakables.
+  - The tunnel's growth stands on the mouth's flanks rather than over it.
+  - The PDW, shotgun and rifle pickups have no item in the port.
 
 **Status:** both are built and checked offline. The autopilot run in the client is still to do.
 

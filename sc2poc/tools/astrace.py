@@ -50,6 +50,16 @@ def _halve(a, how):
             return how(b, -1)
 
 
+def _mode(b, axis):
+    """The commonest non-zero value along the axis (0 where all are 0); ties go to the higher kind."""
+    b = np.nan_to_num(b).astype(int)
+    n = int(b.max()) + 1 if b.size else 1
+    counts = np.stack([(b == k).sum(axis) for k in range(n)], -1)
+    counts[..., 0] = 0
+    best = n - 1 - np.argmax(counts[..., ::-1], -1)
+    return np.where(counts.max(-1) > 0, best, 0)
+
+
 def components(mask, smallest):
     """The mask without its 4-connected pieces smaller than `smallest` cells."""
     keep = np.zeros_like(mask)
@@ -114,6 +124,8 @@ class Trace:
             px = d['wall_px']
             ys, xs = slice(max(0, cy0 * 8), min(px.shape[0], (cy0 + H) * 8)), slice(max(0, cx0 * 8), min(px.shape[1], (cx0 + W) * 8))
             self.wall_px[ys.start - cy0 * 8:ys.stop - cy0 * 8, xs.start - cx0 * 8:xs.stop - cx0 * 8] = px[ys, xs]
+        # The floor's material kind (tools/asextract.py FLOOR_MATS), the commonest of a cell's four, 0 none.
+        self.floor_mat = np.nan_to_num(self._crop(_halve(d['floor_mat'], _mode))).astype(int) if 'floor_mat' in d else np.zeros((H, W), int)
         self.entities = d['entities']
 
     def _crop(self, a):

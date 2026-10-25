@@ -127,7 +127,64 @@ def pack(levels, base=8.0, min_size=(0, 0), clash=0, sizes=None):
         places, order = got
         return {'size': (MW, MH), 'places': places, 'order': order,
                 'terrain': terrain(levels, places, order, MW, MH, base)}
+    # Last, the biggest map with several rules for where each level goes, backtracking when a level finds no room.
+    for order in (None, list(range(len(levels))), list(range(len(levels)))[::-1]):
+        got = search(levels, MAX, MAX, base, order=order)
+        if got is not None:
+            places, order = got
+            return {'size': (MAX, MAX), 'places': places, 'order': order,
+                    'terrain': terrain(levels, places, order, MAX, MAX, base)}
     raise SystemExit('the levels do not fit one %dx%d map, even overlapped' % (MAX, MAX))
+
+
+# Where a level may go among the spots where nothing clashes: the lowest row's leftmost (place()'s rule), the
+# top-right corner, the leftmost column's lowest, and the other corners.
+RULES = ('bl', 'tr', 'lb', 'rt', 'tl', 'br')
+
+
+def _spot(bad, rule):
+    ys, xs = np.nonzero(bad == 0)
+    k = {'bl': (xs, ys), 'tr': (-xs, -ys), 'lb': (ys, xs), 'rt': (-ys, -xs), 'tl': (xs, -ys), 'br': (-xs, ys)}[rule]
+    i = np.lexsort(k)[0]
+    return int(xs[i]), int(ys[i])
+
+
+def search(levels, MW, MH, base, order=None):
+    """place() without clashes, trying each of RULES for each level in turn and backing up when one has no room
+    left: (places, order) or None. Six levels where bottom-left alone leaves none for the last."""
+    order = order or sorted(range(len(levels)), key=lambda i: -levels[i]['vmask'].sum())
+    out = [None] * len(levels)
+
+    def go(d, occ_mask, occ_key):
+        if d == len(order):
+            return True
+        lv = levels[order[d]]
+        if lv['w'] > MW or lv['h'] > MH:
+            return False
+        tried = set()
+        for dz in _shifts(lv, base):
+            key = _keys(lv['vert'] + dz)
+            bad = _conflicts(occ_mask, occ_key, lv['vmask'], key)
+            if bad.min() > 0:
+                continue
+            for rule in RULES:
+                ox, oy = _spot(bad, rule)
+                if (ox, oy, dz) in tried:
+                    continue
+                tried.add((ox, oy, dz))
+                h1, w1 = lv['vmask'].shape
+                sub = (slice(oy, oy + h1), slice(ox, ox + w1))
+                mask, keys = occ_mask.copy(), occ_key.copy()
+                keys[sub] = np.where(lv['vmask'] & ~mask[sub], key, keys[sub])
+                mask[sub] |= lv['vmask']
+                out[order[d]] = (ox, oy, dz, 0)
+                if go(d + 1, mask, keys):
+                    return True
+        return False
+
+    if go(0, np.zeros((MH + 1, MW + 1), bool), np.zeros((MH + 1, MW + 1), np.int64)):
+        return out, order
+    return None
 
 
 def terrain(levels, places, order, MW, MH, base):

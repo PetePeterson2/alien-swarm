@@ -1,6 +1,6 @@
 # Halcyon Drift: Alien Swarm combat proof of concept (work in progress)
 
-**Status (2026-10-24): five missions in the campaign: Landing Bay (after Alien Swarm's first mission, with its briefing, hacking, death rules, difficulty, hints and progression), Cargo Elevator, and Jacob's Rest's next three, Deima Surface Bridge, Rydberg Reactor and SynTek Residential, traced from the real maps. The newest work is in the last section; the early sections below are kept as history.**
+**Status (2026-10-25): six missions in the campaign: Landing Bay (after Alien Swarm's first mission, with its briefing, hacking, death rules, difficulty, hints and progression), Cargo Elevator, and Jacob's Rest's next four, Deima Surface Bridge, Rydberg Reactor, SynTek Residential and Sewer Junction B5, traced from the real maps. The newest work is in the last section; the early sections below are kept as history.**
 
 ## Done
 
@@ -536,3 +536,32 @@ Jacob's Rest's fourth mission, traced from `asi-jac4-residential` as Deima and R
 - **Render:** `dist/scene-residential.png`.
 
 Still to check in the client: the mission end to end on the autopilot (`-Auto`) with no script errors and 0 kit leaks, and by hand the glass, the goo walls and the elevator's hold.
+
+## Mission 6: Sewer Junction B5 (2026-10-25)
+
+Jacob's Rest's sixth mission, traced from `asi-jac6-sewerjunction` as the others were (`tools/sewer.py`, in `build.py` LEVELS after SynTek Residential). Built and checked offline (`py build.py`, `--qa`: type and bounds checks pass; map 256x256, Sewer at 109,111). Not yet run in the client.
+
+- **Layout:** the traced floor, less the thin walls between rooms. AS's floor materials now come out of the BSP too (`tools/asextract.py --mats`, `floor_mat`): water, concrete, grate, metal plate, tile. They set each cell's kind (`CELL_KINDS`, new in `tools/level.py` `kind_at`): water is a channel, grate and plate a catwalk, concrete and tile the sewer's walks, and the cells round each egg cluster growth.
+- **Heights:** five clean levels:
+  - the channels and pump hall at -592;
+  - the pump hall's raised walks at -552;
+  - the tunnel hall's north walk at -544;
+  - the north walkways and the yard at -480;
+  - the hatch at -288, at the top of a three-cell flight.
+  The walkways cross the sewer's sumps, which are a deep fogged drop here (`tools/pitart.py`). A walkway's sloping lip counts as walkway. The sump by the turbine, which AS's route dips into, is decked over at the walkway's height.
+- **The flow:**
+  - Collapse the tunnel: the charges at its mouth are named barrels (`HIVE_BARRELS`), and one going up brings the roof in (`TunnelCounter`). The buzzers stop, drones come from the north, the tunnel's growth dies (`kill`, new), and the objective completes five seconds later.
+  - Destroy the 20 eggs.
+  - With both done, the yard's wall is blown and the way out opens.
+  - Shooting the shelf over the settling channel brings it down on the container, which clears the shelf's two clips.
+  - The turbine's control is a button: pressing it stops the turbine and, on Insane, wakes its buzzers.
+  - Every trigger's spawns, stops, random picks and commander lines are read straight from the map.
+- **New art** (`tools/wallart.py`, `tools/deckart.py`):
+  - walls: stained form-course concrete with a water line, pipe runs, a lit outfall grate, slime-streaked concrete, and a work lamp with the junction's "B5" and a hazard band;
+  - floors: cracked concrete, murky water with ripples and scum, glowing slime, and a drain grate;
+  - room kinds `sewer`, `channel`, `catwalk` and `growth`.
+- **Packing** (`tools/pack.py`): six levels no longer fit with bottom-left placement in any order. `search()` tries six placement rules per level and backtracks; Landing Bay goes in the top-right corner and Rydberg left-first. It runs only when the plain orders fail, and takes about 45 s.
+- **Route:** 48 legs, none blocked, and every egg within reach of a wait-7 stop. The autopilot shoots a named barrel from beyond its blast (`src/Hive.galaxy`), and it leaves alone any growth that no objective counts. Sewer Junction has no `trigger_asw_button_area`, so there is no wire panel.
+- **Render:** `dist/scene-sewer.png`.
+
+Still to check in the client: the mission end to end on the autopilot (`-Auto`) with no script errors and 0 kit leaks, and by hand the tunnel's collapse and the yard wall.

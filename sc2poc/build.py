@@ -46,7 +46,9 @@ LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII // SYNTEK LANDING BAY 7',
           ('rydberg', 'RYDBERG REACTOR', 'DEIMA // RYDBERG POWER PLANT',
            'Bring the colony reactor back online and get out through the north doors. Press H for controls.', 180),
           ('residential', 'SYNTEK RESIDENTIAL', 'DEIMA // SYNTEK RESIDENTIAL BLOCK',
-           'Destroy the eggs, burn out the biomass and get to the elevators. Press H for controls.', 150)]
+           'Destroy the eggs, burn out the biomass and get to the elevators. Press H for controls.', 150),
+          ('sewer', 'SEWER JUNCTION B5', 'DEIMA // SEWER JUNCTION B5',
+           'Bring down the tunnel the swarm comes up, destroy the eggs and get out to the surface. Press H for controls.', 180)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 
@@ -405,6 +407,9 @@ def mission_galaxy(n):
         out.append('    i=AS_SpawnAlien(%s,%.2f,%.2f,false);' % ((kind,) + at(x, y)))
     for x, y in getattr(L, 'BARRELS', []):
         out.append('    i=AS_SpawnAlien(AS_BARREL,%.2f,%.2f,false);' % at(x, y))
+    # Barrels a mission counts (x, y, name): their going up fires "broken:<name>" (src/Hive.galaxy).
+    for x, y, name in getattr(L, 'HIVE_BARRELS', []):
+        out.append('    i=AS_SpawnAlien(AS_BARREL,%.2f,%.2f,false);AS_HiveName(i,"%s");' % (at(x, y) + (name,)))
     for kind, x, y in getattr(L, 'PICKUPS', []):
         out.append('    AS_LevelPickup("%s",%.2f,%.2f);' % ((kind,) + at(x, y)))
     out.append('}')

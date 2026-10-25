@@ -165,3 +165,32 @@ Not played: taken from the installed map (`asi-jac4-residential`) through `tools
   - Floors: `floor_whitetile`, `floor_mosstile`, `floor_slab`, with the existing green-grey tile (`floor_plantconc`, the same 051a), grey plate and grille.
   - Room kinds `colony`, `office`, `housing` and `mall`, which dress as the ship's halls, labs, crew rooms and stores.
 - Not ported: the grub sacs, the fire extinguishers' physics, the laser scanner, and the second elevator mortarbug template (`template_morter_elev1`).
+
+## Sewer Junction B5 (2026-10-25)
+
+Not played. This comes from the installed map (`asi-jac6-sewerjunction`), read through `tools/asextract.py` (now with each floor face's material class, `--mats`) and `tools/astrace.py`. Its materials in the VPKs were looked at for palette and pattern only.
+
+**What AS has.**
+- The squad drops into a narrow drain at the south end. An outfall tunnel runs north to the pump hall, then the settling channel (with a shelf, a hanging I-beam and a container to bring down), and the tunnel hall. The swarm's tunnel opens off the tunnel hall's east side. North of it, walkways on piers cross sumps of sludge 176 units down. The egg clusters sit on the walkways, mortarbugs in the sump, and a turbine in its own pit. A ramp climbs out of the turbine's sump to the yard and the hatch to the surface.
+- Floor materials by area (40-unit cells): water 8694, concrete 5800, grate 1497, metal plate 1159, tile 225. The pump hall and channels are flooded.
+- Materials looked at:
+  - `concrete_sewers03` and `concrete_sewers04`: poured walls in form courses, with a dark water line and algae over it;
+  - `blendsewers_floor`: wet concrete and silt;
+  - `metalgrate013a`: the catwalks;
+  - `swarm_toxicslime`: the glowing growth.
+- The flow:
+  - `Objective_Tunnel`: the barrels at the tunnel's mouth break its four `func_breakable`s, then `TunnelCounter` fires: `BlockTunnelMover` closes, `BuzzerSpawn1` stops, `DroneSpawn10` starts, and `bio_mass` is killed.
+  - `Objective_Eggs`: 20 eggs in seven marked clusters.
+  - With both done, `escape_obj_counter` blows `exit_wall` and opens `exit_roof`.
+  - Optional: the turbine control (a physics prop that stops the turbine when shot; `HardSpawner7` on Insane), and the container riddle.
+- No `asw_door` and no `trigger_asw_button_area`. The placed aliens all sleep: six shieldbugs, two mortarbugs, a drone and seven parasites.
+
+**What the port took.**
+- The traced floor on real heights, merged into five levels. The sumps are the fogged drop under the walkways, and the hatch is reached up a three-cell flight.
+- Each cell's kind from AS's own floor material (`CELL_KINDS`).
+- The tunnel's charges as named barrels and the growth's death as a `kill` action (`src/Hive.galaxy`). Every trigger's spawner I/O is read from the map, so only AS's spawners spawn, with their MinSkill.
+- New art:
+  - walls: `wall_sewer`, `wall_sewerpipe`, `wall_seweroutlet`, `wall_sewerslime`, `wall_sewerlamp`;
+  - floors: `floor_sewerconc`, `floor_sewerwater`, `floor_sewerslime`, `floor_sewergrate`;
+  - room kinds `sewer`, `channel`, `catwalk`, `growth`.
+- Not ported: the sump floor as walkable ground, the turbine's blades and crush volume, the hanging I-beam's physics, and the PDW, shotgun and rifle pickups.

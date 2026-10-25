@@ -592,6 +592,167 @@ def wall_housing(seed=290, unit=4):
 
 
 
+def _sewer_base(seed, tone=(126, 124, 114)):
+    """concrete_sewers04: a sewer's poured walls, grey-beige concrete in form courses, the lower third stained dark
+    by the water line with green-black algae over it, cracks and rust run from the form ties, the foot wet and
+    darker still."""
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    n = _noise(0, 60, seed, 5, (WH, WW)); f = _noise(0, 5, seed + 1, 3, (WH, WW))
+    a = np.array(tone, float)[None, None] * (0.86 + 0.18 * n[..., None] + 0.08 * f[..., None])
+    # Form courses: a faint joint every quarter of the height, each course its own shade.
+    for k, y in enumerate(range(0, WH, WH // 4)):
+        a[y:y + WH // 4] *= r.uniform(0.94, 1.05)
+        a[max(0, y - 1):y + 2] *= 0.72
+        a[y + 2:y + 3] *= 1.08
+    # Patches of render fallen away: lighter rough blotches with a dark lip.
+    spall = _noise(0, 40, seed + 2, 4, (WH, WW))
+    sp = np.clip((spall - 0.66) * 6, 0, 1)
+    lip = np.clip(1 - np.abs(spall - 0.66) * 40, 0, 1)
+    a = a * (1 + 0.06 * sp[..., None]) * (1 - 0.12 * lip[..., None])
+    # Cracks, mostly up and down.
+    im = Image.new('L', (WW, WH), 0); d = ImageDraw.Draw(im)
+    for _ in range(5):
+        x, y = r.uniform(0, WW), r.uniform(0, WH * 0.6); pts = [(x, y)]
+        for _ in range(int(r.integers(6, 18))):
+            x += r.normal(0, 5); y += r.uniform(6, 16); pts.append((x, y))
+        d.line(pts, fill=int(r.integers(140, 230)), width=int(r.choice([1, 1, 2])))
+    a *= (1 - 0.45 * np.asarray(im).astype(float)[..., None] / 255)
+    # Form ties, each weeping rust.
+    for x in range(64, WW, 128):
+        for y in (WH // 8, 3 * WH // 8):
+            yy2, xx2 = np.mgrid[-5:6, -5:6]
+            hole = (np.hypot(xx2, yy2) < 4.0)[..., None]
+            a[y - 5:y + 6, x - 5:x + 6] *= (1 - 0.5 * hole)
+            ln = int(r.integers(40, 140))
+            run = np.linspace(0.4, 0.0, ln)[:, None] * np.clip(1 - np.abs(np.arange(-4, 5)) / 4.5, 0, 1)[None]
+            ys, ye = y + 5, min(WH, y + 5 + ln)
+            sl = a[ys:ye, x - 4:x + 5]
+            k = run[:ye - ys, :, None]
+            sl[:] = sl * (1 - k) + np.array((120, 64, 30), float) * k
+    # The water line: below it the wall is dark and slimy, the line itself ragged, with tide marks above.
+    wl = WH * 0.62 + (_noise(0, 30, seed + 3, 3, (1, WW))[0] - 0.5) * 30
+    below = np.clip((yy - wl[None, :]) / 10.0, 0, 1)
+    algae = np.array((44, 56, 36), float)
+    blot = 0.35 + 0.9 * _noise(0, 14, seed + 4, 4, (WH, WW)) * (0.7 + 0.3 * _noise(0, 3, seed + 6, 2, (WH, WW)))
+    a = a * (1 - 0.62 * below[..., None]) + algae * blot[..., None] * 0.62 * below[..., None]
+    # Drips of it run up the wall's pores above the line and down from every ledge.
+    drip = _noise(0, 3, seed + 7, 1, (1, WW)).repeat(WH, 0)
+    drip = np.clip((drip - 0.62) * 5, 0, 1) * np.clip(1 - (wl[None, :] - yy) / 90.0, 0, 1) * (yy < wl[None, :])
+    a *= (1 - 0.35 * drip)[..., None]
+    for k in (14, 30, 52):
+        tide = np.clip(1 - np.abs(yy - (wl[None, :] - k)) / 2.5, 0, 1) * (0.5 + 0.5 * _noise(0, 10, seed + k, 3, (WH, WW)))
+        a *= (1 - 0.18 * tide)[..., None]
+    a[int(WH * 0.92):] *= 0.55
+    return _weather(a, seed + 5, 90, 0.045)
+
+
+def wall_sewer(seed=300):
+    return _img(_sewer_base(seed)), None
+
+
+def wall_sewerpipe(seed=310):
+    """The sewer wall with its mains: two great pipes along it, dark green paint gone to rust, flanged and bolted
+    every bay, a valve wheel on the lower one, brackets into the concrete."""
+    r = np.random.default_rng(seed)
+    a = _sewer_base(seed)
+    for cy, rad, col in ((int(WH * 0.3), 46, (62, 84, 66)), (int(WH * 0.55), 34, (90, 84, 70))):
+        _cylinder(a, cy, rad, col, 0.35)
+        rust = np.clip((_noise(0, 16, seed + cy, 4, (2 * rad, WW)) - 0.55) * 3, 0, 1)
+        a[cy - rad:cy + rad] = a[cy - rad:cy + rad] * (1 - 0.6 * rust[..., None]) + np.array((110, 62, 32)) * 0.6 * rust[..., None]
+        for x in (int(WW * 0.25), int(WW * 0.75)):
+            fl = a[cy - rad - 6:cy + rad + 6, x - 9:x + 9]
+            fl *= 0.8
+            fl[:, :3] *= 0.6; fl[:, -3:] *= 1.25
+            _rivets(a, [(x, cy - rad - 2), (x, cy + rad + 2), (x, cy)], (110, 108, 100), 3)
+        for x in (int(WW * 0.5),):
+            a[cy + rad:cy + rad + 40, x - 8:x + 8] = (70, 68, 64)
+            a[cy + rad:cy + rad + 40, x - 8:x - 5] *= 0.6
+    # The valve wheel.
+    cx, cy = int(WW * 0.62), int(WH * 0.55)
+    yy, xx = np.mgrid[-40:41, -40:41]
+    d = np.hypot(xx, yy)
+    ring = (np.abs(d - 32) < 4) | ((np.abs(xx) < 3) | (np.abs(yy) < 3)) & (d < 32) | (d < 7)
+    sl = a[cy - 40:cy + 41, cx - 40:cx + 41]
+    sl[ring] = np.array((150, 40, 30), float) * (0.8 + 0.4 * (-yy[ring] / 40.0))[:, None]
+    return _img(_weather(a, seed + 7, 30, 0.02)), None
+
+
+def wall_seweroutlet(seed=320):
+    """An outfall in the sewer wall: a round culvert mouth barred with a rusted grate, black inside, a trickle of
+    water and slime run from its lip down the wall to the channel, the concrete round it stained."""
+    a = _sewer_base(seed)
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    cx, cy, rad = WW / 2, WH * 0.55, 120
+    d = np.hypot(xx - cx, yy - cy)
+    collar = (d < rad + 22) & (d >= rad)
+    a[collar] *= 0.78
+    a[(d < rad + 24) & (d >= rad + 20)] *= 0.6
+    inside = d < rad
+    depth = np.clip(1 - d / rad, 0, 1)
+    a[inside] = (np.array((20, 22, 18), float)[None] * (1.2 - 0.8 * depth[inside][:, None]))
+    bars = inside & ((np.abs((xx - cx) % 36 - 18) < 4) | (np.abs(yy - cy) < 5))
+    a[bars] = np.array((88, 60, 40), float)[None] * (0.7 + 0.5 * _noise(0, 10, seed + 1, 3, (WH, WW))[bars][:, None])
+    # The trickle: from the lip down, slime-green, widening.
+    lip = cy + rad
+    run = np.clip(1 - np.abs(xx - cx - (_noise(0, 40, seed + 2, 3, (WH, WW)) - 0.5) * 30) / np.maximum(1.0, 10 + (yy - lip) * 0.05), 0, 1) * (yy > lip - 10)
+    slime = np.array((92, 120, 40), float)
+    a = a * (1 - 0.6 * run[..., None]) + slime * 0.6 * run[..., None]
+    emis = slime[None, None] * (0.12 * run)[..., None]
+    stain = np.clip(1 - np.abs(d - rad - 30) / 30, 0, 1) * (yy > cy)
+    a *= (1 - 0.25 * stain)[..., None]
+    return _img(a), _img(emis)
+
+
+def wall_sewerslime(seed=330):
+    """The swarm in the sewer: its growth spread over the concrete, slick yellow-green slime and dark veined skin,
+    pale sacs glowing in it (asw_alien_goo, toxicslime)."""
+    a = _sewer_base(seed)
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    n = _noise(0, 70, seed, 5, (WH, WW))
+    # More growth low down, where it climbs out of the channel.
+    cover = np.clip((n + (yy / WH) * 0.5 - 0.55) * 3, 0, 1)
+    vein = np.clip(1 - np.abs(_noise(0, 14, seed + 1, 4, (WH, WW)) - 0.5) * 14, 0, 1)
+    skin = np.array((52, 40, 46), float) * (0.8 + 0.4 * _noise(0, 8, seed + 2, 3, (WH, WW)))[..., None]
+    skin = skin * (1 - 0.5 * vein[..., None]) + np.array((120, 60, 90), float) * 0.5 * vein[..., None]
+    slick = np.clip((_noise(0, 30, seed + 3, 4, (WH, WW)) - 0.55) * 4, 0, 1) * cover
+    col = skin * (1 - slick[..., None]) + np.array((150, 190, 40), float) * slick[..., None]
+    a = a * (1 - cover[..., None]) + col * cover[..., None]
+    emis = np.array((150, 200, 40), float)[None, None] * (0.35 * slick ** 2)[..., None]
+    r = np.random.default_rng(seed)
+    for _ in range(9):
+        x, y = r.uniform(30, WW - 30), r.uniform(WH * 0.35, WH * 0.9)
+        if cover[int(y), int(x)] < 0.5:
+            continue
+        rad = r.uniform(8, 20)
+        d = np.hypot(xx - x, (yy - y) * 1.3)
+        sac = np.clip(1 - d / rad, 0, 1)
+        a = a * (1 - sac[..., None]) + np.array((210, 220, 150), float) * sac[..., None] * (0.6 + 0.4 * sac[..., None])
+        emis += np.array((140, 220, 60), float)[None, None] * (0.6 * sac ** 2)[..., None]
+    return _img(a), _img(emis)
+
+
+def wall_sewerlamp(seed=340):
+    """A junction's marked bay: a caged bulkhead lamp burning sodium-yellow over a stencilled section number and
+    a band of hazard stripes at the walkway's edge."""
+    a = _sewer_base(seed)
+    emis = np.zeros((WH, WW, 3))
+    cx, cy = WW // 2, int(WH * 0.2)
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    a[cy - 34:cy + 34, cx - 60:cx + 60] = (60, 60, 56)
+    glass = (np.abs(yy - cy) < 26) & (np.abs(xx - cx) < 50)
+    warm = np.array((255, 200, 110), float)
+    a[glass] = warm * 0.85
+    emis[glass] = warm
+    cage = glass & (((xx - cx) % 20 < 3) | (np.abs(yy - cy) < 2))
+    a[cage] = (50, 50, 46); emis[cage] = 0
+    halo = np.clip(1 - np.hypot((xx - cx) / 200, (yy - cy) / 150), 0, 1) ** 2
+    a *= (1 + 0.5 * halo)[..., None]
+    _label(a, 'B5', cx - 120, cx + 120, int(WH * 0.33), int(WH * 0.48), (226, 220, 200), 82)
+    _hazard(a, 0, WW, int(WH * 0.56), int(WH * 0.6), seed + 1)
+    return _img(a), _img(emis)
+
+
 # tools/level.py KIT_WALLS names -> the bay drawn for it.
 WALLS = {'wall_plain0': ('clean', 100), 'wall_plain1': ('colony', 101), 'wall_pipes2': ('pipes', 102), 'wall_vent3': ('vent', 103),
          'wall_screen4': ('screen', 104), 'wall_light5': ('light', 105), 'wall_alarm6': ('alarm', 106)}
@@ -611,6 +772,11 @@ def textures():
     for k in range(3):
         out['wall_shop%d' % k] = wall_shop(280 + k, k * 2 + (k > 0))
     out['wall_housing'] = wall_housing()
+    out['wall_sewer'] = wall_sewer()
+    out['wall_sewerpipe'] = wall_sewerpipe()
+    out['wall_seweroutlet'] = wall_seweroutlet()
+    out['wall_sewerslime'] = wall_sewerslime()
+    out['wall_sewerlamp'] = wall_sewerlamp()
     out['wall_trim'] = (tex_trim(), None)
     out['cap'] = (tex_cap(), None)
     out['machine_top'] = (tex_machine(), None)

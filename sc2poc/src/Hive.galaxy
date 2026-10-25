@@ -10,6 +10,11 @@
 //                             "ignite:<name>" the first time it catches fire (OnIgnite)
 //   asw_equip_req             a weapon the mission needs (Residential's flamer): issued
 //                             to the squad if nobody chose it at the briefing
+//   a named barrel            fires "broken:<name>" as it goes up (Sewer Junction's tunnel
+//                             charges, its counter's OnHitMax); the autopilot shoots it
+//                             from beyond its blast at a wait-7 waypoint
+//   Kill on goo               "kill" <name>: every growth of that name goes at once (the
+//                             tunnel's biomass as the tunnel comes down)
 // The autopilot's waypoints wait 7: burn and shoot out what is left within 9 of the waypoint and in sight of it.
 // =====================================================================
 string[96] as_hvName;                  // an egg's or growth's name, "" none
@@ -45,7 +50,13 @@ void AS_HiveLit (int i) {
     as_hvLit[i]=true;AS_Fire("ignite:"+as_hvName[i]);
 }
 void AS_HiveGone (int i, int k) {
-    if((k==AS_EGG || k==AS_BIOMASS) && as_hvName[i]!="") {AS_Fire("broken:"+as_hvName[i]);}
+    if((k==AS_EGG || k==AS_BIOMASS || k==AS_BARREL) && as_hvName[i]!="") {AS_Fire("broken:"+as_hvName[i]);}
+}
+void AS_HiveKill (string name) {
+    int i;
+    for(i=0;i<AS_MAXALIEN;i+=1) {
+        if(as_a[i]!=null && as_aKind[i]==AS_BIOMASS && as_hvName[i]==name) {AS_KillAlien(i,0,0);}
+    }
 }
 int AS_HiveLeft (int kind) {
     int i;int n=0;
@@ -92,12 +103,15 @@ bool AS_HiveSight (fixed x0, fixed y0, fixed x1, fixed y1) {
     fixed d=SquareRoot((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0));fixed f=MaxF(0.0,(d-1.0)/MaxF(d,0.01));
     return AS_LineClear(x0,y0,x0+(x1-x0)*f,y0+(y1-y0)*f);
 }
-// The egg or growth nearest the marine within 9 of the waypoint, on its floor and in sight of it, -1 none (the mall's
-// gallery stands over the mall floor across an open drop, so in sight but not in reach).
+// The egg, growth or named barrel nearest the marine within 9 of the waypoint, on its floor and in sight of it, -1
+// none (the mall's gallery stands over the mall floor across an open drop, so in sight but not in reach).
 int AS_HiveNear (point to) {
     int i;int best= -1;fixed bd=1000.0;fixed d;point here=UnitGetPosition(as_m[1]);
     for(i=0;i<AS_MAXALIEN;i+=1) {
-        if(as_a[i]==null || (as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS)) {continue;}
+        if(as_a[i]==null) {continue;}
+        if(as_aKind[i]!=AS_EGG && as_aKind[i]!=AS_BIOMASS && !(as_aKind[i]==AS_BARREL && as_hvName[i]!="")) {continue;}
+        // Growth only where the mission counts it (Sewer Junction's tunnel goo dies with the tunnel).
+        if(as_aKind[i]==AS_BIOMASS && AS_GenObj("goo")<0) {continue;}
         if(DistanceBetweenPoints(Point(as_aX[i],as_aY[i]),to)>9.0) {continue;}
         if(AbsF(AS_CellZ(as_aX[i],as_aY[i])-AS_CellZ(PointGetX(to),PointGetY(to)))>1.0) {continue;}
         if(!AS_HiveSight(PointGetX(to),PointGetY(to),as_aX[i],as_aY[i])) {continue;}
@@ -110,7 +124,7 @@ bool AS_AutoHiveDone (point to) {
     as_hvFoe=AS_HiveNear(to);
     return as_hvFoe<0;
 }
-// Where to stand: eggs are shot from beyond their reach, growths burnt from close in.
+// Where to stand: eggs are shot from beyond their reach (a barrel from beyond its blast), growths burnt from close in.
 point AS_AutoHive (point to) {
     int i=as_hvFoe;point here=UnitGetPosition(as_m[1]);point q;fixed d;fixed keep=5.2;fixed ang;
     if(i<0 || as_a[i]==null) {return to;}

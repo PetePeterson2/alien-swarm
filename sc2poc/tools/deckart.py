@@ -869,6 +869,147 @@ def floor_slab(seed=33):
 
 
 
+def _cracks(seed, n, step=9, wander=0.5, width=1, lo=120, hi=220):
+    """Wandering hairline cracks, as a 0..1 mask that wraps."""
+    r = np.random.default_rng(seed)
+    im = Image.new('L', (S, S), 0); d = ImageDraw.Draw(im)
+    for _ in range(n):
+        x, y = r.uniform(0, S, 2); ang = r.uniform(0, math.tau)
+        pts = [(x, y)]
+        for _ in range(int(r.integers(8, 26))):
+            ang += r.normal(0, wander); x += math.cos(ang) * step; y += math.sin(ang) * step; pts.append((x, y))
+        for ox in (-S, 0, S):
+            for oy in (-S, 0, S):
+                d.line([(px + ox, py + oy) for px, py in pts], fill=int(r.integers(lo, hi)), width=width)
+    return np.asarray(im).astype(float) / 255
+
+
+def floor_sewerconc(seed=34, tone=(128, 128, 120)):
+    """concretefloor027a and blendsewers_floor: a sewer's walks, grey cast concrete broken into big irregular slabs
+    by dark cracks with rust seeping out of them, damp patches darker than the rest, a slick of grime along the
+    joints."""
+    base = np.array(tone, float)
+    r = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:S, 0:S].astype(float)
+    n = _noise(0, 70, seed, 5, (S, S)); f = _noise(0, 4, seed + 1, 3, (S, S))
+    a = base[None, None] * (0.9 + 0.12 * n[..., None] + 0.09 * f[..., None])
+    # The slabs: irregular plates (the nearest of a few points, wrapping), each its own shade, parted by a
+    # ragged dark joint where the two nearest are about as near.
+    pts = r.uniform(0, S, (14, 2))
+    wob = (_noise(0, 18, seed + 2, 3, (S, S)) - 0.5) * 18
+    d = []
+    for px, py in pts:
+        dx = np.abs(xx + wob - px); dx = np.minimum(dx, S - dx)
+        dy = np.abs(yy - wob - py); dy = np.minimum(dy, S - dy)
+        d.append(np.hypot(dx, dy))
+    d = np.sort(np.stack(d), 0)
+    owner = np.argmin(np.stack([np.hypot(np.minimum(np.abs(xx + wob - px), S - np.abs(xx + wob - px)),
+                                         np.minimum(np.abs(yy - wob - py), S - np.abs(yy - wob - py))) for px, py in pts]), 0)
+    shade = r.uniform(0.9, 1.08, len(pts))
+    a *= shade[owner][..., None]
+    gap = d[1] - d[0]
+    joint = np.clip(1 - gap / 4.0, 0, 1)
+    chip = np.clip(1 - gap / 10.0, 0, 1) * np.clip((_noise(0, 6, seed + 3, 3, (S, S)) - 0.45) * 4, 0, 1)
+    rust = np.array((118, 72, 44), float)
+    seep = np.asarray(Image.fromarray((joint * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(6))).astype(float) / 255
+    a = a * (1 - 0.3 * seep[..., None]) + rust * 0.3 * seep[..., None] * (0.6 + 0.6 * n[..., None])
+    a *= (1 - 0.75 * joint - 0.3 * chip)[..., None]
+    # Hairline cracks across a few slabs.
+    a *= (1 - 0.4 * _cracks(seed + 4, 6, 7, 0.55, 1, 120, 200))[..., None]
+    # Damp: darker where the channels splash up, ragged-edged.
+    damp = np.clip((_noise(0, 110, seed + 5, 5, (S, S)) - 0.52) * 4, 0, 1)
+    a *= (1 - 0.25 * damp)[..., None]
+    a = _wear(a, seed + 6, 0.2)
+    return _img(_finish(_dirt(a, seed + 4, 0.25), seed + 9, 0.05, 1800, 4, None, 0.2))
+
+
+def floor_sewerwater(seed=35, tone=(58, 66, 46)):
+    """water_sewer over a channel's concrete: murky olive water, the slabs dim under it, ripples catching the lamps
+    in pale streaks, scum and foam drifting in lines along the flow (east-west), a little light of its own so the
+    channels glisten in the dark as AS's do."""
+    base = np.array(tone, float)
+    yy, xx = np.mgrid[0:S, 0:S].astype(float)
+    n = _noise(0, 80, seed, 5, (S, S))
+    a = base[None, None] * (0.8 + 0.4 * n[..., None])
+    # The channel floor seen through it: slab joints and cracks, faint and blurred.
+    under = np.zeros((S, S))
+    for k in range(0, S, U):
+        under[k:k + 3] = 1; under[:, k:k + 3] = 1
+    under = np.maximum(under, _cracks(seed + 1, 6, 12, 0.3, 2, 120, 200))
+    under = np.asarray(Image.fromarray((under * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(3))).astype(float) / 255
+    a *= (1 - 0.3 * under)[..., None]
+    # Depth: darker in slow swirls.
+    a *= (0.75 + 0.35 * _noise(0, 140, seed + 2, 3, (S, S)))[..., None]
+    # Ripples: thin bright contours of a noise field stretched along the flow.
+    flow = _noise(0, 30, seed + 3, 4, (S, S // 4))
+    flow = np.asarray(Image.fromarray((flow * 255).astype(np.uint8)).resize((S, S), Image.BICUBIC)).astype(float) / 255
+    rip = np.clip(1 - np.abs(((flow * 7) % 1) - 0.5) * 12, 0, 1) * np.clip((_noise(0, 60, seed + 4, 3, (S, S)) - 0.5) * 3, 0, 1)
+    glint = np.array((170, 186, 150), float)
+    a = a * (1 - 0.5 * rip[..., None]) + glint * 0.5 * rip[..., None]
+    # Scum: pale yellow-grey foam in streaks along the flow, and specks of it.
+    sc = _noise(0, 24, seed + 5, 4, (S, S // 6))
+    sc = np.asarray(Image.fromarray((sc * 255).astype(np.uint8)).resize((S, S), Image.BICUBIC)).astype(float) / 255
+    scum = np.clip((sc - 0.68) * 5, 0, 1) * (0.5 + 0.5 * _noise(0, 8, seed + 6, 3, (S, S)))
+    a = a * (1 - 0.6 * scum[..., None]) + np.array((150, 146, 110), float) * 0.6 * scum[..., None]
+    r = np.random.default_rng(seed)
+    a = a * (1 + 0.03 * r.standard_normal((S, S))[..., None])
+    emis = glint[None, None] * (0.18 * rip + 0.05 * scum)[..., None] + base[None, None] * 0.12
+    return _img(a), _img(emis)
+
+
+def floor_sewerslime(seed=36):
+    """toxicslime002a: the swarm's yellow-green slime pooled on the channel's water, glowing at its thickest, a
+    dark rim where it meets the water and bubbles breaking its skin."""
+    yy, xx = np.mgrid[0:S, 0:S].astype(float)
+    water, wemis = floor_sewerwater(seed + 40)
+    a = np.asarray(water).astype(float)[..., :3]
+    we = np.asarray(wemis).astype(float)[..., :3]
+    n = _noise(0, 90, seed, 5, (S, S))
+    thick = np.clip((n - 0.4) * 2.6, 0, 1)
+    rim = np.clip(1 - np.abs(n - 0.43) * 30, 0, 1)
+    hot = np.array((176, 214, 40), float); deep = np.array((70, 110, 10), float)
+    col = deep[None, None] * (1 - thick[..., None]) + hot[None, None] * thick[..., None]
+    col *= (0.75 + 0.5 * _noise(0, 12, seed + 1, 3, (S, S)))[..., None]
+    k = np.clip(thick * 1.6, 0, 1)[..., None]
+    a = a * (1 - k) + col * k
+    a *= (1 - 0.5 * rim)[..., None]
+    r = np.random.default_rng(seed)
+    for _ in range(140):
+        x, y = r.uniform(0, S, 2); rad = r.uniform(2, 7)
+        if thick[int(y) % S, int(x) % S] < 0.3:
+            continue
+        d = np.hypot(xx - x, yy - y)
+        ring = np.clip(1 - np.abs(d - rad), 0, 1)
+        a = a * (1 + 0.35 * ring[..., None])
+    emis = we * (1 - k) + hot[None, None] * (0.55 * thick ** 1.5)[..., None]
+    return _img(a), _img(emis)
+
+
+def floor_sewergrate(seed=37, tone=(104, 102, 96)):
+    """metalgrate013a: a sewer's walkways, close-set flat steel slats across panels a unit wide, framed and bolted,
+    rust in the corners, the dark water glinting under them."""
+    base = np.array(tone, float)
+    yy, xx = np.mgrid[0:S, 0:S]
+    n = _noise(0, 40, seed, 4, (S, S))
+    a = base[None, None] * (0.82 + 0.32 * n[..., None])
+    under = np.array((22, 28, 20), float)[None, None] * (0.7 + 0.8 * _noise(0, 50, seed + 1, 3, (S, S))[..., None] ** 2)
+    slot = ((yy % 12) >= 7) & ((xx % 64) >= 4) & ((xx % 64) < 60)
+    frame = ((xx % U) < 10) | ((xx % U) >= U - 10) | ((yy % U) < 10) | ((yy % U) >= U - 10)
+    open_ = slot & ~frame
+    a[open_] = under[open_]
+    # Slats lit on their top edge, shadowed on the far side of each slot.
+    a[((yy % 12) == 0) & ~frame] *= 1.25
+    a[((yy % 12) == 6) & ~frame] *= 0.6
+    a[frame] *= 0.92
+    a = _bevel(a, U, 0.4, 1.2, 3)
+    rust = np.clip((_noise(0, 30, seed + 2, 4, (S, S)) - 0.58) * 3.5, 0, 1)
+    a = a * (1 - 0.6 * rust[..., None]) + np.array((112, 66, 36))[None, None] * 0.6 * rust[..., None]
+    a = _bolts(a, [(px + 16, py + 16) for px in (0, U) for py in (0, U)] + [(px + U - 16, py + U - 16) for px in (0, U) for py in (0, U)]
+               + [(px + U - 16, py + 16) for px in (0, U) for py in (0, U)] + [(px + 16, py + U - 16) for px in (0, U) for py in (0, U)],
+               base * 1.05, 4)
+    return _img(_finish(_dirt(a, seed + 4, 0.25), seed + 9, 0.04, 900, 3, U, 0.22))
+
+
 FLOORS = {
     'floor_concrete': lambda: (floor_concrete(), None),
     'floor_mgrate': lambda: (floor_mgrate(), None),
@@ -894,6 +1035,12 @@ FLOORS = {
     'floor_whitetile': lambda: (floor_whitetile(), None),
     'floor_mosstile': lambda: (floor_mosstile(), None),
     'floor_slab': lambda: (floor_slab(), None),
+    'floor_sewerconc': lambda: (floor_sewerconc(), None),
+    'floor_sewerconc2': lambda: (floor_sewerconc(38, (116, 114, 104)), None),
+    'floor_sewerwater': lambda: floor_sewerwater(),
+    'floor_sewerwater2': lambda: floor_sewerwater(39, (52, 62, 48)),
+    'floor_sewerslime': lambda: floor_sewerslime(),
+    'floor_sewergrate': lambda: (floor_sewergrate(), None),
 }
 
 # Each room kind's floor (tools/level.py KIT_KINDS): the main plating, the second plating mixed
@@ -916,6 +1063,10 @@ KIND_FLOORS = {
     'office': ('floor_whitetile', 'floor_mosstile', 'floor_grille'),
     'housing': ('floor_plantconc', 'floor_grille', 'floor_slab'),
     'mall': ('floor_tile', 'floor_whitetile', 'floor_grille'),
+    'sewer': ('floor_sewerconc', 'floor_sewerconc2', 'floor_sewergrate'),
+    'channel': ('floor_sewerwater', 'floor_sewerwater2', 'floor_sewergrate'),
+    'catwalk': ('floor_sewergrate', 'floor_sewergrate', 'floor_sewerconc2'),
+    'growth': ('floor_sewerslime', 'floor_hive', 'floor_sewerwater'),
 }
 
 DECALS = {
