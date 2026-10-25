@@ -216,6 +216,8 @@ bool AS_KitPitShore (int x, int y) {
 }
 // Ceiling over deck cells (want 0 plain, 1 hive) or caps over near hull cells (want 2).
 bool AS_KitWants (int x, int y, int want) {
+    // A tile's block can run past the map's edge where a level is packed against it (Landing Bay, top right).
+    if(x>=AS_W || y>=AS_H) {return false;}
     if(as_kitMark[x][y]==1) {return false;}
     if(want==2) {return !AS_Floor(x,y) && as_cell[x][y]!=AS_VOID && as_cell[x][y]!=AS_OPEN && as_cell[x][y]!=AS_MACHINE && as_kitNear[x][y];}
     // The pit's floor and haze: not over its edge ring, where the deck's skirt drops to it (AS_KitStairs).
