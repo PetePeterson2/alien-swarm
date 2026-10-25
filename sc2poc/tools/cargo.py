@@ -274,13 +274,16 @@ ONS = [
     ('ride:end', 'spawn', 'ExitSpawner', 0.0), ('ride:end', 'spawn', 'ins_para_spawn4', 0.5),
     ('ride:end', 'stop', 'ElevatorSpawn_group*', 5.0), ('ride:end', 'disable', 'timer_elevator_spawn', 5.0),
     ('ride:end', 'musicstop', '', 12.0),
+    # relay_block_elevator_exit, a second after the stop, starts commander_choreo_m1_ob3 (scene co_m1_ob6) 4 s later.
+    ('ride:end', 'line', 'co_m1_ob6', 5.0),
 ]
 TIMERS = [('timer_elevator_spawn', 2.0, 3.5, False), ('timer_elevator_crawlers_1', 1.5, 2.0, False)]
 MOVERS = []
 
 LINES = {
-    'co_m1_ob7': 'The cargo elevator at the end of this section is your way down to the colony. Move.',
-    'co_m1_ob8': 'You\'re down. Get to the exit, the colony is through there.',
+    'co_m1_ob6': 'We better get to the colony to see what we can find.',
+    'co_m1_ob7': 'We can\'t get to the colony from up here, we need to get to the lower level!',
+    'co_m1_ob8': 'Get to the exit!',
 }
 
 CHECKPOINTS = [SPAWN, (24.5, 40.0), (25.5, 74.5), (32.0, 112.0), (46.0, 113.0), (56.0, 112.0)]
