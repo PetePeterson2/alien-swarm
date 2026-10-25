@@ -747,7 +747,8 @@ def compose(qa, demo=False, auto=False, start=-1):
     assert len(floors) == 1, 'levels with different base heights: %s' % floors
     # The cell tables are as big as the biggest level; the map holds every level, packed.
     TABLES = (max(w for w, h in sizes), max(h for w, h in sizes))
-    packed = packer.pack([{'w': w, 'h': h, 'vert': t['vert'], 'vmask': t['vmask']} for (w, h), t in zip(sizes, hts)], base=L.FLOOR)
+    packed = packer.pack([{'name': name, 'w': w, 'h': h, 'vert': t['vert'], 'vmask': t['vmask']}
+                           for (name, *_), (w, h), t in zip(LEVELS, sizes, hts)], base=L.FLOOR)
     W, H = packed['size']
     places = packed['places']
     for n, (name, *_) in enumerate(LEVELS):

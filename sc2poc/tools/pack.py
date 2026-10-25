@@ -102,8 +102,55 @@ def place(levels, MW, MH, base, order=None, clash=0):
     return out, order
 
 
+# The campaign's first six levels where the build packed them before Timor Station came (2026-10-25), and the
+# order they took their heights in: pinned, so a level added later fits round them and theirs stay as tested.
+PINNED = {'landingbay': (186, 112, 0.0), 'cargo': (0, 132, -0.375), 'deima': (0, 0, 0.0), 'rydberg': (19, 105, 0.0),
+          'residential': (153, 0, 0.0), 'sewer': (108, 111, 0.0)}
+PIN_ORDER = ['deima', 'landingbay', 'rydberg', 'residential', 'sewer', 'cargo']
+
+
+def pack_pinned(levels, base=8.0):
+    """The levels named in PINNED where it puts them (each must still fit there without a clash), the rest placed
+    round them, bottom-left, in the biggest map: dict(size, places, order, terrain). Each level carries its 'name'."""
+    occ_mask = np.zeros((MAX + 1, MAX + 1), bool)
+    occ_key = np.zeros((MAX + 1, MAX + 1), np.int64)
+    names = [lv['name'] for lv in levels]
+    places = [None] * len(levels)
+    order = [names.index(n) for n in PIN_ORDER if n in names]
+    rest = sorted((i for i, n in enumerate(names) if n not in PINNED), key=lambda i: -levels[i]['vmask'].sum())
+    for i in order + rest:
+        lv = levels[i]
+        if names[i] in PINNED:
+            ox, oy, dz = PINNED[names[i]]
+            key = _keys(lv['vert'] + dz)
+            h1, w1 = lv['vmask'].shape
+            bad = _conflicts(occ_mask[oy:oy + h1, ox:ox + w1], occ_key[oy:oy + h1, ox:ox + w1], lv['vmask'], key)
+            assert bad[0, 0] == 0, '%s no longer fits its pinned place: %d vertices clash' % (names[i], bad[0, 0])
+        else:
+            best = None
+            for dz in _shifts(lv, base):
+                key = _keys(lv['vert'] + dz)
+                bad = _conflicts(occ_mask, occ_key, lv['vmask'], key)
+                if bad.min() == 0:
+                    oy, ox = np.argwhere(bad == 0)[0]
+                    best = (int(ox), int(oy), dz, key)
+                    break
+            assert best is not None, '%s does not fit round the pinned levels (least clashes %d)' % (names[i], bad.min())
+            ox, oy, dz, key = best
+        h1, w1 = lv['vmask'].shape
+        sub = (slice(oy, oy + h1), slice(ox, ox + w1))
+        occ_key[sub] = np.where(lv['vmask'] & ~occ_mask[sub], key, occ_key[sub])
+        occ_mask[sub] |= lv['vmask']
+        places[i] = (ox, oy, dz, 0)
+    order = order + rest
+    return {'size': (MAX, MAX), 'places': places, 'order': order, 'terrain': terrain(levels, places, order, MAX, MAX, base)}
+
+
 def pack(levels, base=8.0, min_size=(0, 0), clash=0, sizes=None):
-    """The smallest map (by area, then squareness) holding every level: dict(size, places, order, terrain)."""
+    """The smallest map (by area, then squareness) holding every level: dict(size, places, order, terrain).
+    Levels named in PINNED keep their places (pack_pinned)."""
+    if any(lv.get('name') in PINNED for lv in levels):
+        return pack_pinned(levels, base)
     minW = max([lv['w'] for lv in levels] + [min_size[0]])
     minH = max([lv['h'] for lv in levels] + [min_size[1]])
     up = lambda n: -(-n // STEP) * STEP
@@ -221,6 +268,111 @@ def check(levels, places, t):
     return out
 
 
+# ---- a level in pieces (tools/seams.py) ------------------------------------------------------------------------
+def fit_pieces(occ_mask, occ_key, pieces, limit, seconds=600.0, width=40):
+    """Where each piece (dict vert, vmask) goes in the map: no clash with what is there, no two pieces sharing a
+    vertex (a cell of hull at least between them), the whole inside `limit` (w, h) and as small as can be found in
+    `seconds`. Returns [(ox, oy)] in the pieces' order, or None."""
+    import time
+    spots = []
+    for pc in pieces:
+        bad = _conflicts(occ_mask, occ_key, pc['vmask'], _keys(pc['vert']))
+        ys, xs = np.nonzero(bad == 0)
+        spots.append(list(zip(xs.tolist(), ys.tolist())))
+    order = sorted(range(len(pieces)), key=lambda i: len(spots[i]))
+
+    def corr(a, b):
+        H, W = a.shape[0] + b.shape[0], a.shape[1] + b.shape[1]
+        f = np.fft.rfft2(a.astype(float), (H, W)) * np.fft.rfft2(b[::-1, ::-1].astype(float), (H, W))
+        return np.rint(np.fft.irfft2(f, (H, W))) > 0.5
+    rel = {(i, j): corr(pieces[i]['vmask'], pieces[j]['vmask']) for i in order for j in order if i != j}
+
+    def touch(i, pi, j, pj):
+        hb, wb = pieces[j]['vmask'].shape
+        iy, ix = pj[1] - pi[1] + hb - 1, pj[0] - pi[0] + wb - 1
+        r = rel[i, j]
+        return 0 <= iy < r.shape[0] and 0 <= ix < r.shape[1] and r[iy, ix]
+
+    def box(ch):
+        x0 = min(s[0] for _, s in ch); y0 = min(s[1] for _, s in ch)
+        x1 = max(s[0] + pieces[i]['vmask'].shape[1] for i, s in ch)
+        y1 = max(s[1] + pieces[i]['vmask'].shape[0] for i, s in ch)
+        return x1 - x0, y1 - y0
+
+    best = [None]
+    t0 = time.time()
+
+    def go(k, ch):
+        if time.time() - t0 > seconds:
+            return
+        if k == len(order):
+            w, h = box(ch)
+            if best[0] is None or w * h < best[0][0]:
+                best[0] = (w * h, dict(ch))
+            return
+        i = order[k]
+        opts = []
+        for s in spots[i]:
+            if any(touch(j, sj, i, s) for j, sj in ch):
+                continue
+            w, h = box(ch + [(i, s)])
+            if w > limit[0] or h > limit[1] or best[0] and w * h >= best[0][0]:
+                continue
+            opts.append((w * h, s))
+        opts.sort()
+        for _, s in opts[:width]:
+            go(k + 1, ch + [(i, s)])
+
+    go(0, [])
+    return None if best[0] is None else [best[0][1][i] for i in range(len(pieces))]
+
+
+def _level_vertices(name, layout=None):
+    """A level's vertex heights and constrained vertices as the build makes them (tools/heights.py); `layout`, a
+    dict of names to swap in over the level's own (a level laid out in pieces)."""
+    from tools import level as L, heights
+    L.use(name)
+    if layout:
+        vars(L).update(layout)
+    floor, room = L.carve()
+    rows = L.deck_rows(floor, room)
+    h = heights.extend(rows, heights.level_heights(vars(L), rows, L.FLOOR), L.FLOOR)
+    return {'name': name, 'w': h['cellz'].shape[1], 'h': h['cellz'].shape[0], 'vert': h['vert'], 'vmask': h['vmask']}
+
+
+def seams_main(name, seconds):
+    """Place a level's pieces round the pinned levels and print them for its module's PIECES."""
+    import importlib
+    mod = importlib.import_module('tools.' + name)
+    occ_mask = np.zeros((MAX + 1, MAX + 1), bool)
+    occ_key = np.zeros((MAX + 1, MAX + 1), np.int64)
+    pinned = [_level_vertices(pin) for pin in PIN_ORDER]
+    for pin, lv in zip(PIN_ORDER, pinned):
+        ox, oy, dz = PINNED[pin]
+        h1, w1 = lv['vmask'].shape
+        sub = (slice(oy, oy + h1), slice(ox, ox + w1))
+        occ_key[sub] = np.where(lv['vmask'] & ~occ_mask[sub], _keys(lv['vert'] + dz), occ_key[sub])
+        occ_mask[sub] |= lv['vmask']
+    # The pieces far apart first, for each one's own vertices as the build will make them.
+    probe = mod.layout([(400 * k, 0) for k in range(len(mod.CUTS) + 1)], margin=2)
+    S = probe['SEAM_LAYOUT']
+    lv = _level_vertices(name, probe)
+    pieces = []
+    for reg, (dx, dy) in zip(S.region, S.shift):
+        ys, xs = np.nonzero(reg)
+        y0, y1, x0, x1 = ys.min() + dy, ys.max() + dy + 2, xs.min() + dx, xs.max() + dx + 2
+        near = np.zeros_like(lv['vmask'])
+        near[y0:y1, x0:x1] = True
+        pieces.append({'vert': lv['vert'][y0:y1, x0:x1], 'vmask': (lv['vmask'] & near)[y0:y1, x0:x1]})
+        print('piece %d: %dx%d cells, %d constrained vertices' % (len(pieces) - 1, x1 - x0 - 1, y1 - y0 - 1, pieces[-1]['vmask'].sum()))
+    # Inside the cell tables the pinned levels already need, less a cell of hull round the pieces.
+    W, H = max(lv['w'] for lv in pinned), max(lv['h'] for lv in pinned)
+    got = fit_pieces(occ_mask, occ_key, pieces, (W - 2, H - 2), seconds)
+    if got is None:
+        raise SystemExit('the pieces found no room within %dx%d' % (W - 2, H - 2))
+    print('PIECES = %s' % [tuple(int(v) for v in g) for g in got])
+
+
 # ---- the whole campaign, from the real maps --------------------------------------------------------------
 def campaign_levels(margin=6, units=80.0, deck_z=832.0, base=8.0):
     """Each campaign map as a port level would be: its walkable floor in 80-unit cells, framed by `margin`
@@ -295,7 +447,12 @@ def main():
     ap.add_argument('--campaign', action='store_true', help='pack the seven campaign maps from tools/asdata/')
     ap.add_argument('--png', help='write the packed footprints to this image')
     ap.add_argument('--tries', type=int, default=24, help='placement orders to try')
+    ap.add_argument('--seams', help='place the pieces of this level (tools/seams.py) round the pinned levels')
+    ap.add_argument('--seconds', type=float, default=900.0, help='how long --seams searches')
     args = ap.parse_args()
+    if args.seams:
+        seams_main(args.seams, args.seconds)
+        return
     if not args.campaign:
         ap.print_help()
         return
