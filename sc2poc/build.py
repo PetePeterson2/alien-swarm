@@ -662,6 +662,8 @@ def script(levels, missions, MW, MH, qa, demo=False, auto=False, start=-1, bank=
         known = set((REFERENCE_SOUNDS.read_text(encoding='utf-8').split()) if REFERENCE_SOUNDS.exists() else ())
         ids = set(re.findall(r'SoundLink\("(\w+)"', code)) | set(re.findall(r'AS_\w*Sound\w*\([^;"]*"(\w+)"', code))
         ids |= {s for s in re.findall(r'"(\w+)"', code) if s in known and len(s) > 3}
+        # Not a prefix the script builds an id on ("ASBark_"+marine+...): the client logs it as an unknown sound.
+        ids = {s for s in ids if not s.endswith('_')}
         probe = ''.join('    SoundPlay(SoundLink("%s",-1),PlayerGroupSingle(1),0.0,0.0);\n' % s for s in sorted(ids))
         stub = 'void AS_SoundProbe () {\n}'
         assert stub in code, 'AS_SoundProbe stub missing'
