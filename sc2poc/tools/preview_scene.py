@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tools/m3-reader'))
 from tools import level as L  # noqa: E402
+from tools import heights  # noqa: E402
 
 W, H = 960, 600                    # 16:10
 PITCH, FOV, DIST, TARGET_Z = 60.0, 60.0, 5.1, 0.4      # src/Marine.galaxy AS_TOP_*
@@ -187,10 +188,11 @@ def lay_level(scene, tex, pieces, rows, tx, ty, hts):
         return rows[y][x]
 
     def floor(x, y):
-        return cell(x, y).isdigit()
+        return cell(x, y) in heights.KIND_CHARS
 
     def kind(x, y):
-        return int(cell(x, y)) if floor(x, y) and not slope[y, x] else -1
+        return heights.KIND_CHARS.index(cell(x, y)) if floor(x, y) and not slope[y, x] else -1
+    LIFT_KIND = L.KIT_KINDS.index('lift')       # the lift's platform is its own (AS_KitFloorKind)
     # Floors (AS_KitFloors): aligned 4x4 pieces where a block is all one kind, else 2x2, else single cells.
     done = set()
 
@@ -203,21 +205,21 @@ def lay_level(scene, tex, pieces, rows, tx, ty, hts):
     for by in range(max(0, y0 - y0 % 4), y1 + 4, 4):
         for bx in range(max(0, x0 - x0 % 4), x1 + 4, 4):
             k = kind(bx, by)
-            if 0 <= k < 8 and fits(bx, by, 4, k):
+            if k >= 0 and k != LIFT_KIND and fits(bx, by, 4, k):
                 done.update((bx + i, by + j) for i in range(4) for j in range(4))
                 place(scene, tex, pieces['KF%d%d' % (k, (bx // 4 * 7 + by // 4 * 13 + (bx // 4) * (by // 4)) % 4)], bx, by, z=zat(bx, by))
                 continue
             for i in (0, 2):
                 for j in (0, 2):
                     k = kind(bx + i, by + j)
-                    if 0 <= k < 8 and fits(bx + i, by + j, 2, k):
+                    if k >= 0 and k != LIFT_KIND and fits(bx + i, by + j, 2, k):
                         done.update((bx + i + a, by + j + b) for a in range(2) for b in range(2))
                         place(scene, tex, pieces['KF%d%s' % (k, 'U' if second(k, bx + i, by + j) else 'T')], bx + i, by + j, z=zat(bx + i, by + j))
                         continue
                     for a in range(2):
                         for b in range(2):
                             k = kind(bx + i + a, by + j + b)
-                            if 0 <= k < 8 and (bx + i + a, by + j + b) not in done:
+                            if k >= 0 and k != LIFT_KIND and (bx + i + a, by + j + b) not in done:
                                 done.add((bx + i + a, by + j + b))
                                 place(scene, tex, pieces['KF%d%s%d%d' % (k, 'R' if second(k, bx + i + a, by + j + b) else 'S', (bx + i + a) % 2, (by + j + b) % 2)], bx + i + a, by + j + b, z=zat(bx + i + a, by + j + b))
     # Slope cells: the terrain between its four corner heights, and over it the stair or ramp piece (AS_KitStairs).
@@ -238,13 +240,13 @@ def lay_level(scene, tex, pieces, rows, tx, ty, hts):
         for x in range(x0, x1):
             c = cell(x, y)
             if c in '#w':
-                place(scene, tex, pieces['KK1'], x, y, z=zat(x, y))
+                place(scene, tex, pieces['KR1' if getattr(L, 'SNOW_ROOFS', False) else 'KK1'], x, y, z=zat(x, y))
             elif c == 'o' and not edge[y, x]:
                 place(scene, tex, pieces['KO1_%d%d' % (x % 4, y % 4)], x, y, z=zat(x, y))
             elif c == 'm':
                 place(scene, tex, pieces['KM1_%d%d' % (x % 4, y % 4)], x, y, z=zat(x, y))
     # Walls in two-unit bays (AS_KitBay, AS_FacePanel, AS_KitPanel).
-    panels = {L.KIT_KINDS.index(k): ''.join(map(str, v)) for k, v in L.KIT_PANELS.items()}
+    panels = {L.KIT_KINDS.index(k): v for k, v in L.KIT_PANELS.items()}
 
     def face(x, y, s):
         c = cell(x, y)
@@ -257,12 +259,12 @@ def lay_level(scene, tex, pieces, rows, tx, ty, hts):
             return -1
         if c == 'w':
             return 8
-        kk = int(cell(nx, ny)); bx, by = nx // 2, ny // 2
+        kk = heights.KIND_CHARS.index(cell(nx, ny)); bx, by = nx // 2, ny // 2
         h = (bx * 37 + by * 101 + s * 59 + (bx * by) % 13) % 211
         p = panels[kk]
         if kk == 6 and h % 5 == 0:
             return 7
-        return int(p[h % len(p)])
+        return p[h % len(p)]
 
     def face_z(x, y, s):
         # AS_FaceZ: a wall stands on the floor it faces.

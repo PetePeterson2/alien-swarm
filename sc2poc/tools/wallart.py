@@ -261,6 +261,52 @@ def wall_concrete(seed=210):
     return _img(a), (_img(emis) if emis.max() > 0 else None)
 
 
+def wall_red(seed=220):
+    """Deima's colony buildings (metalwall008c): red-painted corrugated steel panels between grey steel posts and
+    rails, a riveted seam down each panel, rust and grime run from the rails, snow lying on the ledges."""
+    yy, xx = np.mgrid[0:WH, 0:WW].astype(float)
+    n = _noise(0, 40, seed, 4, (WH, WW))
+    red = np.array((128, 38, 32), float)
+    corr = 0.9 + 0.1 * np.sin(xx / 128.0 * np.pi * 16)
+    a = red[None, None] * (0.82 + 0.3 * n[..., None]) * corr[..., None]
+    # Paint worn to grey-brown steel in patches.
+    worn = np.clip((_noise(0, 26, seed + 1, 4, (WH, WW)) - 0.62) * 4, 0, 1)
+    a = a * (1 - worn[..., None]) + np.array((96, 84, 76))[None, None] * worn[..., None]
+    steel = np.array((132, 136, 138), float)
+    rails = (14, int(WH * 0.22), int(WH * 0.9))
+    post = (np.abs(((xx + 64) % 128) - 64) < 7)
+    for y in rails:
+        a[y - 7:y + 7] = steel * (0.85 + 0.25 * n[y - 7:y + 7, :, None])
+        a[y + 7:y + 10] *= 0.5
+    a[post] = steel * (0.85 + 0.25 * n[post][:, None])
+    a[(np.abs(((xx + 64) % 128) - 64) >= 7) & (np.abs(((xx + 64) % 128) - 64) < 9)] *= 0.55
+    _rivets(a, [(x, y) for x in range(64, WW, 128) for y in range(40, WH - 40, 36)], (150, 150, 150), 3)
+    a[int(WH * 0.9) + 7:] *= 0.55
+    # Snow on the ledges: each rail carries a soft white line, a little spilt down.
+    for y in rails[1:]:
+        lip = np.clip(1 - np.abs(yy - (y - 8)) / 5.0, 0, 1) * (0.6 + 0.4 * _noise(0, 10, seed + y, 3, (WH, WW)))
+        a = a * (1 - lip[..., None]) + np.array((210, 222, 236))[None, None] * lip[..., None]
+    a = _weather(a, seed + 3, 60, 0.04)
+    return _img(a), None
+
+
+def tex_cap_snow(seed=6, size=512):
+    """A colony roof under snow, as the camera sees Deima's buildings: drifted snow, the roof's seams and a vent box
+    showing dark through it, grey where the wind has scoured it thin."""
+    n = _noise(size, 70, seed); f = _noise(size, 8, seed + 1)
+    a = np.array((182, 196, 214), float)[None, None] * (0.8 + 0.18 * n[..., None] + 0.04 * f[..., None])
+    thin = np.clip((_noise(size, 30, seed + 2) - 0.6) * 3, 0, 1)
+    a = a * (1 - 0.45 * thin[..., None])
+    q = size // 2
+    for k in range(0, size, q):
+        a[k:k + 4] *= 0.78; a[:, k:k + 4] *= 0.78
+    r = np.random.default_rng(seed)
+    tx, ty = r.integers(40, size - 140, 2)
+    a[ty:ty + 90, tx:tx + 110] *= 0.42
+    a[ty + 6:ty + 84, tx + 6:tx + 104] *= 1.25
+    return _img(a)
+
+
 def wall_hive(seed=200):
     """A bay grown over: plating under purple-brown alien skin with glowing pods."""
     plate, _ = wall_art('dark', seed)
@@ -356,6 +402,8 @@ def textures():
     out = {name: wall_art(kind, seed) for name, (kind, seed) in WALLS.items()}
     out['wall_hive'] = wall_hive()
     out['wall_concrete'] = wall_concrete()
+    out['wall_red'] = wall_red()
+    out['cap_snow'] = (tex_cap_snow(), None)
     out['wall_trim'] = (tex_trim(), None)
     out['cap'] = (tex_cap(), None)
     out['machine_top'] = (tex_machine(), None)

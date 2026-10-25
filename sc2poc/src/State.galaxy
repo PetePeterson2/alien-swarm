@@ -62,9 +62,10 @@ int as_crumbHead = -1;
 int as_crumbN;
 int as_leader;
 int as_routeN;
-fixed[48] as_routeX;
-fixed[48] as_routeY;
-int[48] as_routeWait;                  // 0 walk on, 1 the gate hacked, 2 the ride over, 3 the tank doors cut, 4 the download done
+fixed[96] as_routeX;
+fixed[96] as_routeY;
+int[96] as_routeWait;                  // 0 walk on, 1 the gate hacked, 2 the ride over, 3 the tank doors cut, 4 the download done,
+                                        // 5 the button by it pressed, 6 the door, gap or ramp by it open
 int as_routeAt;
 int as_logN;
 fixed[5] as_dmgTaken;

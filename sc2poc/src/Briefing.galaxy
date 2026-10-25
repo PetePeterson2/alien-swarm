@@ -276,10 +276,12 @@ void AS_BrRefreshAll () {
     for(p=1;p<=AS_PLAYERS;p+=1) {if(as_dBrief[p]!=0) {AS_BrRefresh(p);}}
 }
 string AS_BrObjectives (int m) {
+    if(m>=AS_LV_SCRIPT) {return AS_LevelObjectives(m);}
     if(m==AS_LV_BAY) {return "<c val=\"FFD24A\">1.</c> Access the inner perimeter<n/><c val=\"FFD24A\">2.</c> Download the flight data<n/><c val=\"FFD24A\">3.</c> Get to the Landing Bay exit";}
     return "<c val=\"FFD24A\">1.</c> Override the security door<n/><c val=\"FFD24A\">2.</c> Reach the cargo elevator<n/><c val=\"FFD24A\">3.</c> Ride the elevator down<n/><c val=\"FFD24A\">4.</c> Escape to the transit station";
 }
 string AS_BrDescription (int m) {
+    if(m>=AS_LV_SCRIPT) {return AS_LevelDesc(m);}
     if(m==AS_LV_BAY) {return "Sweep the landing bay on Vereon XII. IAF Command wants the flight data from an escape pod in one of the bays: a tech must get through the security locks and into its terminal.";}
     return "Take the freight elevator down to the colony and find a way out to the transit station.";
 }
@@ -295,7 +297,7 @@ bool AS_BrSquadHasTech () {
     for(q=1;q<=AS_PLAYERS;q+=1) {if(as_on[q] && as_prof[q]>=0 && as_pfClass[as_prof[q]]==AS_CL_TECH) {return true;}}
     return false;
 }
-bool AS_BrNeedsTech () {return as_briefMission==AS_LV_BAY;}
+bool AS_BrNeedsTech () {return as_briefMission==AS_LV_BAY || AS_LevelTech(as_briefMission);}
 string AS_BrWaiting () {
     int q;string s="";
     for(q=1;q<=AS_PLAYERS;q+=1) {

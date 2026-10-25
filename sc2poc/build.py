@@ -39,7 +39,9 @@ SEATS = 4
 LEVELS = [('landingbay', 'LANDING BAY', 'VEREON XII // SYNTEK LANDING BAY 7',
            'Sweep the landing bay and download the flight data. Press H for controls.', 85),
           ('cargo', 'CARGO ELEVATOR', 'VEREON XII // CARGO ELEVATOR',
-           'Take the freight elevator down to the colony. Press H for controls.', 170)]
+           'Take the freight elevator down to the colony. Press H for controls.', 170),
+          ('deima', 'DEIMA SURFACE BRIDGE', 'DEIMA // COLONY SURFACE, NIGHT SIDE',
+           'Blow the infested pipeline and cross the bridge to the reactor. Press H for controls.', 150)]
 FLAT_PROPS = {'BattleStation_Line_Decals', 'DOM_Ground_Grate', 'BloodSplats', 'DOM_Crate'}   # stock decals the floor plating hides; crates are ours
 BANK = 'HalcyonDrift'              # each marine's campaign progress (QA builds use HalcyonDriftQA)
 
@@ -213,6 +215,7 @@ def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
         out.append('    AS_KitDecal("%s",%.2f,%.2f,%.1f);' % ((piece,) + at(x, y) + (rot,)))
     out += ['}', 'void AS_LevelData%d () {' % n, '    int i;']
     out.append('    as_spawnX=%.2f;as_spawnY=%.2f;as_spawnFacing=%.1f;' % (at(*L.SPAWN) + (L.SPAWN_FACING,)))
+    out.append('    as_kitSnowRoof=%s;' % ('true' if getattr(L, 'SNOW_ROOFS', False) else 'false'))
     spots = [at(x, y) for x, y in tour_spots(solid)[:64]]
     for i, (x, y) in enumerate(spots):
         out.append('    as_tourX[%d]=%.2f;as_tourY[%d]=%.2f;' % (i, x, i, y))
@@ -242,6 +245,31 @@ def level_galaxy(n, solid, room, floor, MW, MH, place, hts):
     return '\n'.join(out)
 
 
+def level_script_text():
+    """A scripted mission's briefing (tools/<level>.py OBJECTIVES, DESCRIPTION, NEEDS_TECH) and its crew's mail
+    (MAILS {n: (from, subject, body)}, n from 4: Landing Bay's are src/HackUI.galaxy's own)."""
+    def q(s):
+        return s.replace('"', "'").replace('\n', '<n/>')
+    briefs, mails, was = [], [], L.LEVEL
+    for n, (name, *_) in enumerate(LEVELS):
+        L.use(name)
+        if hasattr(L, 'OBJECTIVES'):
+            objs = '<n/>'.join('<c val=\\"FFD24A\\">%d.</c> %s' % (i + 1, q(o[1])) for i, o in enumerate(L.OBJECTIVES))
+            briefs.append((n, objs, q(L.DESCRIPTION), getattr(L, 'NEEDS_TECH', False)))
+        mails += [(k, q(who), q(subject), q(body)) for k, (who, subject, body) in getattr(L, 'MAILS', {}).items()]
+    L.use(was)
+    out = ['string AS_LevelObjectives (int m) {']
+    out += ['    if(m==%d) {return "%s";}' % (n, objs) for n, objs, _, _ in briefs]
+    out += ['    return "";', '}', 'string AS_LevelDesc (int m) {']
+    out += ['    if(m==%d) {return "%s";}' % (n, desc) for n, _, desc, _ in briefs]
+    out += ['    return "";', '}', 'bool AS_LevelTech (int m) {']
+    out += ['    if(m==%d) {return %s;}' % (n, 'true' if tech else 'false') for n, _, _, tech in briefs]
+    out += ['    return false;', '}', 'string AS_LevelMail (int n) {']
+    out += ['    if(n==%d) {return "<c val=\\"8CC8F0\\">From:</c> %s<n/><c val=\\"8CC8F0\\">Subject:</c> %s<n/><n/>%s";}' % m
+            for m in mails]
+    return out + ['    return "";', '}']
+
+
 def level_common():
     """What every level shares: the row readers, and the dispatch by level number."""
     out = ['void AS_WallRow (int y, string s) {', '    int x;', '    for(x=0;x<AS_W;x+=1) {as_wall[x][y]=StringSub(s,x+1,x+1)=="1";}', '}',
@@ -250,8 +278,9 @@ def level_common():
         out.append('    as_levelTitle[%d]="%s";as_levelPlace[%d]="%s";as_levelBrief[%d]="%s";as_levelPar[%d]=%d;' % (n, title, n, place, n, brief, n, par))
     out.append('    as_kitMode=true;')
     for k, kind in enumerate(L.KIT_KINDS):
-        out.append('    as_kitPanels[%d]="%s";' % (k, ''.join(map(str, L.KIT_PANELS[kind]))))
-    out += ['}', '// The level\'s tables, its lamps, crates, eggs and biomass; then the kit builds its deck.',
+        out.append('    as_kitPanels[%d]="%s";' % (k, ''.join(heights.KIND_CHARS[i] for i in L.KIT_PANELS[kind])))
+    out += ['}'] + level_script_text()
+    out += ['// The level\'s tables, its lamps, crates, eggs and biomass; then the kit builds its deck.',
             'void AS_LevelLoad (int n) {']
     for n in range(len(LEVELS)):
         out.append('    %sif(n==%d) {AS_LevelRows%d();AS_LevelData%d();}' % ('else ' if n else '', n, n, n))
@@ -284,7 +313,16 @@ def mission_galaxy(n):
         x, y = at(x, y)
         out.append('    as_winX[%d]=%d.0;as_winY[%d]=%d.0;' % (i, x, i, y))
     out.append('    as_winCount=%d;' % len(L.WINDOWS))
-    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3}
+    # A scripted mission's own (src/Mission.galaxy SCRIPTED MISSIONS): where it extracts, whether it needs a tech,
+    # its objectives by key with the spot each marker shows, and its buttons.
+    if hasattr(L, 'OBJECTIVES'):
+        out.append('    AS_GenLevel("%s",%s);' % (L.EXTRACT_NAME, 'true' if getattr(L, 'NEEDS_TECH', False) else 'false'))
+        for key, name, shown, spot in L.OBJECTIVES:
+            mx, my = at(*spot) if spot else (0.0, 0.0)
+            out.append('    AS_GenObjective("%s","%s",%s,%.2f,%.2f);' % (key, name, 'true' if shown else 'false', mx, my))
+    for name, (x, y), label, powered in getattr(L, 'BUTTONS', []):
+        out.append('    AS_Button("%s",%.2f,%.2f,"%s",%s);' % ((name,) + at(x, y) + (label, 'true' if powered else 'false')))
+    kinds = {'auto': 0, 'panel': 1, 'bash': 2, 'jammed': 3, 'gap': 4, 'block': 5, 'hover': 6}
     for name, r, kind, seal, panel in getattr(L, 'DOORS', []):
         x0, y0, x1, y1 = rect(r)
         px, py = at(*panel) if panel else (0.0, 0.0)
@@ -566,6 +604,7 @@ def compose(qa, demo=False, auto=False, start=-1):
         maps.append((floor, np.array([[L.in_void(x, y) for x in range(L.W)] for y in range(L.H)])))
         missions.append(mission_galaxy(n))
         props |= {p[0] for p in L.PROPS if p[0] not in FLAT_PROPS and not p[0].startswith('KP')}
+        props |= {m[1][4:] for m in getattr(L, 'MOVERS', []) if m[1].startswith('ASR_')}
         paint.update(L.paint_names())
         signs.update(L.sign_names())
         if L.LIFT is not None:

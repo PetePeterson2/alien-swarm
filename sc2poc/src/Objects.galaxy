@@ -23,30 +23,30 @@
 const fixed AS_NEAR_DIST = 9.3;              // asw_spawner NearDistance 740
 
 // ---- spawners -----------------------------------------------------------
-const int AS_SPAWNERS = 64;
+const int AS_SPAWNERS = 192;
 int as_spN;
-string[64] as_spName;
-fixed[64] as_spX;
-fixed[64] as_spY;
-int[64] as_spKind;
-int[64] as_spNum;
-int[64] as_spMaxLive;
-fixed[64] as_spInt;
-bool[64] as_spInf;
-int[64] as_spMin;
-int[64] as_spMax;
-bool[64] as_spIfNear;                        // SpawnIfMarinesAreNear
-bool[64] as_spBurrow;
-int[64] as_spState;                          // 1 waiting for inputs, 2 spawning, 3 finished
-int[64] as_spLive;
-int[64] as_spMade;
-fixed[64] as_spNext;
-fixed[64] as_spNear;                         // NearDistance in cells
-fixed[64] as_spJitter;                       // the interval varies by this fraction either way
-int[64] as_spOrder;                          // AlienOrders for what it spawns (as_aGoal), and the target
-fixed[64] as_spTX;
-fixed[64] as_spTY;
-bool[64] as_spDeadFired;                     // OnAllSpawnedDead has fired
+string[AS_SPAWNERS] as_spName;
+fixed[AS_SPAWNERS] as_spX;
+fixed[AS_SPAWNERS] as_spY;
+int[AS_SPAWNERS] as_spKind;
+int[AS_SPAWNERS] as_spNum;
+int[AS_SPAWNERS] as_spMaxLive;
+fixed[AS_SPAWNERS] as_spInt;
+bool[AS_SPAWNERS] as_spInf;
+int[AS_SPAWNERS] as_spMin;
+int[AS_SPAWNERS] as_spMax;
+bool[AS_SPAWNERS] as_spIfNear;                        // SpawnIfMarinesAreNear
+bool[AS_SPAWNERS] as_spBurrow;
+int[AS_SPAWNERS] as_spState;                          // 1 waiting for inputs, 2 spawning, 3 finished
+int[AS_SPAWNERS] as_spLive;
+int[AS_SPAWNERS] as_spMade;
+fixed[AS_SPAWNERS] as_spNext;
+fixed[AS_SPAWNERS] as_spNear;                         // NearDistance in cells
+fixed[AS_SPAWNERS] as_spJitter;                       // the interval varies by this fraction either way
+int[AS_SPAWNERS] as_spOrder;                          // AlienOrders for what it spawns (as_aGoal), and the target
+fixed[AS_SPAWNERS] as_spTX;
+fixed[AS_SPAWNERS] as_spTY;
+bool[AS_SPAWNERS] as_spDeadFired;                     // OnAllSpawnedDead has fired
 
 void AS_Spawner (string name, fixed x, fixed y, int kind, int num, int maxLive, fixed interval, int inf, int minSkill, int maxSkill, int ifNear, int burrow) {
     int i=as_spN;
@@ -162,31 +162,31 @@ void AS_SpawnersClear () {
 }
 
 // ---- triggers -------------------------------------------------------------
-const int AS_TRIGGERS = 48;
+const int AS_TRIGGERS = 96;
 int as_trN;
-fixed[48] as_trX0;
-fixed[48] as_trY0;
-fixed[48] as_trX1;
-fixed[48] as_trY1;
-bool[48] as_trOnce;
-fixed[48] as_trChance;
-bool[48] as_trDone;
-int[48] as_trAct0;                           // first action, and how many
-int[48] as_trActN;
-string[48] as_trName;                        // for enable and disable
-bool[48] as_trOff;                           // StartDisabled, or disabled since
-int[48] as_trNeed;                           // marines inside it takes: 1 any; n (playersrequired, at most the living); -1 all living
-bool[48] as_trAliens;                        // fired by aliens instead of marines
-const int AS_TRACTS = 128;
+fixed[AS_TRIGGERS] as_trX0;
+fixed[AS_TRIGGERS] as_trY0;
+fixed[AS_TRIGGERS] as_trX1;
+fixed[AS_TRIGGERS] as_trY1;
+bool[AS_TRIGGERS] as_trOnce;
+fixed[AS_TRIGGERS] as_trChance;
+bool[AS_TRIGGERS] as_trDone;
+int[AS_TRIGGERS] as_trAct0;                           // first action, and how many
+int[AS_TRIGGERS] as_trActN;
+string[AS_TRIGGERS] as_trName;                        // for enable and disable
+bool[AS_TRIGGERS] as_trOff;                           // StartDisabled, or disabled since
+int[AS_TRIGGERS] as_trNeed;                           // marines inside it takes: 1 any; n (playersrequired, at most the living); -1 all living
+bool[AS_TRIGGERS] as_trAliens;                        // fired by aliens instead of marines
+const int AS_TRACTS = 384;
 int as_actN;
-string[128] as_actDo;
-string[128] as_actArg;
-fixed[128] as_actDelay;
+string[AS_TRACTS] as_actDo;
+string[AS_TRACTS] as_actArg;
+fixed[AS_TRACTS] as_actDelay;
 // Actions waiting for their delay.
-const int AS_PENDING = 32;
-string[32] as_pendDo;
-string[32] as_pendArg;
-fixed[32] as_pendAt;
+const int AS_PENDING = 64;
+string[AS_PENDING] as_pendDo;
+string[AS_PENDING] as_pendArg;
+fixed[AS_PENDING] as_pendAt;
 
 void AS_Trigger (fixed x0, fixed y0, fixed x1, fixed y1, bool once, fixed chance) {
     int i=as_trN;
@@ -264,6 +264,8 @@ void AS_Action (string act, string arg) {
     else if(act=="moveback") {AS_MoverGo(arg,-1);}
     else if(act=="movestop") {AS_MoverGo(arg,0);}
     else if(act=="info") {AS_InfoMessage(arg);}
+    // logic_case with outputs of its own: one of the named events at random ("" for none).
+    else if(act=="pickfire") {arg=AS_PickOne(arg);if(arg!="") {AS_Fire(arg);}}
     else {AS_MissionAction(act,arg);}
 }
 void AS_TriggerPulse () {
@@ -292,13 +294,14 @@ void AS_TriggersClear () {
 
 // ---- outputs: named events and what they do ---------------------------------
 // Events: "alldead:<spawner>", "spawned:<spawner>", "timer:<timer>", "max:<counter>", "pass:<path node>",
-// "arrived:<mover>", or any name a relay fires.
-const int AS_OUTPUTS = 128;
+// "arrived:<mover>", "pressed:<button>", "hackstart:<door>", "hacked:<door>", "done:<objective>", or any name
+// a relay fires.
+const int AS_OUTPUTS = 256;
 int as_onN;
-string[128] as_onEv;
-string[128] as_onDo;
-string[128] as_onArg;
-fixed[128] as_onDelay;
+string[AS_OUTPUTS] as_onEv;
+string[AS_OUTPUTS] as_onDo;
+string[AS_OUTPUTS] as_onArg;
+fixed[AS_OUTPUTS] as_onDelay;
 void AS_On (string ev, string act, string arg, fixed delay) {
     if(as_onN>=AS_OUTPUTS) {return;}
     as_onEv[as_onN]=ev;as_onDo[as_onN]=act;as_onArg[as_onN]=arg;as_onDelay[as_onN]=delay;as_onN+=1;
@@ -382,6 +385,7 @@ int[8] as_moGo;                  // 1 forward, -1 back, 0 stopped
 fixed[8] as_moX;
 fixed[8] as_moY;
 fixed[8] as_moZ;
+fixed[8] as_moBase;              // the deck's height under its first node: node heights are above it
 int as_mpN;
 fixed[64] as_mpX;
 fixed[64] as_mpY;
@@ -398,15 +402,25 @@ void AS_MoverPoint (fixed x, fixed y, fixed z, string node) {
     int i=as_moN-1;
     if(i<0 || as_mpN>=AS_MOVER_POINTS) {return;}
     as_mpX[as_mpN]=x;as_mpY[as_mpN]=y;as_mpZ[as_mpN]=z;as_mpNode[as_mpN]=node;as_mpN+=1;as_moPN[i]+=1;
-    if(as_moPN[i]==1) {
-        as_moX[i]=x;as_moY[i]=y;as_moZ[i]=z;
-        as_moA[i]=libNtve_gf_CreateActorAtPoint(as_moModel[i],Point(x,y));
-        ActorSend(as_moA[i],libNtve_gf_SetPosition(x,y,AS_GroundZ(x,y)+z));
-    }
+    if(as_moPN[i]==1) {as_moX[i]=x;as_moY[i]=y;as_moZ[i]=z;as_moBase[i]=AS_CellZ(x,y);}
 }
+// A mover shows up at its first node when it is first sent on its way (a point_template's ForceSpawn).
 void AS_MoverGo (string name, int dir) {
     int k;
-    for(k=0;k<as_moN;k+=1) {if(as_moName[k]==name) {as_moGo[k]=dir;}}
+    for(k=0;k<as_moN;k+=1) {
+        if(as_moName[k]!=name) {continue;}
+        as_moGo[k]=dir;
+        if(as_moA[k]==null && dir!=0) {
+            as_moA[k]=libNtve_gf_CreateActorAtPoint(as_moModel[k],Point(as_moX[k],as_moY[k]));
+            ActorSend(as_moA[k],libNtve_gf_SetPosition(as_moX[k],as_moY[k],as_moBase[k]+as_moZ[k]));
+            AS_Log("mover out: "+name);
+        }
+    }
+}
+int AS_MoverNamed (string name) {
+    int k;
+    for(k=0;k<as_moN;k+=1) {if(as_moName[k]==name) {return k;}}
+    return -1;
 }
 void AS_MoverPulse () {
     int i;int n;fixed step;fixed dx;fixed dy;fixed dz;fixed d;
@@ -422,7 +436,8 @@ void AS_MoverPulse () {
             if(as_mpNode[n]!="") {AS_Fire("pass:"+as_mpNode[n]);}
         }
         else {as_moX[i]+=dx/d*step;as_moY[i]+=dy/d*step;as_moZ[i]+=dz/d*step;}
-        ActorSend(as_moA[i],libNtve_gf_SetPosition(as_moX[i],as_moY[i],AS_GroundZ(as_moX[i],as_moY[i])+as_moZ[i]));
+        ActorSend(as_moA[i],libNtve_gf_SetPosition(as_moX[i],as_moY[i],as_moBase[i]+as_moZ[i]));
+        if(dx*dx+dy*dy>0.0001) {AS_KitTurn(as_moA[i],ATan2(dy,dx)+90.0);}
     }
 }
 // With the level's triggers (AS_TriggersClear): its outputs, timers, counters and movers.

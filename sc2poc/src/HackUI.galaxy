@@ -291,6 +291,7 @@ void AS_TumblerClick (int p, int i, int k) {
 }
 // The crew's mail, after the original's landingbaymail1-3 (written anew here).
 string AS_MailText (int n) {
+    if(n>=4) {return AS_LevelMail(n);}
     if(n==1) {
         return "<c val=\"8CC8F0\">From:</c> Brian Howe<n/><c val=\"8CC8F0\">Subject:</c> Lockdown<n/><n/>Security sealed the booth with me still inside it. "
             +"They say it's procedure. Something has been banging on the vents all night and the comms are dead past the landing pads.<n/><n/>"

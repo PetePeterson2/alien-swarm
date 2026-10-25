@@ -99,11 +99,11 @@ void AS_SoundUI (int p, string id) {
 }
 
 // ---- lamps ------------------------------------------------------------
-const int AS_LAMPS = 96;
-unit[96] as_lamp;
-int[96] as_lampFlicker;
-bool[96] as_lampOn;
-fixed[96] as_lampNext;
+const int AS_LAMPS = 160;
+unit[AS_LAMPS] as_lamp;
+int[AS_LAMPS] as_lampFlicker;
+bool[AS_LAMPS] as_lampOn;
+fixed[AS_LAMPS] as_lampNext;
 int as_lampCount;
 // Room lamps throw Alien Swarm's wide pools: the stock large omni light of their colour, scaled up
 // (tried: the map's own M3 point lights drew nothing in the client, 2026-10-23).

@@ -14,6 +14,8 @@ const int AS_MACHINE = -5;        // a block of hull standing in a room: walls r
 int as_kitRails;
 const int AS_KIND_HIVE = 7;
 const int AS_KIND_LIFT = 8;       // no ceiling over the lift and its bridges
+const int AS_KIND_SURFACE = 9;    // a colony's open ground under the sky (tools/deima.py): no ceiling
+const int AS_KIND_BRIDGE = 10;    // a bridge or catwalk over the drop: no ceiling
 const int AS_PANEL_WINDOW = 8;    // KIT_WALLS index of the window panel
 const int AS_PANEL_CONCRETE = 9;  // KIT_WALLS index of the outer concrete wall a building shows across the drop
 int[@W@][@H@] as_kitMark;         // scratch: 1 a tile covers the cell, 2 a pathing block does
@@ -59,12 +61,13 @@ string as_probeReport = "";
 string as_kitStages = "";       // pathing readback at each stage, leaks/shut
 int as_kitGen;                  // bumped when a level is cleared: a build still running for the old one stops
 // Everything the kit made, so the level can be cleared for the next one.
-const int AS_KIT_ACTORS = 8192;
-actor[8192] as_kitActor;
+const int AS_KIT_ACTORS = 16384;
+actor[AS_KIT_ACTORS] as_kitActor;
 int as_kitActorN;
-const int AS_KIT_UNITS = 2048;
-unit[2048] as_kitUnit;
+const int AS_KIT_UNITS = 4096;
+unit[AS_KIT_UNITS] as_kitUnit;
 int as_kitUnitN;
+bool as_kitSnowRoof;             // the hull's tops are snowed-over roofs (an outdoor level, tools/<level>.py SNOW_ROOFS)
 // Wall actors and their sides, so Ctrl+Y can mirror the turns if the client rotates the other way.
 actor[1024] as_kitWallA;
 int[1024] as_kitWallSide;
@@ -74,6 +77,8 @@ actor[96] as_kitPropA;
 fixed[96] as_kitPropRot;
 fixed as_kitPropTurn = 0.0;
 
+// A deck row's room kind, or a kind's wall panel: one character, 0-9 then a-f (tools/heights.py KIND_CHARS).
+int AS_CharIdx (string c) {return StringFind("0123456789abcdef",c,c_stringCase)-1;}
 void AS_DeckRow (int y, string s) {
     int x;string c;
     for(x=0;x<AS_W;x+=1) {
@@ -83,7 +88,7 @@ void AS_DeckRow (int y, string s) {
         else if(c=="w") {as_cell[x][y]=AS_WINDOW;}
         else if(c=="m") {as_cell[x][y]=AS_MACHINE;}
         else if(c=="o") {as_cell[x][y]=AS_OPEN;}
-        else {as_cell[x][y]=StringToInt(c);}
+        else {as_cell[x][y]=AS_CharIdx(c);}
     }
 }
 bool AS_Floor (int x, int y) {
@@ -116,7 +121,7 @@ int AS_KitPanel (int kind, int bx, int by, int side) {
     int h=(bx*37+by*101+side*59+(bx*by)%13)%211;
     string s=as_kitPanels[kind];int n=StringLength(s);
     if(kind==6 && h%5==0) {return 7;}
-    return StringToInt(StringSub(s,h%n+1,h%n+1));
+    return AS_CharIdx(StringSub(s,h%n+1,h%n+1));
 }
 // The panel on side s of hull cell (x, y) (0 south, 1 east, 2 north, 3 west), -1 when no face.
 int AS_FacePanel (int x, int y, int s) {
@@ -216,7 +221,7 @@ bool AS_KitWants (int x, int y, int want) {
     // The pit's floor and haze: not over its edge ring, where the deck's skirt drops to it (AS_KitStairs).
     if(want==3) {return as_cell[x][y]==AS_OPEN && !as_cslope[x][y];}
     if(want==4) {return as_cell[x][y]==AS_MACHINE;}
-    if(!AS_Floor(x,y) || as_cell[x][y]==AS_KIND_LIFT) {return false;}
+    if(!AS_Floor(x,y) || as_cell[x][y]==AS_KIND_LIFT || as_cell[x][y]==AS_KIND_SURFACE || as_cell[x][y]==AS_KIND_BRIDGE) {return false;}
     return (as_cell[x][y]==AS_KIND_HIVE)==(want==1);
 }
 bool AS_KitFits (int x, int y, int n, int want) {
@@ -227,7 +232,10 @@ bool AS_KitFits (int x, int y, int n, int want) {
 void AS_KitTile (int x, int y, int n, int want) {
     int i;int j;string piece;
     for(i=0;i<n;i+=1) {for(j=0;j<n;j+=1) {as_kitMark[x+i][y+j]=1;}}
-    if(want==2) {piece="KK"+IntToString(n);as_kitCaps+=1;}
+    if(want==2) {
+        piece="KK"+IntToString(n);as_kitCaps+=1;
+        if(as_kitSnowRoof) {piece="KR"+IntToString(n);}
+    }
     else if(want==3) {piece="KO"+IntToString(n)+"_"+IntToString(x%4)+IntToString(y%4);as_kitCaps+=1;}
     else if(want==4) {piece="KM"+IntToString(n)+"_"+IntToString(x%4)+IntToString(y%4);as_kitCaps+=1;}
     else {
@@ -255,7 +263,7 @@ int AS_KitFloorKind (int x, int y) {
     int k;
     if(x<0 || y<0 || x>=AS_W || y>=AS_H || as_kitFloorDone[x][y] || as_cslope[x][y]) {return -1;}
     k=as_cell[x][y];
-    if(k<0 || k>=AS_KIND_LIFT) {return -1;}
+    if(k<0 || k==AS_KIND_LIFT) {return -1;}
     return k;
 }
 bool AS_KitFloorFits (int x, int y, int n, int k) {

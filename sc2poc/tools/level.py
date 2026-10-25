@@ -182,7 +182,10 @@ def in_void(x, y):
 
 
 def carve():
-    """(floor bool[H, W], room index int[H, W] with -1 for hull)."""
+    """(floor bool[H, W], room index int[H, W] with -1 for hull). A level traced from the real map (tools/astrace.py)
+    gives its floor as DECK, bool[H, W]; its AREAS then only name the rooms, and a deck cell outside them all
+    belongs to the nearest."""
+    deck = globals().get('DECK')
     floor = np.zeros((H, W), bool)
     room = np.full((H, W), -1, int)
     for i, (_, (x0, y0, x1, y1), _) in enumerate(AREAS):
@@ -192,9 +195,32 @@ def carve():
     for i, (_, (x0, y0, x1, y1), kind) in enumerate(AREAS):
         if kind != 'hall' and kind != 'duct':
             room[y0:y1, x0:x1] = i
+    if deck is not None:
+        floor = deck.copy()
+        room = _nearest(room, floor)
     for x0, y0, x1, y1 in BLOCKS:
         floor[y0:y1, x0:x1] = False
     return floor, room
+
+
+def _nearest(room, floor):
+    """Deck cells outside every AREAS rectangle take the room of the nearest that is in one (rings outward)."""
+    room = np.where(floor, room, -1)
+    seeds = room.copy()
+    H_, W_ = room.shape
+    todo = floor & (room < 0)
+    while todo.any():
+        grow = seeds.copy()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            sh = np.full_like(seeds, -1)
+            sh[max(0, dy):H_ + min(0, dy), max(0, dx):W_ + min(0, dx)] = seeds[max(0, -dy):H_ - max(0, dy), max(0, -dx):W_ - max(0, dx)]
+            grow = np.where(grow < 0, sh, grow)
+        if (grow == seeds).all():
+            break
+        seeds = grow
+        room = np.where(todo & (seeds >= 0), seeds, room)
+        todo = floor & (room < 0)
+    return room
 
 
 def kind_at(room, x, y):
@@ -403,12 +429,15 @@ def hull_meshes(floor, room):
 # steps. Ceiling and cap tiles are 4x4, 2x2 and 1x1, origin at their south-west
 # corner, uv'd from world position mod 4 so the three sizes join without seams.
 KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive',
-             'wall_window', 'wall_concrete']
+             'wall_window', 'wall_concrete', 'wall_red']
 # Room kinds as the script numbers them, and the wall panels each draws from (indexes into KIT_WALLS).
 # A lift cell (the elevator platform and its bridges) gets no ceiling; the camera looks down the shaft.
-KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift']
+# Past the lift: a colony's open ground under the sky and the catwalks and bridges over its drop (no ceiling over
+# either, src/Kit.galaxy AS_KIND_SURFACE, AS_KIND_BRIDGE), a plant's industrial decks and its reactor core.
+KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift', 'surface', 'bridge', 'plant', 'core']
 KIT_PANELS = {'bay': [0, 0, 2, 5, 3, 6], 'hall': [0, 2, 3, 1, 5, 2], 'duct': [2, 3, 2, 1], 'mess': [1, 1, 4, 5, 0],
-              'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7], 'lift': [0]}
+              'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7], 'lift': [0],
+              'surface': [10, 10, 9, 10, 5, 10], 'bridge': [10, 2, 10, 10], 'plant': [2, 3, 2, 6, 5, 1], 'core': [2, 4, 5, 2, 6]}
 
 
 def _lit(x, y):
@@ -453,10 +482,12 @@ def kit_pieces():
                             tex = 'ceiling' if _lit(gx, gy) and not hive else 'ceiling_dark'
                             m.quad((tex, False, NO_SHADOW_CAST), (x, y, Z), (x, y + 1, Z), (x + 1, y + 1, Z), (x + 1, y, Z),
                                    [(gx / 4, gy / 4), (gx / 4, (gy + 1) / 4), ((gx + 1) / 4, (gy + 1) / 4), ((gx + 1) / 4, gy / 4)])
-        name = 'KK%d' % size
-        m = out[name] = ShipModel(name, (0, 0, 0))
-        m.quad(('cap', False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
-               [(0, 0), (0.5 * size, 0), (0.5 * size, 0.5 * size), (0, 0.5 * size)])
+        # The hull's top: dark plating indoors (KK), a snowed-over roof outdoors (KR, SNOW_ROOFS).
+        for cap, tex in (('KK', 'cap'), ('KR', 'cap_snow')):
+            name = '%s%d' % (cap, size)
+            m = out[name] = ShipModel(name, (0, 0, 0))
+            m.quad((tex, False, 0), (0, 0, Z), (size, 0, Z), (size, size, Z), (0, size, Z),
+                   [(0, 0), (0.5 * size, 0), (0.5 * size, 0.5 * size), (0, 0.5 * size)])
         # Machinery tops over the blocks standing in rooms, at the wall's height: 4x4-patterned like the ceiling.
         for ox in range(0, 4, size):
             for oy in range(0, 4, size):
@@ -970,8 +1001,11 @@ def deck_rows(floor, room):
     """The deck for the kit loader: one string per row, the room kind's digit (KIT_KINDS) on the deck, else
     '#' hull, 'm' a block of hull standing in a room (machinery seen from above), 'w' hull showing a window panel
     (WINDOWS), 'v' the drop round a lift (no wall, no cap),
-    'o' the open night beyond an outdoor deck's railing (OUTDOORS; a prop block in it stays hull)."""
+    'o' the open night beyond an outdoor deck's railing (OUTDOORS; a prop block in it stays hull; a traced level
+    gives its drop as OPEN, bool[H, W], and OUTDOORS is then only where the sky is)."""
+    from tools.heights import KIND_CHARS
     out_rect = globals().get('OUTDOORS')
+    open_mask = globals().get('OPEN')
     blocks = set((x, y) for x0, y0, x1, y1 in BLOCKS for x in range(x0, x1) for y in range(y0, y1))
 
     def floor_near(x, y):
@@ -990,10 +1024,13 @@ def deck_rows(floor, room):
 
     def cell(x, y):
         if floor[y, x]:
-            return str(KIT_KINDS.index(kind_at(room, x, y)))
+            return KIND_CHARS[KIT_KINDS.index(kind_at(room, x, y))]
         if in_void(x, y):
             return 'v'
-        if out_rect and out_rect[0] <= x < out_rect[2] and out_rect[1] <= y < out_rect[3] and (x, y) not in blocks:
+        if open_mask is not None:
+            if open_mask[y, x] and (x, y) not in blocks:
+                return 'o'
+        elif out_rect and out_rect[0] <= x < out_rect[2] and out_rect[1] <= y < out_rect[3] and (x, y) not in blocks:
             return 'o'
         if (x, y) in blocks and floor_near(x, y):
             return 'm'
@@ -1014,7 +1051,8 @@ def generic_masks(W=W, H=H):
 TEXTURES = ['BraxisAlphaDarkPlates', 'BraxisAlphaPlates', 'CastanarGrating', 'BraxisAlphaRust',
             'BraxisAlphaWreckedPlates', 'AvernusPanels', 'BraxisAlphaMesh', 'CharSponge']
 DARK, PLATES, GRATE, RUST, WRECK, PANEL, MESH, ORGANIC = range(8)
-ROOM_FLOOR = {'lift': GRATE, 'void': DARK, 'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK}
+ROOM_FLOOR = {'lift': GRATE, 'void': DARK, 'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK,
+              'surface': PLATES, 'bridge': GRATE, 'plant': DARK, 'core': DARK}
 
 
 def terrain_masks(floor, room):

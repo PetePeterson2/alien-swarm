@@ -4,7 +4,10 @@
 // the level's tables (src/Objects.galaxy, src/Doors.galaxy), its objectives
 // and set pieces are below. Mission 2, CARGO ELEVATOR (tools/cargo.py):
 // objectives, the security door, scripted moments, the elevator ride, the
-// escape. Both share the stages and the extraction.
+// escape. Both share the stages and the extraction. From mission 3 on
+// (tools/deima.py, tools/rydberg.py) a mission runs on its data alone: its
+// objectives by key, completed by its triggers, buttons and panels (the
+// SCRIPTED MISSIONS section below).
 //
 // Alien Swarm's rules on death: nobody comes back during a mission and there
 // are no checkpoints. When the whole squad is down (0.6 s after the last), or
@@ -118,6 +121,9 @@ void AS_SetCell (int x0, int y0, int x1, int y1, bool solid) {
 }
 
 // ---- objectives -------------------------------------------------------
+const int AS_LV_SCRIPT = 2;      // the first mission that runs on its data alone (DEIMA SURFACE BRIDGE)
+const int AS_LV_DEIMA = 2;
+const int AS_LV_RYDBERG = 3;
 string[5] as_objName;
 int[5] as_objState;              // 0 hidden, 1 active, 2 done
 int as_objCount = 4;
@@ -873,6 +879,7 @@ void AS_ExtractPulse () {
 void AS_MissionPopulate () {
     int r;
     if(as_level==AS_LV_BAY) {AS_BayPopulate();return;}
+    if(as_level>=AS_LV_SCRIPT) {AS_LevelThings();return;}
     for(r=0;r<as_roomCount;r+=1) {
         if(as_roomName[r]=="Bay Corridor") {AS_Populate(r,AS_DRONE,AS_Scaled(2));}
         if(as_roomName[r]=="Security Office") {AS_Populate(r,AS_DRONE,AS_Scaled(2));}
@@ -901,6 +908,7 @@ void AS_MissionInit () {
     as_holdAt=0.0;as_holdWave=0.0;as_lowerLevel=false;
     as_crumbHead= -1;as_crumbN=0;
     for(k=0;k<5;k+=1) {as_objState[k]=0;}
+    if(as_level>=AS_LV_SCRIPT) {AS_GenInit();return;}
     if(as_level==AS_LV_BAY) {
         // All three objectives are on the list from the start, as AS shows them.
         as_objName[0]="Access the inner perimeter";as_objName[1]="Download the flight data";as_objName[2]="Get to the Landing Bay exit";as_objCount=3;
@@ -945,7 +953,7 @@ void AS_MissionClear () {
     if(as_ventFire!=null) {ActorSend(as_ventFire,"Destroy");as_ventFire=null;}
     if(as_rideSnd!=null) {SoundStop(as_rideSnd,true);as_rideSnd=null;}
     as_colCount=0;as_zoneCount=0;
-    AS_DoorsClear();AS_SpawnersClear();AS_TriggersClear();AS_UseClear();AS_BayClear();
+    AS_DoorsClear();AS_SpawnersClear();AS_TriggersClear();AS_UseClear();AS_BayClear();AS_GenClear();
 }
 void AS_MissionPulse () {
     if(as_tick%160==80) {AS_LogStatus();}
@@ -954,6 +962,7 @@ void AS_MissionPulse () {
     AS_HackPulse();AS_DoorPulse();AS_GalleryPulse();
     AS_DoorPulseAll();AS_SpawnerPulse();AS_TriggerPulse();AS_UsePulse();
     if(as_level==AS_LV_BAY) {AS_BayPulse();}
+    else if(as_level>=AS_LV_SCRIPT) {AS_GenPulse();}
     if(as_ventBlowAt>0.0 && as_now>=as_ventBlowAt) {as_ventBlowAt=0.0;AS_VentBlow();}
     AS_BoardPulse();AS_RideMove();AS_ClimbPulse();AS_WipePulse();AS_CommanderPulse();
 }
@@ -972,6 +981,7 @@ void AS_SkipAhead (int p) {
     if(!as_qa || !as_levelReady) {return;}
     AS_Log("QA skip from stage "+IntToString(as_stage));
     if(as_level==AS_LV_BAY) {AS_BaySkip();return;}
+    if(as_level>=AS_LV_SCRIPT) {AS_GenSkip();return;}
     if(as_stage<=AS_ST_DOOR) {
         if(as_stage==AS_ST_LAND) {AS_ZoneEnter("door");}
         as_hack=1.0;AS_HackPulse();AS_SquadTo(as_oxF+18.0,as_oyF+66.0);
@@ -1056,6 +1066,7 @@ void AS_BayPulse () {
 }
 // A trigger's action that is the mission's own (src/Objects.galaxy passes the rest to the spawners).
 void AS_MissionAction (string act, string arg) {
+    if(as_level>=AS_LV_SCRIPT && AS_GenAction(act,arg)) {return;}
     if(act=="complete") {
         if(arg=="AccessBay" && as_objState[0]!=2) {
             AS_Objective(0,2);as_bayStage=MaxI(as_bayStage,2);
@@ -1115,6 +1126,7 @@ void AS_WeldedEvent (int p, int d) {
 void AS_MissionPanelHacked (int d, int p) {
     as_drLocked[d]=false;as_drHold[d]=as_now+2.0;
     AS_AllMsg("<c val=\"8CFFA0\">Access Granted</c>");
+    AS_Fire("hacked:"+as_drName[d]);
     // Hacking either gate panel opens its own door and switches the other panel off.
     if(as_level==AS_LV_BAY && as_bayStage<1) {
         as_bayStage=1;
@@ -1195,4 +1207,158 @@ void AS_BaySkip () {
     }
     else if(as_objState[1]!=2) {as_cpHacked[as_bayComputer]=true;as_cpLocked[as_bayComputer]=false;AS_MissionHackDone(as_bayComputer,0);as_cpDone[as_bayComputer]=1.0;AS_MissionDownloaded(as_bayComputer,0);}
     else {d=AS_DoorNamed("control");if(d>=0 && !as_drBroken[d]) {AS_DoorBreak(d);}AS_SquadTo(as_oxF+48.5,as_oyF+131.0);}
+}
+
+// =====================================================================
+// SCRIPTED MISSIONS (mission 3 on): the mission is its data. tools/<level>.py gives its objectives by key
+// (OBJECTIVES, each with the spot its marker shows), its buttons (BUTTONS) and the map's own logic as
+// triggers, outputs, timers and movers (src/Objects.galaxy); every action that is not the map's logic
+// comes here. An objective is completed by 'complete <key>' (asw_objective_triggered SetComplete); once
+// every one but the last is done, the last (the escape) is shown and the extraction is open.
+//   complete <key>, show <key>        an objective done, or shown (Visible 0 until then)
+//   open <door>                       a gate's movelinear opening: unlocked for good
+//   power <button>                    a button with no power gets some
+//   notech                            the tech requirement lifted (asw_tech_marine_req DisableTechMarineReq)
+//   boom <x,y>                        a charge going off there (level cells)
+//   lightning                         the storm lights the whole sky for a moment
+//   shipguns <mover>                  the mover's two turrets cover the squad ('' stops them)
+// =====================================================================
+string[5] as_objKey;
+bool[5] as_objShown;             // shown from the start (Visible 1)
+fixed[5] as_objMX;               // where its marker stands, 0 none
+fixed[5] as_objMY;
+int as_genObjN;
+string as_genExtName;
+bool as_genTech;                 // the mission needs a tech until 'notech'
+string as_genShip;               // the mover whose turrets are firing, "" none
+fixed as_genShipNext;
+unit as_genShipLamp;
+unit as_genShipLamp2;
+fixed as_genFlashEnd;
+// The level's own (build.py mission_galaxy, AS_MissionData<n>): where it extracts, whether it needs a tech,
+// then its objectives in order, the last the escape.
+void AS_GenLevel (string extName, bool tech) {as_genObjN=0;as_genExtName=extName;as_genTech=tech;}
+void AS_GenObjective (string key, string name, bool shown, fixed mx, fixed my) {
+    int k=as_genObjN;
+    if(k>=5) {return;}
+    as_genObjN+=1;
+    as_objKey[k]=key;as_objName[k]=name;as_objShown[k]=shown;as_objMX[k]=mx;as_objMY[k]=my;
+}
+void AS_GenInit () {
+    int k;
+    as_objCount=as_genObjN;as_extName=as_genExtName;as_hackLabel="";as_needTech=as_genTech;
+    as_genShip="";as_genShipNext=0.0;as_genFlashEnd=0.0;as_lineN=0;as_lineUntil=0.0;as_weldWatch="";
+    for(k=0;k<as_objCount;k+=1) {if(as_objShown[k]) {as_objState[k]=1;}}
+    AS_MissionPopulate();
+    AS_GenMark();
+    AS_Log("mission start "+as_levelTitle[as_level]+", marines "+IntToString(AS_Humans())+", bots "+IntToString(as_botCount));
+}
+int AS_GenObj (string key) {
+    int k;
+    for(k=0;k<as_objCount;k+=1) {if(as_objKey[k]==key) {return k;}}
+    return -1;
+}
+// The marker on the first objective still to do that has a spot; the extraction once only the escape is left.
+void AS_GenMark () {
+    int k;
+    if(as_stage==AS_ST_ESCAPE) {AS_MarkAt((as_extX0+as_extX1)*0.5,(as_extY0+as_extY1)*0.5);return;}
+    for(k=0;k<as_objCount-1;k+=1) {
+        if(as_objState[k]==2) {continue;}
+        if(as_objMX[k]>0.0) {AS_MarkAt(as_objMX[k],as_objMY[k]);return;}
+    }
+    AS_MarkOff();
+}
+void AS_GenComplete (string key) {
+    int k=AS_GenObj(key);int j;bool left=false;
+    if(k<0 || as_objState[k]==2) {return;}
+    AS_Objective(k,2);
+    AS_Log("objective: "+key);
+    AS_Fire("done:"+key);
+    for(j=0;j<as_objCount-1;j+=1) {if(as_objState[j]!=2) {left=true;}}
+    if(!left && as_stage!=AS_ST_ESCAPE) {
+        // Only the escape is left: AS_ExtractPulse checks the squad from here.
+        as_stage=AS_ST_ESCAPE;as_stageAt=as_now;as_checkpoint=MaxI(as_checkpoint,3);
+        AS_Objective(as_objCount-1,1);
+    }
+    AS_GenMark();
+}
+bool AS_GenAction (string act, string arg) {
+    int i;int at;fixed x;fixed y;
+    if(act=="complete") {AS_GenComplete(arg);return true;}
+    if(act=="show") {i=AS_GenObj(arg);if(i>=0 && as_objState[i]==0) {AS_Objective(i,1);AS_GenMark();}return true;}
+    if(act=="open") {
+        i=AS_DoorNamed(arg);
+        if(i<0) {AS_Log("open: no door "+arg);return true;}
+        as_drLocked[i]=false;as_drSeal[i]=0.0;as_drHasPanel[i]=false;as_drHold[i]=as_now+2.0;
+        if(as_drKind[i]==3) {as_drKind[i]=0;}
+        AS_DoorSeamShow(i);
+        AS_Log("door opened: "+arg);
+        return true;
+    }
+    if(act=="power") {i=AS_ButtonNamed(arg);if(i>=0) {as_btOn[i]=true;}return true;}
+    if(act=="notech") {as_needTech=false;as_techRestartAt=0.0;AS_Log("tech requirement lifted");return true;}
+    if(act=="boom") {
+        at=StringFind(arg,",",c_stringCase);
+        x=as_oxF+StringToFixed(StringSub(arg,1,at-1));y=as_oyF+StringToFixed(StringSub(arg,at+1,StringLength(arg)));
+        AS_Fx("ASFxBigBoom",x,y,0.5,0.0);AS_Burst(x,y,1.0,2.4,"255,190,110",6);AS_Flash(x,y,1.0,4.0,"255,200,140");
+        AS_Fx("ASFxBoom",x+1.5,y-0.8,0.3,0.0);AS_Fx("ASFxBoom",x-1.2,y+1.0,0.3,0.0);
+        AS_Sound("Doodad_SecurityGateDiagonalImpact",x,y,100.0,0.0);
+        AS_ShakeAll(0.35,1.2);
+        AS_Log("boom at "+arg);
+        return true;
+    }
+    if(act=="lightning") {AS_Lightning();return true;}
+    if(act=="shipguns") {as_genShip=arg;return true;}
+    return false;
+}
+// The storm: the sky flashes white-blue over the whole level for a moment, and the thunder follows.
+void AS_Lightning () {
+    int p;
+    for(p=1;p<=AS_PLAYERS;p+=1) {
+        if(!AS_Person(p)) {continue;}
+        CameraShakeStart(p,c_cameraPositionBoth,c_cameraDirectionXYZ,0.02,6.0,40.0,0.3);
+    }
+    GameSetLighting("ASPowered",0.05);as_genFlashEnd=as_now+0.3;
+    AS_AllSound("Event_Horner05sTerminalHack");
+}
+// Every step of a scripted mission: snow under the sky, the storm's flash fading, the dropship's turrets.
+void AS_GenPulse () {
+    int m;int t;fixed x;fixed y;fixed ang;
+    AS_SnowPulse();AS_WeldWatchPulse();
+    if(as_genFlashEnd>0.0 && as_now>=as_genFlashEnd) {as_genFlashEnd=0.0;GameSetLighting(as_lightId[as_light],0.5);}
+    if(as_genShip=="") {return;}
+    m=AS_MoverNamed(as_genShip);
+    if(m<0 || as_moA[m]==null) {return;}
+    x=as_moX[m];y=as_moY[m];
+    // Her lamps go with her: the bridge is dark but where she lights it.
+    if(as_genShipLamp==null) {
+        UnitCreate(1,"ASLightWhitebig",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);as_genShipLamp=UnitLastCreated();
+        UnitCreate(1,"ASLightColdbig",c_unitCreateIgnorePlacement,0,Point(x,y),0.0);as_genShipLamp2=UnitLastCreated();
+    }
+    UnitSetPosition(as_genShipLamp,Point(x,y-3.0),true);UnitSetPosition(as_genShipLamp2,Point(x+2.5,y-3.5),true);
+    // Two sentry tops under her nose (asw_sentry_top_machinegun, TurretRange 1800): a round every 0.15 s.
+    if(as_now<as_genShipNext) {return;}
+    as_genShipNext=as_now+0.15;
+    t=AS_AssistTarget(x,y-1.0,270.0,14.0,180.0);
+    if(t<0) {return;}
+    ang=ATan2(as_aY[t]-y,as_aX[t]-x);
+    AS_Bullet(0,x+Cos(ang)*1.0,y+Sin(ang)*1.0,ang+RandomFixed(-2.0,2.0),16.0,12.0,0,0,70.0,"255,210,130",1.4,1.8,0.04);
+    AS_Flash(x+Cos(ang)*1.1,y+Sin(ang)*1.1,1.6,0.4,"");
+    AS_Sound("SentryGun_AttackLaunch",x,y,80.0,0.1);
+}
+void AS_GenClear () {
+    if(as_genShipLamp!=null) {UnitRemove(as_genShipLamp);as_genShipLamp=null;}
+    if(as_genShipLamp2!=null) {UnitRemove(as_genShipLamp2);as_genShipLamp2=null;}
+    as_genShip="";as_genFlashEnd=0.0;
+}
+// QA: Ctrl+L, the next objective done and the squad at the next marker.
+void AS_GenSkip () {
+    int k;
+    for(k=0;k<as_objCount-1;k+=1) {
+        if(as_objState[k]==2) {continue;}
+        if(as_objMX[k]>0.0) {AS_SquadTo(as_objMX[k]-1.0,as_objMY[k]-1.0);}
+        AS_GenComplete(as_objKey[k]);
+        return;
+    }
+    AS_SquadTo((as_extX0+as_extX1)*0.5,(as_extY0+as_extY1)*0.5);
 }

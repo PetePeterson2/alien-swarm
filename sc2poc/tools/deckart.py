@@ -715,6 +715,70 @@ def decal_warning(size=256):
     return _img(a)
 
 
+# ---- Deima's surface (asi-jac2-deima: blendconcsnow001b, blendmetalsnow002a, snowfloor001a, metalfloor011a) ----
+SNOW = np.array((206, 220, 236), float)    # snowfloor001a under a cold night: blue-white
+
+
+def _snow(a, seed, cover, scale=46, low=None):
+    """Snow drifted over a floor ``a``: soft-edged drifts where the noise passes ``1 - cover``, deeper wherever ``low``
+    (a 0..1 mask of joints and recesses) holds it, wind ripples and a little relief on the snow itself."""
+    n = _noise(0, scale, seed, 5, (S, S))
+    m = np.clip((n - (1 - cover)) * 2.2, 0, 1) ** 1.5
+    if low is not None:
+        m = np.clip(m + low * (0.35 + 0.65 * _noise(0, 18, seed + 1, 3, (S, S))), 0, 1)
+    rip = _noise(0, 9, seed + 2, 3, (S, S))
+    yy, xx = np.mgrid[0:S, 0:S].astype(float)
+    wind = 0.5 + 0.5 * np.sin((xx * 0.8 + yy * 0.35) / 7.0 + rip * 5.0)
+    snow = SNOW[None, None] * (0.86 + 0.1 * rip[..., None] + 0.025 * wind[..., None])
+    # The drift's edge: thin, grey where it is trodden into the floor.
+    edge = np.clip(1 - np.abs(m - 0.5) * 3.2, 0, 1)
+    out = a * (1 - m[..., None]) + snow * m[..., None]
+    return out * (1 - 0.16 * edge[..., None])
+
+
+def floor_snowcrete(seed=25):
+    """blendconcsnow001b: the colony's streets, cold grey poured slabs (concretefloor050a) with snow packed into the
+    joints and drifted across, slush-dark where boots and tyres went."""
+    a = np.asarray(floor_concrete(seed, (112, 116, 120)), float)
+    yy, xx = np.mgrid[0:S, 0:S]
+    joint = np.minimum(np.minimum(xx % U, U - xx % U), np.minimum(yy % U, U - yy % U)).astype(float)
+    low = np.clip(1 - joint / 9.0, 0, 1) ** 1.5
+    a = _snow(a, seed + 3, 0.3, 300, low)
+    # Tracks: two wet ruts across the tile, worn through the snow.
+    t = _noise(0, 30, seed + 7, 3, (S, S))
+    rut = (np.abs(((yy + t * 60) % 256) - 70) < 9) | (np.abs(((yy + t * 60) % 256) - 150) < 9)
+    a[rut] = a[rut] * 0.75 + np.array((70, 74, 80)) * 0.25 * 0.8
+    return _img(_finish(a, seed + 9, 0.03, 700, 1, U, 0.1))
+
+
+def floor_snowplate(seed=26):
+    """blendmetalsnow002a: diamond tread plate (metalfloor011a) with snow lying in the tread and banked at its border."""
+    a = np.asarray(floor_diamond(seed, (104, 108, 112)), float)
+    yy, xx = np.mgrid[0:S, 0:S]
+    border = np.minimum(np.minimum(xx, S - 1 - xx), np.minimum(yy, S - 1 - yy)).astype(float)
+    low = np.clip(1 - border / 26.0, 0, 1) ** 2 * 0.8
+    a = _snow(a, seed + 3, 0.3, 240, low)
+    return _img(_finish(a, seed + 9, 0.03, 500, 1))
+
+
+def floor_bridgedeck(seed=28):
+    """The pipeline bridge and the catwalks over Deima's chasm: heavy dark steel grating in a frame of riveted
+    I-beams a unit apart, the drop's blue dark under the slots, snow caught along the beams."""
+    a = np.asarray(floor_mgrate(seed, (92, 98, 106)), float)
+    yy, xx = np.mgrid[0:S, 0:S]
+    # The slots look down into the haze: tint them the drop's blue.
+    dark = a.mean(axis=2) < 40
+    a[dark] = a[dark] * 0.6 + np.array((22, 30, 52)) * 0.6
+    # The beams: a broad flange across each unit, rivets along it.
+    beam = (yy % U < 22) | (yy % U >= U - 4)
+    a[beam] = np.array((84, 88, 94)) * (0.9 + 0.2 * _noise(0, 12, seed + 4, 3, (S, S))[beam][:, None])
+    a[(yy % U >= 20) & (yy % U < 22)] *= 0.5
+    a = _bolts(a, [(x, y) for y in range(8, S, U) for x in range(12, S, 32)], (120, 124, 130), 3)
+    low = np.where(beam, 1.0, 0.0) * 0.9
+    a = _snow(a, seed + 3, 0.1, 200, low)
+    return _img(_finish(a, seed + 9, 0.03, 500, 1, U, 0.15))
+
+
 FLOORS = {
     'floor_concrete': lambda: (floor_concrete(), None),
     'floor_mgrate': lambda: (floor_mgrate(), None),
@@ -732,6 +796,9 @@ FLOORS = {
     'floor_reactor': lambda: floor_reactor(),
     'floor_hive': lambda: floor_hive(),
     'floor_hive2': lambda: floor_hive(24, 0.15),
+    'floor_snowcrete': lambda: (floor_snowcrete(), None),
+    'floor_snowplate': lambda: (floor_snowplate(), None),
+    'floor_bridgedeck': lambda: (floor_bridgedeck(), None),
 }
 
 # Each room kind's floor (tools/level.py KIT_KINDS): the main plating, the second plating mixed
@@ -745,6 +812,10 @@ KIND_FLOORS = {
     'cargo': ('floor_brown', 'floor_plate', 'floor_hatch'),
     'lab': ('floor_lab', 'floor_lab', 'floor_grate_blue'),
     'hive': ('floor_hive', 'floor_plate2', 'floor_hive2'),
+    'surface': ('floor_snowcrete', 'floor_snowplate', 'floor_snowcrete'),
+    'bridge': ('floor_bridgedeck', 'floor_snowplate', 'floor_bridgedeck'),
+    'plant': ('floor_brown', 'floor_plate2', 'floor_grate'),
+    'core': ('floor_reactor', 'floor_plate2', 'floor_grate_blue'),
 }
 
 DECALS = {

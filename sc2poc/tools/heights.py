@@ -6,7 +6,8 @@ which is the same fit its trace used. Every deck cell then takes the height of t
 under its centre; a level without HEIGHTS stays flat at FLOOR.
 
 Heights are terrain heights in map units. Alien Swarm's z DECK_Z (832, the height of Landing Bay's north
-block and Cargo Elevator's start) is FLOOR, and 80 Hammer units are one unit up.
+block and Cargo Elevator's start; a level module may set its own, its main floor) is FLOOR, and 80 Hammer
+units are one unit up.
 
 The terrain has one height per cell corner (vertex), so a step between two deck cells becomes a slope
 across the two cells that meet there; those are the level's slope cells (no floor plating, the kit puts
@@ -33,7 +34,8 @@ SNAP = 8.0             # real heights are snapped to 8 units: AS's plateaus sit 
 PLATEAU = 16.0         # cells joined within this many Hammer units of a plateau's first cell are one flat floor
                        # (less than AS's 18-unit step: grates, trims and sampling noise, not steps)
 QUANTUM = 1 / 64.0     # heights in map units are kept to this
-FLOORISH = set('0123456789ov')   # deck rows: room kinds, the open drop and the lift void constrain the terrain
+KIND_CHARS = '0123456789abcdef'  # deck rows: a room kind's index into tools/level.py KIT_KINDS, one character
+FLOORISH = set(KIND_CHARS + 'ov')  # deck rows: room kinds, the open drop and the lift void constrain the terrain
 MERGE = 28.0           # Hammer units: neighbouring floors closer than this are one floor (AS's real steps are 40 and up)
 SCRAP = 8              # a plateau of fewer cells joins the neighbour it shares most edge with
 SLIVER = 0.5           # ... as does one of up to SLIVER_MAX cells, more than this share of them one cell across
@@ -125,7 +127,7 @@ def level_heights(level, rows, floor_level):
     cell heights [H, W], slope cells [H, W], vertex heights [H+1, W+1] and which vertices are constrained."""
     H, W = len(rows), len(rows[0])
     floorish = np.array([[c in FLOORISH for c in row] for row in rows])
-    deck = np.array([[c.isdigit() for c in row] for row in rows])
+    deck = np.array([[c in KIND_CHARS for c in row] for row in rows])
     z = np.full((H, W), floor_level)
     src = level.get('HEIGHTS')
     if src:
@@ -143,7 +145,7 @@ def level_heights(level, rows, floor_level):
         if have.any():
             raw = _dilate(np.nan_to_num(raw), have)
             raw = _merge(_plateaus(_mode_filter(raw, deck), deck), deck)
-            z = floor_level + (raw - DECK_Z) / UNITS
+            z = floor_level + (raw - level.get('DECK_Z', DECK_Z)) / UNITS
     z = np.round(z / QUANTUM) * QUANTUM
     # Deck heights spread into the hull, the lowest where two meet.
     z = _dilate(z, deck, np.minimum) if deck.any() else z

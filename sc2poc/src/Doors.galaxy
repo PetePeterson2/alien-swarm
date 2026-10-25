@@ -22,7 +22,7 @@ int[24] as_drX0;
 int[24] as_drY0;
 int[24] as_drX1;
 int[24] as_drY1;
-int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed
+int[24] as_drKind;                 // 0 auto, 1 panel, 2 bash, 3 jammed, 4 gap (a ramp runs out over it), 5 block (an unseen barrier), 6 hover (a drop until a ship hovers over it)
 bool[24] as_drLocked;
 fixed[24] as_drSeal;
 fixed[24] as_drHp;
@@ -32,7 +32,7 @@ fixed[24] as_drHold;               // stays open until then
 fixed[24] as_drNoOpen;             // a weld just shut it: it will not open before this
 unit[24] as_drLeaf;
 unit[24] as_drSeam;                // the glowing weld seam
-unit[24][4] as_drBlk;
+unit[24][48] as_drBlk;
 bool[24] as_drShut;
 bool[24] as_drAcross;              // the door runs east-west (the passage runs north-south)
 fixed[24] as_drPanelX;
@@ -45,6 +45,13 @@ int[24] as_drWeldBy;               // who welded it last
 int[24] as_drWeldDir;              // 1 sealing, -1 cutting
 int[24] as_drTag;
 fixed[24] as_drTagShown;
+bool[24] as_drHackStarted;           // a hand has been on its panel (src/Use.galaxy AS_PanelHackStarted)
+// A gap (kind 4): the drop's dark showing in it while it is shut, and the ramp's plates that slide out over it.
+actor[24][48] as_drCover;
+actor[24][48] as_drPlate;
+const int AS_DOOR_GAP = 4;
+const int AS_DOOR_BLOCK = 5;
+const int AS_DOOR_HOVER = 6;
 
 fixed AS_DoorCX (int i) {return (IntToFixed(as_drX0[i])+IntToFixed(as_drX1[i]))*0.5;}
 fixed AS_DoorCY (int i) {return (IntToFixed(as_drY0[i])+IntToFixed(as_drY1[i]))*0.5;}
@@ -57,12 +64,14 @@ void AS_Door (string name, int x0, int y0, int x1, int y1, int kind, fixed seal,
     if(i>=AS_DOORS) {return;}
     as_drN+=1;
     as_drName[i]=name;as_drX0[i]=x0;as_drY0[i]=y0;as_drX1[i]=x1;as_drY1[i]=y1;as_drKind[i]=kind;
-    as_drLocked[i]=kind==1 || kind==2 || kind==3;
+    as_drLocked[i]=kind>=1;
     as_drSeal[i]=seal*AS_SEAL_FULL;as_drHp[i]=AS_DOOR_HP;as_drOpen[i]=0.0;as_drBroken[i]=false;as_drHold[i]=0.0;as_drNoOpen[i]=0.0;
     as_drAcross[i]=(x1-x0)>=(y1-y0);
-    as_drHasPanel[i]=px>0.0;as_drPanelX[i]=px;as_drPanelY[i]=py;as_drHack[i]=0.0;as_drRecommend[i]=false;as_drWeldAt[i]= -10.0;as_drWeldBy[i]=0;as_drWeldDir[i]=0;
+    as_drHasPanel[i]=px>0.0;as_drPanelX[i]=px;as_drPanelY[i]=py;as_drHack[i]=0.0;as_drHackStarted[i]=false;as_drRecommend[i]=false;as_drWeldAt[i]= -10.0;as_drWeldBy[i]=0;as_drWeldDir[i]=0;
     as_drTag[i]=c_textTagNone;as_drTagShown[i]= -1.0;
     for(x=x0;x<x1;x+=1) {for(y=y0;y<y1;y+=1) {as_doorCell[x-as_ox][y-as_oy]=true;}}
+    as_drShut[i]=false;
+    if(kind>=AS_DOOR_GAP) {AS_DoorGapBuild(i);AS_DoorShut(i,true);return;}
     if(!as_drAcross[i]) {face=0.0;}
     as_drLeaf[i]=AS_Piece("ASEDoorAS",AS_DoorCX(i),AS_DoorCY(i),face,0.0);
     UnitSetScale(as_drLeaf[i],AS_DoorWidth(i)*50.0,100.0,100.0);
@@ -80,7 +89,7 @@ void AS_DoorShut (int i, bool shut) {
     for(x=as_drX0[i];x<as_drX1[i];x+=1) {
         for(y=as_drY0[i];y<as_drY1[i];y+=1) {
             as_wall[x-as_ox][y-as_oy]=shut;
-            if(k<4) {
+            if(k<48) {
                 if(shut) {UnitCreate(1,"PathingBlocker1x1",c_unitCreateIgnorePlacement,0,Point(IntToFixed(x)+0.5,IntToFixed(y)+0.5),0.0);as_drBlk[i][k]=UnitLastCreated();}
                 else if(as_drBlk[i][k]!=null) {UnitRemove(as_drBlk[i][k]);as_drBlk[i][k]=null;}
             }
@@ -126,9 +135,69 @@ bool AS_MarineNearDoor (int i, fixed r) {
     }
     return false;
 }
+// A gap's or hover's cells: dark over each while it is shut; for a ramp a bridge plate per cell as well, out
+// of sight until it slides out (AS_DoorGapPulse).
+void AS_DoorGapBuild (int i) {
+    int x;int y;int k=0;string piece;actor a;fixed z;
+    for(x=as_drX0[i];x<as_drX1[i];x+=1) {
+        for(y=as_drY0[i];y<as_drY1[i];y+=1) {
+            if(k>=48) {continue;}
+            z=AS_CellZ(IntToFixed(x)+0.5,IntToFixed(y)+0.5);
+            as_drCover[i][k]=null;as_drPlate[i][k]=null;
+            if(as_drKind[i]!=AS_DOOR_BLOCK) {
+                a=libNtve_gf_CreateActorAtPoint("ASKO1_"+IntToString(x%4)+IntToString(y%4),Point(IntToFixed(x),IntToFixed(y)));
+                ActorSend(a,libNtve_gf_SetPosition(IntToFixed(x),IntToFixed(y),z+0.01));
+                as_drCover[i][k]=a;
+            }
+            if(as_drKind[i]==AS_DOOR_GAP) {
+                piece="ASKF"+IntToString(AS_KIND_BRIDGE)+"S"+IntToString(x%2)+IntToString(y%2);
+                a=libNtve_gf_CreateActorAtPoint(piece,Point(IntToFixed(x),IntToFixed(y)));
+                ActorSend(a,libNtve_gf_SetPosition(IntToFixed(x),IntToFixed(y),z+0.02));
+                ActorSend(a,"SetOpacity 0");
+                as_drPlate[i][k]=a;
+            }
+            k+=1;
+        }
+    }
+}
+// A gap opening: the plates slide out from the near end one after another as `as_drOpen` runs 0..1; the dark
+// goes as they cover it; a hover's goes when it opens (the dropship is over it), a block has none.
+void AS_DoorGapPulse (int i) {
+    int x;int y;int k=0;fixed f;fixed o;fixed px;fixed py;fixed z;
+    for(x=as_drX0[i];x<as_drX1[i];x+=1) {
+        for(y=as_drY0[i];y<as_drY1[i];y+=1) {
+            if(k>=48) {continue;}
+            if(as_drKind[i]!=AS_DOOR_GAP) {
+                if(as_drOpen[i]>0.0 && as_drCover[i][k]!=null) {ActorSend(as_drCover[i][k],"Destroy");as_drCover[i][k]=null;}
+                k+=1;continue;
+            }
+            // Cell k of n lands at open (k+1)/n, sliding in from where the ramp starts.
+            if(as_drAcross[i]) {f=IntToFixed(y-as_drY0[i]+1)/IntToFixed(MaxI(1,as_drY1[i]-as_drY0[i]));}
+            else {f=IntToFixed(x-as_drX0[i]+1)/IntToFixed(MaxI(1,as_drX1[i]-as_drX0[i]));}
+            o=AS_Clamp(as_drOpen[i]/f,0.0,1.0);
+            px=IntToFixed(x);py=IntToFixed(y);z=AS_CellZ(px+0.5,py+0.5);
+            if(as_drAcross[i]) {py-=(1.0-o)*IntToFixed(y-as_drY0[i]+1);}else {px-=(1.0-o)*IntToFixed(x-as_drX0[i]+1);}
+            if(as_drPlate[i][k]!=null) {
+                ActorSend(as_drPlate[i][k],libNtve_gf_SetPosition(px,py,z+0.02));
+                ActorSend(as_drPlate[i][k],"SetOpacity "+FixedToString(MinF(1.0,o*4.0),2));
+            }
+            if(o>=1.0 && as_drCover[i][k]!=null) {ActorSend(as_drCover[i][k],"Destroy");as_drCover[i][k]=null;}
+            k+=1;
+        }
+    }
+}
 void AS_DoorPulseAll () {
     int i;fixed t;fixed w;fixed cx;fixed cy;bool want;
     for(i=0;i<as_drN;i+=1) {
+        if(as_drKind[i]>=AS_DOOR_GAP) {
+            // Once opened a gap or block stays open; the ramp runs out over two seconds.
+            if(as_drLocked[i] || as_drOpen[i]>=1.0) {continue;}
+            if(as_drOpen[i]==0.0 && as_drKind[i]==AS_DOOR_GAP) {AS_Sound("Doodad_SecurityGateDiagonalOpen",AS_DoorCX(i),AS_DoorCY(i),80.0,0.0);}
+            as_drOpen[i]=MinF(1.0,as_drOpen[i]+AS_DT/2.0);
+            AS_DoorGapPulse(i);
+            AS_DoorShut(i,as_drOpen[i]<1.0);
+            continue;
+        }
         if(as_drLeaf[i]==null && !as_drBroken[i]) {continue;}
         want=false;
         if(as_drBroken[i]) {want=true;}
@@ -173,7 +242,7 @@ void AS_DoorTagPulse (int i) {
 // A drone's swipe at a shut door: 30, less as the weld grows.
 void AS_DoorHit (int i, fixed dmg, fixed fromX, fixed fromY) {
     fixed before=as_drHp[i];
-    if(as_drBroken[i] || as_drOpen[i]>0.45 || as_drKind[i]==3) {return;}
+    if(as_drBroken[i] || as_drOpen[i]>0.45 || as_drKind[i]>=3) {return;}
     dmg*=1.0-(as_drSeal[i]/AS_SEAL_FULL)*0.6;
     as_drHp[i]-=dmg;
     AS_Sound("Ultralisk_AttackImpact",AS_DoorCX(i),AS_DoorCY(i),75.0,0.25);
@@ -248,7 +317,7 @@ fixed AS_WeldRate (fixed x, fixed y) {
 int AS_WeldTarget (int p) {
     int i;point q=UnitGetPosition(as_m[p]);fixed cx;fixed cy;fixed d;fixed a;
     for(i=0;i<as_drN;i+=1) {
-        if(as_drBroken[i] || as_drKind[i]==3) {continue;}
+        if(as_drBroken[i] || as_drKind[i]>=3) {continue;}
         cx=AS_DoorCX(i);cy=AS_DoorCY(i);
         d=DistanceBetweenPoints(q,Point(cx,cy));
         if(d>AS_DoorWidth(i)*0.5+1.4) {continue;}
@@ -303,7 +372,7 @@ string AS_DoorUseText (int p, int i) {
         if(f>=0.5) {return "Door Reinforced";}
         return "Door Welded";
     }
-    if(AS_HasItem(p,AS_IT_WELDER) && !as_drBroken[i] && as_drKind[i]!=3) {return "Weldable";}
+    if(AS_HasItem(p,AS_IT_WELDER) && !as_drBroken[i] && as_drKind[i]<3) {return "Weldable";}
     return "";
 }
 void AS_DoorsClear () {
@@ -311,7 +380,11 @@ void AS_DoorsClear () {
     for(i=0;i<as_drN;i+=1) {
         if(as_drLeaf[i]!=null) {UnitRemove(as_drLeaf[i]);as_drLeaf[i]=null;}
         if(as_drSeam[i]!=null) {UnitRemove(as_drSeam[i]);as_drSeam[i]=null;}
-        for(k=0;k<4;k+=1) {if(as_drBlk[i][k]!=null) {UnitRemove(as_drBlk[i][k]);as_drBlk[i][k]=null;}}
+        for(k=0;k<48;k+=1) {if(as_drBlk[i][k]!=null) {UnitRemove(as_drBlk[i][k]);as_drBlk[i][k]=null;}}
+        for(k=0;k<48;k+=1) {
+            if(as_drCover[i][k]!=null) {ActorSend(as_drCover[i][k],"Destroy");as_drCover[i][k]=null;}
+            if(as_drPlate[i][k]!=null) {ActorSend(as_drPlate[i][k],"Destroy");as_drPlate[i][k]=null;}
+        }
         if(as_drTag[i]!=c_textTagNone) {TextTagDestroy(as_drTag[i]);as_drTag[i]=c_textTagNone;}
     }
     as_drN=0;

@@ -181,9 +181,26 @@ def tex_stair_stringer(size=128):
     return _img(_grime(a, 683, 0.4)), None
 
 
+def tex_pipeline(w=256, h=256, seed=61):
+    """Deima's main pipeline (the swarm's highway the squad blows): weathered blue-grey steel in welded courses,
+    rust run down its flanks, snow lying along its top (v 0.25 is the top of the pipe, KPitMain)."""
+    n = _noise(0, 40, seed, 4, (h, w))
+    a = np.array((92, 100, 108), float)[None, None] * (0.8 + 0.3 * n[..., None])
+    vv = (np.arange(h) / h)[:, None]
+    # Lit from above: the top bright, the underside dark.
+    a *= (0.45 + 0.7 * np.clip(np.sin(vv * 2 * math.pi), -0.2, 1.0) * 0.8 + 0.25)[..., None]
+    rust = np.clip((_noise(0, 18, seed + 1, 3, (h, w)) - 0.55) * 3, 0, 1) * np.clip(np.abs(vv - 0.25) * 3 - 0.3, 0, 1)
+    a = a * (1 - 0.6 * rust[..., None]) + np.array((110, 62, 34))[None, None] * 0.6 * rust[..., None]
+    for x in (0, w // 2):
+        a[:, x:x + 3] *= 0.45
+    snow = np.clip(1 - np.abs(vv - 0.25) / (0.11 + 0.03 * _noise(0, 12, seed + 2, 3, (h, w))), 0, 1) ** 0.6
+    a = a * (1 - snow[..., None]) + np.array((205, 218, 234))[None, None] * snow[..., None]
+    return _img(a), None
+
+
 def textures():
     """name -> (diffuse, emissive or None)."""
-    return {'pit_floor': tex_pit_floor(), 'pit_skirt': tex_pit_skirt(), 'pit_steel': tex_pit_steel(),
+    return {'pit_floor': tex_pit_floor(), 'pit_skirt': tex_pit_skirt(), 'pit_steel': tex_pit_steel(), 'pit_pipeline': tex_pipeline(),
             'stair_tread': tex_stair_tread(), 'stair_riser': tex_stair_riser(), 'stair_stringer': tex_stair_stringer()}
 
 
@@ -283,6 +300,28 @@ def _pipe(m, length=4.0, r=0.3):
         ring('pit_steel', fx - 0.06, fx + 0.06, r * 1.2)
 
 
+MAIN_R, MAIN_Z = 2.1, 4.3                  # the main pipeline's radius and its axis over the pit floor (the deck is ~7 above)
+
+
+def _mainpipe(m, length=4.0, n=20):
+    """KPitMain: four units of the colony's main pipeline along x, origin at its middle on the pit floor: the pipe,
+    a flanged joint at each end and a steel saddle under it on two legs."""
+    def ring(tex, x0, x1, rr, u1=1.0):
+        for i in range(n):
+            t0, t1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+            a0 = (rr * math.cos(t0), MAIN_Z + rr * math.sin(t0)); a1 = (rr * math.cos(t1), MAIN_Z + rr * math.sin(t1))
+            m.quad((tex, False, 0), (x0, a1[0], a1[1]), (x1, a1[0], a1[1]), (x1, a0[0], a0[1]), (x0, a0[0], a0[1]),
+                   [(0, (i + 1) / n), (u1, (i + 1) / n), (u1, i / n), (0, i / n)])
+    a = length / 2
+    ring('pit_pipeline', -a, a, MAIN_R, length / 2)
+    for fx in (-a, a):
+        ring('pit_steel', fx - 0.09, fx + 0.09, MAIN_R * 1.07)
+    key = ('pit_steel', False, 0)
+    for y in (-MAIN_R * 0.7, MAIN_R * 0.7):
+        _beam(m, key, (0, y, 0), (0, y, MAIN_Z - MAIN_R * 0.55), 0.3)
+    _beam(m, key, (0, -MAIN_R * 0.95, MAIN_Z - MAIN_R * 0.6), (0, MAIN_R * 0.95, MAIN_Z - MAIN_R * 0.6), 0.32)
+
+
 def skirt_pieces(out):
     """KSkirt (the deck to the north at turn 0, a plane from the pit floor up to its edge), KSkirt1 (the deck off
     the north-east corner), KSkirt3 (the deck on the north and east): one cell, origin at its centre, a rise of 1,
@@ -326,6 +365,7 @@ def pieces(out):
                     m.quad(('pit_haze', False, UNLIT, ADD), (0, 0, z), (size, 0, z), (size, size, z), (0, size, z),
                            uv((k * 7) % 4 * 1.0 + k * 0.37, (k * 5) % 4 * 1.0 + k * 0.61))
     skirt_pieces(out)
+    _mainpipe(out.setdefault('KPitMain', ShipModel('KPitMain', (0, 0, 0))))
     for name, glow in (('KPitTowerR', 'pit_glow_r'), ('KPitTowerW', 'pit_glow_w'), ('KPitTowerP', 'pit_glow_p')):
         m = out[name] = ShipModel(name, (0, 0, 0)); _tower(m, glow)
     m = out['KPitGirder'] = ShipModel('KPitGirder', (0, 0, 0)); _girder(m)
@@ -421,7 +461,8 @@ def spots(rows):
     if not any(any(r) for r in open_):
         return []
     d = _dist(open_, H, W)
-    deck = [[c.isdigit() for c in row] for row in rows]
+    from tools.heights import KIND_CHARS
+    deck = [[c in KIND_CHARS for c in row] for row in rows]
     out = []
     taken = set()
     G = 5

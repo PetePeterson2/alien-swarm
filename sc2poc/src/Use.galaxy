@@ -22,6 +22,7 @@
 const int AS_USE_PANEL = 1;
 const int AS_USE_TERMINAL = 2;
 const int AS_USE_PDA = 3;
+const int AS_USE_BUTTON = 4;
 const int AS_TILE = 50;                     // 32 x 768/1200 scale
 const int AS_COMPUTERS = 6;
 int as_cpN;
@@ -91,10 +92,43 @@ void AS_Pda (fixed x, fixed y, string owner, int mail) {
     AS_Terminal(x,y,false,2,6,0.5,10.0,false);
     as_cpPda[as_cpN-1]=true;as_cpOwner[as_cpN-1]=owner;as_cpMail[as_cpN-1]=mail;
 }
+// Buttons (trigger_asw_button_area without a lock): anyone presses E, once; a button with no power says so
+// until a 'power' action gives it some (nopower 1). Pressing fires "pressed:<name>" (src/Objects.galaxy AS_Fire).
+const int AS_BUTTONS = 12;
+int as_btN;
+string[12] as_btName;
+string[12] as_btLabel;
+fixed[12] as_btX;
+fixed[12] as_btY;
+bool[12] as_btOn;
+bool[12] as_btDone;
+void AS_Button (string name, fixed x, fixed y, string label, bool powered) {
+    int i=as_btN;
+    if(i>=AS_BUTTONS) {return;}
+    as_btN+=1;
+    as_btName[i]=name;as_btLabel[i]=label;as_btX[i]=x;as_btY[i]=y;as_btOn[i]=powered;as_btDone[i]=false;
+}
+int AS_ButtonNamed (string name) {
+    int i;
+    for(i=0;i<as_btN;i+=1) {if(as_btName[i]==name) {return i;}}
+    return -1;
+}
+void AS_ButtonPress (int p, int i) {
+    if(i<0 || as_btDone[i]) {return;}
+    if(!as_btOn[i]) {
+        if(p>=1) {AS_Message(p,"<c val=\"FF6050\">Not powered</c>");AS_SoundUI(p,"UI_BnetError");}
+        return;
+    }
+    as_btDone[i]=true;
+    if(p>=1) {AS_SoundUI(p,"UI_TerranCommandCenter_Liftoff");}
+    AS_Sound("Doodad_SecurityGateDiagonalOpen",as_btX[i],as_btY[i],60.0,0.0);
+    AS_Log("button pressed: "+as_btName[i]+" by p"+IntToString(p));
+    AS_Fire("pressed:"+as_btName[i]);
+}
 void AS_UseClear () {
     int p;int i;
     for(p=1;p<=AS_PLAYERS;p+=1) {if(as_using[p]>=0) {AS_UseStop(p);}}
-    as_cpN=0;
+    as_cpN=0;as_btN=0;
     for(i=0;i<24;i+=1) {as_wtReady[i]=false;as_wtUser[i]=0;as_wtAiHack[i]=0.0;}
 }
 
@@ -265,6 +299,11 @@ bool AS_UseFind (int p) {
             if(as_cpPda[i]) {as_useKind=AS_USE_PDA;}else {as_useKind=AS_USE_TERMINAL;}
         }
     }
+    for(i=0;i<as_btN;i+=1) {
+        if(as_btDone[i]) {continue;}
+        d=DistanceBetweenPoints(here,Point(as_btX[i],as_btY[i]));
+        if(d<bd) {bd=d;as_useRef=i;as_useKind=AS_USE_BUTTON;}
+    }
     return as_useKind>0;
 }
 // E pressed.
@@ -280,6 +319,7 @@ void AS_UsePress (int p) {
     if(i>=0) {AS_StashTake(p,i);return;}
 }
 void AS_UseStart (int p, int kind, int ref) {
+    if(kind==AS_USE_BUTTON) {AS_ButtonPress(p,ref);return;}
     if(kind==AS_USE_PANEL) {
         if(!as_drLocked[ref]) {AS_Message(p,"Panel unlocked");return;}
         if(as_wtUser[ref]>0 && as_wtUser[ref]!=p) {AS_Message(p,"Someone is already at this panel");return;}
@@ -292,6 +332,7 @@ void AS_UseStart (int p, int kind, int ref) {
         as_wtUser[ref]=p;as_using[p]=ref;as_useWhat[p]=AS_USE_PANEL;
         AS_DirectorHackStarted();
         AS_WireOpen(p,ref);
+        AS_PanelHackStarted(ref);
         AS_HintEvent("hacking",p);
         AS_Log("p"+IntToString(p)+" at wire panel "+as_drName[ref]);
         return;
@@ -369,6 +410,12 @@ void AS_WirePulse (int p, int d) {
     if(before<0.5 && as_drHack[d]>=0.5) {AS_AllMsg(AS_MarineNameS(p)+": halfway there");}
     if(as_drHack[d]>=1.0) {AS_PanelHacked(d,p);}
 }
+// The first hand on a door panel (OnButtonHackStarted): "hackstart:<door>", once.
+void AS_PanelHackStarted (int d) {
+    if(as_drHackStarted[d]) {return;}
+    as_drHackStarted[d]=true;
+    AS_Fire("hackstart:"+as_drName[d]);
+}
 void AS_PanelHacked (int d, int p) {
     bool fast=as_wtStart[d]>0.0 && as_now<=as_wtFast[d];
     as_drHack[d]=1.0;
@@ -406,6 +453,7 @@ void AS_TechAiPulse () {
     if(DistanceBetweenPoints(UnitGetPosition(as_m[q]),at)>1.4) {return;}
     if(as_aiHackKind==AS_USE_PANEL) {
         if(!as_drLocked[r]) {as_aiHackTech=0;return;}
+        AS_PanelHackStarted(r);
         as_drHack[r]=MinF(1.0,as_drHack[r]+AS_DT*0.1);
         if(as_drHack[r]>=1.0) {AS_PanelHacked(r,q);as_aiHackTech=0;}
         return;
@@ -443,6 +491,9 @@ void AS_UseDescribe (int p) {
             else {as_useLine="<c val=\"FF8070\">Tech only</c>";as_useBar=as_drHack[i];}
         }
         else if(as_useKind==AS_USE_PDA) {as_useLine="Access PDA  -  "+as_cpOwner[i];}
+        else if(as_useKind==AS_USE_BUTTON) {
+            if(as_btOn[i]) {as_useLine=as_btLabel[i];}else {as_useLine="<c val=\"FF8070\">"+as_btLabel[i]+"  -  no power</c>";}
+        }
         else if(as_cpLocked[i]) {
             if(AS_IsTech(p)) {as_useLine="Hack Computer";}else {as_useLine="<c val=\"FF8070\">Tech only</c>";}
         }
