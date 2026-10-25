@@ -120,7 +120,7 @@ void AS_ButtonPress (int p, int i) {
         return;
     }
     as_btDone[i]=true;
-    if(p>=1) {AS_SoundUI(p,"UI_TerranCommandCenter_Liftoff");}
+    if(p>=1) {AS_SoundUI(p,"UI_BnetClick");}
     AS_Sound("Doodad_SecurityGateDiagonalOpen",as_btX[i],as_btY[i],60.0,0.0);
     AS_Log("button pressed: "+as_btName[i]+" by p"+IntToString(p));
     AS_Fire("pressed:"+as_btName[i]);
