@@ -516,7 +516,7 @@ Still to check in the client: both missions end to end on the autopilot (`-Auto`
 
 ## Mission 5: SynTek Residential (2026-10-24)
 
-Jacob's Rest's fourth mission, traced from `asi-jac4-residential` as Deima and Rydberg were (`tools/residential.py`, in `build.py` LEVELS after Rydberg Reactor). Built and checked offline (`py build.py`, `--qa`: type and bounds checks pass; map 240x256, Residential at 151,72). Not yet run in the client.
+Jacob's Rest's fourth mission, traced from `asi-jac4-residential` as Deima and Rydberg were (`tools/residential.py`, in `build.py` LEVELS after Rydberg Reactor). Built and checked offline (`py build.py`, `--qa`: type and bounds checks pass; map 240x256, Residential at 151,72). Run in the client on the autopilot (2026-10-25, run a8346278852d, a fresh client): the whole six-mission campaign reached CAMPAIGN COMPLETE with no script errors and 0 kit leaks in every mission; SynTek Residential took 371 s.
 
 - **Layout:** the walkable floor less the thin walls that part its rooms. The extractor now rasters the BSP's solid brushes at chest height (`wall_pct`, `wall_px`), since the offices' glass and partitions are detail brushes the floor alone does not show (`tools/astrace.py` `partitions`).
 - **Heights:** the streets and offices at -56, the lobby's walkway a short flight up, and the mall's gallery 216 higher. The gallery stands over the mall behind a strip of the drop (pit skirts and a railing). Its three stairs are long flights (`FLIGHTS`, new in `tools/heights.py`, with `HEIGHT_SET` for the floors the trace could not reach). 51 slope cells.
@@ -535,11 +535,11 @@ Jacob's Rest's fourth mission, traced from `asi-jac4-residential` as Deima and R
 - **Route:** `tools/routeplan.py` now also checks that every egg and growth lies within reach of a wait-7 stop on its own floor (`unswept`). Its clearance is 0.45, so one-cell ducts plan. The route has 80 legs, none blocked and no egg out of reach. Door1's panel is AS's 2x5 two-wire one.
 - **Render:** `dist/scene-residential.png`.
 
-Still to check in the client: the mission end to end on the autopilot (`-Auto`) with no script errors and 0 kit leaks, and by hand the glass, the goo walls and the elevator's hold.
+Still to check by hand in the client: the glass, the goo walls and the elevator's hold.
 
 ## Mission 6: Sewer Junction B5 (2026-10-25)
 
-Jacob's Rest's sixth mission, traced from `asi-jac6-sewerjunction` as the others were (`tools/sewer.py`, in `build.py` LEVELS after SynTek Residential). Built and checked offline (`py build.py`, `--qa`: type and bounds checks pass; map 256x256, Sewer at 109,111). Not yet run in the client.
+Jacob's Rest's sixth mission, traced from `asi-jac6-sewerjunction` as the others were (`tools/sewer.py`, in `build.py` LEVELS after SynTek Residential). Built and checked offline (`py build.py`, `--qa`: type and bounds checks pass; map 256x256, Sewer at 109,111). Run in the client on the autopilot (2026-10-25, run a8346278852d, a fresh client): the whole six-mission campaign reached CAMPAIGN COMPLETE with no script errors and 0 kit leaks in every mission; Sewer Junction B5 took 292 s.
 
 - **Layout:** the traced floor, less the thin walls between rooms. AS's floor materials now come out of the BSP too (`tools/asextract.py --mats`, `floor_mat`): water, concrete, grate, metal plate, tile. They set each cell's kind (`CELL_KINDS`, new in `tools/level.py` `kind_at`): water is a channel, grate and plate a catwalk, concrete and tile the sewer's walks, and the cells round each egg cluster growth.
 - **Heights:** five clean levels:
@@ -552,7 +552,7 @@ Jacob's Rest's sixth mission, traced from `asi-jac6-sewerjunction` as the others
 - **The flow:**
   - Collapse the tunnel: the charges at its mouth are named barrels (`HIVE_BARRELS`), and one going up brings the roof in (`TunnelCounter`). The buzzers stop, drones come from the north, the tunnel's growth dies (`kill`, new), and the objective completes five seconds later.
   - Destroy the 20 eggs.
-  - With both done, the yard's wall is blown and the way out opens.
+  - With both done, the yard's wall is blown out (`blow`, new: the door breaks and stays open) and the way out opens. The first autopilot run (2026-10-25) stalled there: the wall had only been unlocked, so it shut again before the autopilot reached its wait stop 5.5 cells away.
   - Shooting the shelf over the settling channel brings it down on the container, which clears the shelf's two clips.
   - The turbine's control is a button: pressing it stops the turbine and, on Insane, wakes its buzzers.
   - Every trigger's spawns, stops, random picks and commander lines are read straight from the map.
@@ -564,4 +564,4 @@ Jacob's Rest's sixth mission, traced from `asi-jac6-sewerjunction` as the others
 - **Route:** 48 legs, none blocked, and every egg within reach of a wait-7 stop. The autopilot shoots a named barrel from beyond its blast (`src/Hive.galaxy`), and it leaves alone any growth that no objective counts. Sewer Junction has no `trigger_asw_button_area`, so there is no wire panel.
 - **Render:** `dist/scene-sewer.png`.
 
-Still to check in the client: the mission end to end on the autopilot (`-Auto`) with no script errors and 0 kit leaks, and by hand the tunnel's collapse and the yard wall.
+Still to check by hand in the client: the tunnel's collapse and the yard wall.

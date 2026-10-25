@@ -308,7 +308,7 @@ ONS = [
     ('done:eggs', 'stop', 'BuzzerSpawn2', 0.0), ('done:eggs', 'spawn', 'DroneSpawn11', 0.0),
     # Both done (escape_obj_counter): the yard's wall is blown four seconds later and the way out shows.
     ('done:tunnel', 'count', 'escape_obj_counter', 0.0), ('done:eggs', 'count', 'escape_obj_counter', 0.0),
-    ('max:escape_obj_counter', 'boom', '15.0,135.0', 4.0), ('max:escape_obj_counter', 'open', 'exit_wall', 4.0),
+    ('max:escape_obj_counter', 'boom', '15.0,135.0', 4.0), ('max:escape_obj_counter', 'blow', 'exit_wall', 4.0),
     # The turbine's control, shot (OnAwakened): it stops, and on Insane its buzzers come (HardSpawner7, MinSkill 4).
     ('pressed:Turbine_Control', 'boom', '26.0,123.0', 0.2), ('pressed:Turbine_Control', 'spawn', 'HardSpawner7', 0.0),
 ]

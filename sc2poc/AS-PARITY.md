@@ -38,8 +38,8 @@ The goal is a port that plays like Alien Swarm in every way, starting with its f
 | Lighting and fog | Partial | Orange light in the wrong room; outdoor zones missing in the north block and all of Cargo Elevator |
 | Deima Surface Bridge | Close (traced) | Built 2026-10-24, not yet run in the client; the dropship is a stand-in, its guns scripted |
 | Rydberg Reactor | Close (traced) | Built 2026-10-24, not yet run in the client; the exit doors open after a fixed 32 s, not AS's animation |
-| SynTek Residential | Close (traced) | Built 2026-10-24, not yet run in the client; no grub sacs, the fire extinguishers are scenery |
-| Sewer Junction B5 | Close (traced) | Built 2026-10-25, not yet run in the client; the sumps are drops, the turbine is a button |
+| SynTek Residential | Close (traced) | Built 2026-10-24; the autopilot finishes it cleanly (2026-10-25); no grub sacs, the fire extinguishers are scenery |
+| Sewer Junction B5 | Close (traced) | Built 2026-10-25; the autopilot finishes it cleanly (2026-10-25); the sumps are drops, the turbine is a button |
 
 ## The deltas
 

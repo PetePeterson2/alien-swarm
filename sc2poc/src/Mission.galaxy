@@ -1300,6 +1300,8 @@ bool AS_GenAction (string act, string arg) {
     }
     if(act=="power") {i=AS_ButtonNamed(arg);if(i>=0) {as_btOn[i]=true;}return true;}
     if(act=="kill") {AS_HiveKill(arg);return true;}
+    // A wall blown out for good (AS's func_breakable): the door breaks and stays open.
+    if(act=="blow") {i=AS_DoorNamed(arg);if(i>=0 && !as_drBroken[i]) {AS_DoorBreak(i);AS_Log("door blown: "+arg);}return true;}
     if(act=="notech") {as_needTech=false;as_techRestartAt=0.0;AS_Log("tech requirement lifted");return true;}
     if(act=="boom") {
         at=StringFind(arg,",",c_stringCase);
