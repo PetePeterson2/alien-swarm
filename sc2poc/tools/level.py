@@ -443,27 +443,31 @@ def hull_meshes(floor, room):
 KIT_WALLS = ['wall_plain0', 'wall_plain1', 'wall_pipes2', 'wall_vent3', 'wall_screen4', 'wall_light5', 'wall_alarm6', 'wall_hive',
              'wall_window', 'wall_concrete', 'wall_red', 'wall_bluestripe', 'wall_rust',
              'wall_seagreen', 'wall_seadark', 'wall_whitetile', 'wall_shop0', 'wall_shop1', 'wall_shop2', 'wall_housing',
-             'wall_sewer', 'wall_sewerpipe', 'wall_seweroutlet', 'wall_sewerslime', 'wall_sewerlamp']
+             'wall_sewer', 'wall_sewerpipe', 'wall_seweroutlet', 'wall_sewerslime', 'wall_sewerlamp',
+             'wall_minerock', 'wall_minebeam', 'wall_timorconc', 'wall_timorband']
 # Room kinds as the script numbers them, and the wall panels each draws from (indexes into KIT_WALLS).
 # A lift cell (the elevator platform and its bridges) gets no ceiling; the camera looks down the shaft.
 # Past the lift: a colony's open ground under the sky and the catwalks and bridges over its drop (no ceiling over
 # either, src/Kit.galaxy AS_KIND_SURFACE, AS_KIND_BRIDGE), a plant's industrial decks and its reactor core.
 # SynTek's residential block: its sea-green halls, white-tiled offices, flats and the mall's shopfronts.
 # Sewer Junction B5: its concrete walks, the channels of water between them, the grated catwalks, and the swarm's
-# growth over the egg galleries.
+# growth over the egg galleries. Timor Station: the mine's rock galleries, the station's concrete halls, the steel
+# gantries and bridge decks, and the gravel yards between the station's board-formed walls.
 KIT_KINDS = ['bay', 'hall', 'duct', 'mess', 'reactor', 'cargo', 'lab', 'hive', 'lift', 'surface', 'bridge', 'plant', 'core', 'works',
-             'colony', 'office', 'housing', 'mall', 'sewer', 'channel', 'catwalk', 'growth']
+             'colony', 'office', 'housing', 'mall', 'sewer', 'channel', 'catwalk', 'growth', 'mine', 'station', 'gantry', 'yard']
 KIT_PANELS = {'bay': [0, 0, 2, 5, 3, 6], 'hall': [0, 2, 3, 1, 5, 2], 'duct': [2, 3, 2, 1], 'mess': [1, 1, 4, 5, 0],
               'reactor': [2, 3, 4, 5, 6, 2], 'cargo': [1, 0, 3, 5, 1], 'lab': [0, 4, 5, 4, 0], 'hive': [7], 'lift': [0],
               'surface': [10, 10, 9, 10, 5, 10], 'bridge': [10, 2, 10, 10], 'plant': [2, 3, 2, 6, 5, 1], 'core': [11, 4, 11, 5, 11, 6],
               'works': [11, 12, 11, 2, 12, 5, 11], 'colony': [13, 13, 14, 5, 13, 4], 'office': [15, 13, 4, 15, 5, 15],
               'housing': [19, 13, 19, 14, 5, 19, 13], 'mall': [16, 15, 17, 13, 18, 5, 15],
               'sewer': [20, 20, 21, 24, 20, 22], 'channel': [20, 22, 20, 21, 23, 20], 'catwalk': [20, 21, 24, 20, 21],
-              'growth': [23, 23, 7, 22, 23]}
+              'growth': [23, 23, 7, 22, 23], 'mine': [25, 25, 26, 25, 25, 26], 'station': [28, 27, 28, 5, 28],
+              'gantry': [25, 27, 26, 25], 'yard': [27, 27, 5, 27, 26]}
 # The residential kinds dress as the ship's rooms nearest them (clutter, decals, girders): the halls as passages,
-# the offices as labs, the flats as crew quarters, the mall as a store.
+# the offices as labs, the flats as crew quarters, the mall as a store. Timor Station's dress as the cargo hold
+# throughout: crates and hazard paint, none of the ship's running lights, which its mine and station have none of.
 DRESS = {'colony': 'hall', 'office': 'lab', 'housing': 'mess', 'mall': 'cargo',
-         'sewer': 'hall', 'channel': 'duct', 'catwalk': 'hall', 'growth': 'hive'}
+         'sewer': 'hall', 'channel': 'duct', 'catwalk': 'hall', 'growth': 'hive', 'mine': 'cargo', 'station': 'cargo', 'gantry': 'cargo', 'yard': 'cargo'}
 
 
 def _lit(x, y):
@@ -1088,7 +1092,7 @@ DARK, PLATES, GRATE, RUST, WRECK, PANEL, MESH, ORGANIC = range(8)
 ROOM_FLOOR = {'lift': GRATE, 'void': DARK, 'bay': PLATES, 'hall': GRATE, 'duct': MESH, 'mess': PANEL, 'reactor': DARK, 'cargo': PLATES, 'lab': PANEL, 'hive': WRECK, 'hull': DARK,
               'surface': PLATES, 'bridge': GRATE, 'plant': DARK, 'core': DARK, 'works': DARK,
               'colony': PLATES, 'office': PANEL, 'housing': PLATES, 'mall': PANEL,
-              'sewer': DARK, 'channel': DARK, 'catwalk': GRATE, 'growth': ORGANIC}
+              'sewer': DARK, 'channel': DARK, 'catwalk': GRATE, 'growth': ORGANIC, 'mine': DARK, 'station': PLATES, 'gantry': GRATE, 'yard': DARK}
 
 
 def terrain_masks(floor, room):

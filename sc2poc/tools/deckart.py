@@ -1059,6 +1059,125 @@ def floor_sewergrate(seed=37, tone=(104, 102, 96)):
     return _img(_finish(_dirt(a, seed + 4, 0.25), seed + 9, 0.04, 900, 3, U, 0.22))
 
 
+# ---- Timor Station (tools/timor.py) ---------------------------------------------------------------------------------
+def _stones(seed, n, rad):
+    """Pebbles as a height field that wraps, 0..1."""
+    r = np.random.default_rng(seed)
+    h = np.zeros((S, S))
+    off = np.arange(-int(2 * rad) - 1, int(2 * rad) + 2)
+    for _ in range(n):
+        cx, cy = r.uniform(0, S, 2); rx, ry = r.uniform(rad * 0.5, rad * 1.4, 2); ang = r.uniform(0, math.pi)
+        dx = (int(cx) + off - cx)[None, :]; dy = (int(cy) + off - cy)[:, None]
+        u = (dx * math.cos(ang) + dy * math.sin(ang)) / rx
+        v = (-dx * math.sin(ang) + dy * math.cos(ang)) / ry
+        win = np.ix_((int(cy) + off) % S, (int(cx) + off) % S)
+        h[win] = np.maximum(h[win], np.sqrt(np.clip(1 - u * u - v * v, 0, 1)) * r.uniform(0.6, 1.0))
+    return h
+
+
+def floor_minegravel(seed=60, tone=(92, 88, 78)):
+    """blendrockgravel001a: the mine's floor, loose grey-brown gravel trodden flat, bigger stones here and there,
+    each lit on its north-west side and shadowed under, a bed of the mine's green-grey rock showing through."""
+    base = np.array(tone, float)
+    n = _noise(0, 70, seed, 5, (S, S)); f = _noise(0, 3, seed + 1, 2, (S, S))
+    a = base[None, None] * (0.82 + 0.3 * n[..., None] + 0.12 * f[..., None])
+    rock = np.clip((_noise(0, 90, seed + 2, 4, (S, S)) - 0.6) * 4, 0, 1)
+    a = a * (1 - 0.5 * rock[..., None]) + np.array((84, 92, 78), float) * 0.5 * rock[..., None]
+    for k, (cnt, rad, sh) in enumerate(((900, 4.5, 0.7), (60, 12.0, 0.8))):
+        h = _stones(seed + 3 + k, cnt, rad)
+        gx = np.roll(h, 2, 1) - h; gy = np.roll(h, 2, 0) - h
+        light = np.clip(1 + 3.0 * (gx + gy), 0.35, 1.6)
+        tint = np.random.default_rng(seed + 7 + k).uniform(0.82, 1.15, (S, S)) if k == 0 else 1.0
+        stone = (h > 0.05).astype(float)
+        a = a * (1 - stone[..., None] * sh) + a * stone[..., None] * sh * (light * (0.9 + 0.25 * h) * tint)[..., None]
+    a *= (1 - 0.3 * _cracks(seed + 9, 3, 11, 0.6, 1, 60, 140))[..., None]
+    return _img(_finish(_dirt(a, seed + 4, 0.3), seed + 9, 0.07, 2600, 3, None, 0.2))
+
+
+def floor_minerock(seed=61, tone=(96, 102, 88)):
+    """minerockwall underfoot: the mine's bare rock where the gravel is swept off, green-grey with rust-brown
+    veins, broken by cracks into plates, worn smooth and pale where the squad's boots go."""
+    base = np.array(tone, float)
+    n = _noise(0, 60, seed, 5, (S, S)); f = _noise(0, 5, seed + 1, 3, (S, S))
+    a = base[None, None] * (0.8 + 0.32 * n[..., None] + 0.1 * f[..., None])
+    vein = np.clip(1 - np.abs(_noise(0, 50, seed + 2, 4, (S, S)) - 0.5) * 18, 0, 1) * np.clip((_noise(0, 80, seed + 3, 3, (S, S)) - 0.4) * 3, 0, 1)
+    a = a * (1 - 0.55 * vein[..., None]) + np.array((122, 86, 52), float) * 0.55 * vein[..., None]
+    cr = _cracks(seed + 4, 9, 8, 0.7, 2, 140, 230)
+    a *= (1 - 0.6 * cr)[..., None]
+    lip = np.roll(cr, -2, 0)
+    a *= (1 + 0.18 * np.clip(lip - cr, 0, 1))[..., None]
+    worn = np.clip((_noise(0, 120, seed + 5, 3, (S, S)) - 0.55) * 3, 0, 1)
+    a *= (1 + 0.15 * worn)[..., None]
+    return _img(_finish(_dirt(a, seed + 6, 0.25), seed + 7, 0.06, 2000, 2, None, 0.2))
+
+
+def floor_timorgrate(seed=62, tone=(118, 120, 122)):
+    """metalgrate014: the station's and the mine's walkways, a unit-wide steel panel in a bolted frame with long
+    slots across it, the dark of the mine below showing through, scuffed bright along the slots' lips."""
+    base = np.array(tone, float)
+    yy, xx = np.mgrid[0:S, 0:S]
+    n = _noise(0, 40, seed, 4, (S, S))
+    a = base[None, None] * (0.84 + 0.28 * n[..., None])
+    under = np.array((18, 18, 16), float)[None, None] * (0.7 + 0.8 * _noise(0, 50, seed + 1, 3, (S, S))[..., None] ** 2)
+    frame = ((xx % U) < 18) | ((xx % U) >= U - 18) | ((yy % U) < 18) | ((yy % U) >= U - 18)
+    slot = ((yy % U) % 13 >= 6) & ~frame
+    a[slot] = under[slot]
+    a[((yy % U) % 13 == 5) & ~frame] *= 1.35
+    a[((yy % U) % 13 == 0) & ~frame] *= 0.65
+    a[frame] *= 1.05
+    for k in (18, U - 18):
+        a[(xx % U) == k] *= 0.55; a[(yy % U) == k] *= 0.55
+    a = _bevel(a, U, 0.45, 1.25, 3)
+    a = _bolts(a, [(px + dx, py + dy) for px in (0, U) for py in (0, U) for dx in (9, U - 9) for dy in (9, U - 9)], base * 1.1, 4)
+    rust = np.clip((_noise(0, 26, seed + 2, 4, (S, S)) - 0.6) * 3.5, 0, 1)
+    a = a * (1 - 0.5 * rust[..., None]) + np.array((104, 64, 38))[None, None] * 0.5 * rust[..., None]
+    return _img(_finish(_dirt(a, seed + 4, 0.25), seed + 9, 0.04, 900, 3, U, 0.22))
+
+
+def floor_timorbridge(seed=63, tone=(124, 126, 128)):
+    """metal/bridge: the bridge's and the gantries' decking, as AS's texture lays it: down the middle a ladder of
+    plate treads between two rails, either side a panel of diamond mesh in a heavy frame."""
+    base = np.array(tone, float)
+    yy, xx = np.mgrid[0:S, 0:S]
+    n = _noise(0, 40, seed, 4, (S, S))
+    a = base[None, None] * (0.86 + 0.24 * n[..., None])
+    u = xx % U; v = yy % U
+    side = (u < U * 0.28) | (u >= U * 0.72)
+    mesh = side & (v > 10) & (v < U - 10) & ((u < U * 0.28 - 10) & (u > 10) | (u >= U * 0.72 + 10) & (u < U - 10))
+    diag = (((xx + yy) % 16) < 3) | (((xx - yy) % 16) < 3)
+    a[mesh & ~diag] = np.array((24, 24, 22), float)
+    a[mesh & diag] *= 1.12
+    mid = (u >= U * 0.33) & (u < U * 0.67)
+    a[mid & (v % 32 >= 26)] *= 0.35
+    a[mid & (v % 32 < 3)] *= 1.3
+    for k in (int(U * 0.31), int(U * 0.33), int(U * 0.67), int(U * 0.69)):
+        a[u == k] *= 0.5
+    a[((u >= U * 0.28) & (u < U * 0.33)) | ((u >= U * 0.67) & (u < U * 0.72))] *= 1.08
+    a = _bevel(a, U, 0.5, 1.2, 2)
+    return _img(_finish(_dirt(a, seed + 4, 0.22), seed + 9, 0.04, 800, 3, U, 0.2))
+
+
+def floor_timorconc(seed=64, tone=(132, 132, 128)):
+    """concretefloor050a in the station: grey cast slabs saw-cut a unit square, stained by the mine's dust, a
+    painted yellow line where the loading bays start."""
+    base = np.array(tone, float)
+    n = _noise(0, 64, seed, 5, (S, S)); f = _noise(0, 6, seed + 1, 3, (S, S))
+    a = base[None, None] * (0.9 + 0.12 * n[..., None] + 0.06 * f[..., None])
+    r = np.random.default_rng(seed)
+    for py in range(0, S, U):
+        for px in range(0, S, U):
+            a[py:py + U, px:px + U] *= r.uniform(0.92, 1.06)
+    a = _bevel(a, U, 0.55, 1.1, 2)
+    dust = np.clip((_noise(0, 100, seed + 2, 4, (S, S)) - 0.45) * 2, 0, 1)
+    a = a * (1 - 0.3 * dust[..., None]) + np.array((104, 94, 78), float) * 0.3 * dust[..., None]
+    a *= (1 - 0.35 * _cracks(seed + 3, 4, 9, 0.5, 1, 100, 180))[..., None]
+    line = np.abs(np.mgrid[0:S, 0:S][1] - S * 0.12) < 9
+    paint = np.array((196, 156, 40), float)
+    chip = np.clip((_noise(0, 8, seed + 5, 3, (S, S)) - 0.62) * 5, 0, 1)
+    a[line] = a[line] * (0.3 + 0.7 * chip[line][:, None]) + paint * 0.7 * (1 - chip[line][:, None])
+    return _img(_finish(_dirt(a, seed + 6, 0.2), seed + 7, 0.05, 1600, 4, U, 0.2))
+
+
 FLOORS = {
     'floor_concrete': lambda: (floor_concrete(), None),
     'floor_mgrate': lambda: (floor_mgrate(), None),
@@ -1090,6 +1209,12 @@ FLOORS = {
     'floor_sewerwater2': lambda: floor_sewerwater(39, (52, 62, 48)),
     'floor_sewerslime': lambda: floor_sewerslime(),
     'floor_sewergrate': lambda: (floor_sewergrate(), None),
+    'floor_minegravel': lambda: (floor_minegravel(), None),
+    'floor_minegravel2': lambda: (floor_minegravel(65, (84, 82, 76)), None),
+    'floor_minerock': lambda: (floor_minerock(), None),
+    'floor_timorgrate': lambda: (floor_timorgrate(), None),
+    'floor_timorbridge': lambda: (floor_timorbridge(), None),
+    'floor_timorconc': lambda: (floor_timorconc(), None),
 }
 
 # Each room kind's floor (tools/level.py KIT_KINDS): the main plating, the second plating mixed
@@ -1116,6 +1241,10 @@ KIND_FLOORS = {
     'channel': ('floor_sewerwater', 'floor_sewerwater2', 'floor_sewergrate'),
     'catwalk': ('floor_sewergrate', 'floor_sewergrate', 'floor_sewerconc2'),
     'growth': ('floor_sewerslime', 'floor_hive', 'floor_sewerwater'),
+    'mine': ('floor_minegravel', 'floor_minegravel2', 'floor_minerock'),
+    'station': ('floor_timorconc', 'floor_timorgrate', 'floor_hatch'),
+    'gantry': ('floor_timorgrate', 'floor_timorbridge', 'floor_timorgrate'),
+    'yard': ('floor_minegravel', 'floor_minegravel2', 'floor_timorconc'),
 }
 
 DECALS = {
